@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-27T23:18:34.031Z"
+last_updated: "2026-04-27T23:56:29.413Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 2
-  percent: 8
+  completed_plans: 3
+  percent: 13
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-27 (after Plan 01-02 execution)
+**Last Updated:** 2026-04-27 (after Plan 01-03 execution)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 3 of 24
+Plan: 4 of 24
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 03 — database-layer (next) |
-| **Status** | Plans 01–02 complete; Plan 03 ready to execute |
-| **Progress (plans)** | `[█░░░░░░░░░] 2/24 (8%)` |
+| **Plan** | 04 — config-secrets (next) |
+| **Status** | Plans 01–03 complete; Plan 04 ready to execute |
+| **Progress (plans)** | `[█░░░░░░░░░] 3/24 (13%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 03` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 04` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 3 of 24
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 2 / 24 |
+| Plans complete | 3 / 24 |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -52,6 +52,7 @@ Plan: 3 of 24
 |------|----------|-------|-------|
 | 01-01 repo-scaffold | 23 min | 2 | 21 |
 | 01-02 test-harness | 7 min | 2 | 44 |
+| 01-03 database-layer | 33 min | 1 | 29 |
 
 ## Accumulated Context
 
@@ -81,6 +82,12 @@ Plan: 3 of 24
 - **Plan 01-02 — Pinned testcontainer image tags.** T-02-01 mitigation: `timescale/timescaledb:2.26.0-pg16` and `eclipse-mosquitto:2.0.18`. No `:latest` tags allowed in tests; supply-chain hygiene per ASVS V10/OPS-07.
 - **Plan 01-02 — engines.node >=22.12 + .nvmrc=22.12.** Resolves Plan 01-01's open todo. Caveat: jsdom 29 itself requires Node 22.13+, so the CI runner must run >=22.13 even though the project floor is 22.12 — flagged for the CI plan.
 - **Plan 01-02 — pgx/v5 v5.9.2 added to go.mod.** Required by `internal/testsupport/postgres.go`'s `*pgxpool.Pool` return. Plan 03 (database-layer) reuses this same version when wiring `db.RunMigrations`.
+- **Plan 01-03 — Migration runner uses dedicated `*sql.DB`, not `stdlib.OpenDBFromPool`.** Sharing connections via `OpenDBFromPool` wedges `puddle.Pool.Close` at teardown because the migrate driver's connection-release semantics conflict with puddle's WaitGroup. Fix: `sql.Open("pgx", pool.Config().ConnConfig.ConnString())` with anon import of `pgx/v5/stdlib` for driver registration. The migration `*sql.DB` is fully independent of the application pgxpool.
+- **Plan 01-03 — `user.email` is TEXT (not CITEXT).** Plan's verbatim 0002 created CITEXT then ALTER'd to TEXT, which fails at CREATE TABLE because we don't load the citext extension. Schema goes straight to `email TEXT NOT NULL` with `CHECK (email = lower(email))` — same lowercase invariant, no broken intermediate state. Application code (Plans 09, 15) MUST `lower()` email before insert; CHECK is a backstop.
+- **Plan 01-03 — `touch_updated_at()` is the canonical updated_at trigger function.** Defined once in `0002_users`; `install_state`, `install_identity`, `chirpstack_connection` all reuse it. Future tables with `updated_at` MUST NOT redeclare the function — only attach a new trigger.
+- **Plan 01-03 — Singleton tables use `id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1)` + INSERT .. ON CONFLICT (id) DO UPDATE pattern.** `install_state`, `install_identity`, `chirpstack_connection` all use this. Future singletons MUST use this pattern; do not invent alternatives.
+- **Plan 01-03 — sqlc generates to `internal/db/sqlc` (Go import: `github.com/shifter-io/shifter/internal/db/sqlc`).** Path is locked. Plans 09/11/14/15/17 import directly — no aliasing.
+- **Plan 01-03 — Secrets stored by reference.** `*_ref` columns hold a path under `/run/secrets/`, never the raw value. Applies to `chirpstack_connection.api_token_ref` and `chirpstack_connection.mqtt_password_ref`. Plan 04 wires the read side.
 
 ### Open Todos
 
@@ -122,4 +129,4 @@ Plan: 3 of 24
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-27T23:15:33Z — Stopped at: Completed 01-02-test-harness-PLAN.md*
+*Last session: 2026-04-27T23:53:45Z — Stopped at: Completed 01-03-database-layer-PLAN.md*
