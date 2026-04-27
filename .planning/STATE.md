@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-27T18:25:37.045Z"
+last_updated: "2026-04-27T23:18:34.031Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 1
-  percent: 4
+  completed_plans: 2
+  percent: 8
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-27 (after Plan 01-01 execution)
+**Last Updated:** 2026-04-27 (after Plan 01-02 execution)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 2 of 24
+Plan: 3 of 24
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 02 — test-harness (next) |
-| **Status** | Plan 01 complete; Plan 02 ready to execute |
-| **Progress (plans)** | `[░░░░░░░░░░] 1/24 (4%)` |
+| **Plan** | 03 — database-layer (next) |
+| **Status** | Plans 01–02 complete; Plan 03 ready to execute |
+| **Progress (plans)** | `[█░░░░░░░░░] 2/24 (8%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 02` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 03` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 2 of 24
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 1 / 24 |
+| Plans complete | 2 / 24 |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -51,6 +51,7 @@ Plan: 2 of 24
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | 01-01 repo-scaffold | 23 min | 2 | 21 |
+| 01-02 test-harness | 7 min | 2 | 44 |
 
 ## Accumulated Context
 
@@ -76,11 +77,17 @@ Plan: 2 of 24
 - **Plan 01-01 — Cobra root carries a Long description.** Lets `--help` print lowercase "shifter" (verification grep) and seeds the help template for upcoming `serve` / `migrate` / `create-admin` subcommands.
 - **Plan 01-01 — `web/package.json` uses `@types/node` and `type: "module"`.** Required by Vite 7 + ESM `vite.config.ts`.
 - **Plan 01-01 — Host prerequisites:** Go 1.24+, Node 22.12+ (or 20.19+) per Vite 7, pnpm 10.x, `just` (host-installed). Plan 02 (test harness) should add `engines.node` to `web/package.json` and a `.nvmrc`.
+- **Plan 01-02 — Wave 0 stub-then-fill is the canonical pattern.** Every Phase 1 plan's `<verify>` block points at an existing test file (`t.Skip` / `describe.skip`); the implementing plan replaces only the body. Future plans MUST NOT create new test files outside the `internal/{auth,install,chirpstack,db,http,cli,version}/*_test.go` and `web/src/**/*.test.{ts,tsx}` scaffold from this plan.
+- **Plan 01-02 — Pinned testcontainer image tags.** T-02-01 mitigation: `timescale/timescaledb:2.26.0-pg16` and `eclipse-mosquitto:2.0.18`. No `:latest` tags allowed in tests; supply-chain hygiene per ASVS V10/OPS-07.
+- **Plan 01-02 — engines.node >=22.12 + .nvmrc=22.12.** Resolves Plan 01-01's open todo. Caveat: jsdom 29 itself requires Node 22.13+, so the CI runner must run >=22.13 even though the project floor is 22.12 — flagged for the CI plan.
+- **Plan 01-02 — pgx/v5 v5.9.2 added to go.mod.** Required by `internal/testsupport/postgres.go`'s `*pgxpool.Pool` return. Plan 03 (database-layer) reuses this same version when wiring `db.RunMigrations`.
 
 ### Open Todos
 
-- **Plan 02 — pin Node engines.** Add `"engines": { "node": ">=22.12" }` to `web/package.json` and a `.nvmrc` so contributors get a clear error instead of a Vite runtime warning.
-- **Plan 02 — Biome OOM workaround.** `pnpm exec biome` is OOM'ing the linter daemon in this sandbox. Investigate `BIOME_LOG_PATH` / heap flags or fall back to `biome ci` mode if pre-commit hooks fail.
+- **Plan 02 — Biome OOM workaround.** `pnpm exec biome` is OOM'ing the linter daemon in this sandbox. Investigate `BIOME_LOG_PATH` / heap flags or fall back to `biome ci` mode if pre-commit hooks fail. *(Carried from Plan 01-01; Plan 02 did not need biome at runtime, deferring resolution to whichever plan first wires biome into pre-commit/CI.)*
+- **CI plan — Node version >=22.13.** jsdom 29 (vitest worker) requires Node 22.13+ even though the project floor is 22.12. Whichever plan lands the GitHub Actions / CI config must pin the runner image accordingly.
+- **Plan 12 — `mockgen` on PATH.** `just bootstrap` should add `$(go env GOPATH)/bin` to PATH or document the requirement so contributors don't get "mockgen not found" after `go install`.
+- **Plan-check enhancement — verify command wording.** Plans whose `<verify>` uses `grep -q 'PASS'` against `go test ./...` (non-verbose) silently fail; either use `-v` mode or change the assertion to `grep -E 'PASS|ok\s'`. Flag during plan-check.
 
 ### Open Blockers
 
@@ -115,3 +122,4 @@ Plan: 2 of 24
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
+*Last session: 2026-04-27T23:15:33Z — Stopped at: Completed 01-02-test-harness-PLAN.md*
