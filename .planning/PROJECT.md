@@ -35,7 +35,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 **Sites & physical layout**
 - [ ] Create and manage sites
 - [ ] Support both horizontal (campus / floor) and vertical (building with multiple floors) layouts
-- [ ] Import floor plans / images and drop devices as pixel-coordinate points on them
+- [ ] Import floor plans / images and drop devices as normalized fractional points (x_frac, y_frac in [0, 1]) on them — resolution-independent, survives image replacement and Retina/mobile DPR
 - [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre)
 
 **Devices & meters**
@@ -80,7 +80,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - **SMTP / email delivery for password reset** — Local accounts manage credentials in-app; reduces install dependencies
 - **Direct ChirpStack UI access for end-users** — Hard exclusion; the entire point is that operators only touch Shifter
 - **Google Maps / Mapbox** — OpenStreetMap (Leaflet/MapLibre) only, since self-hosted installs should not depend on third-party paid map APIs
-- **Real-coordinate (lat/lng) device placement on floor plans** — Floor-plan device positions are pixel coordinates on the uploaded image; map-level placement uses site lat/lng instead
+- **Real-coordinate (lat/lng) device placement on floor plans** — Floor-plan device positions are normalized fractions on the uploaded image; map-level placement uses site lat/lng instead
 
 ## Context
 
@@ -110,7 +110,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 | Support both bundled and external ChirpStack | Some customers already run ChirpStack; new customers want a one-shot install | — Pending |
 | TimescaleDB for telemetry | One database to deploy/back up; native time-bucket aggregates for daily/monthly/yearly | — Pending |
 | shadcn/ui for the entire frontend | Consistency, speed, large ecosystem (charts, blocks) — minimizes custom UI code | — Pending |
-| Pixel-coordinate device placement on floor plans | Floor plans are uploaded images, not georeferenced; pixel coords are simpler and accurate enough | — Pending |
+| Normalized fractional device placement on floor plans | Floor plans are uploaded images, not georeferenced; normalized fractions (0..1) survive image replacement, Retina, and mobile DPR drift | — Pending |
 | OpenStreetMap (Leaflet/MapLibre) for map view | Self-hostable, no API key cost passed to customers | — Pending |
 | Metering-point abstraction with device swap + offset | Physical meters get replaced; histories must survive replacement | — Pending |
 | Local-only auth in v1 (no SMTP, no SSO) | Removes install dependencies; SSO can be added later without breaking the model | — Pending |
