@@ -145,6 +145,7 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
        "time"
 
        "github.com/jackc/pgx/v5/pgxpool"
+       "google.golang.org/grpc"
 
        "github.com/shifter-io/shifter/internal/auth"
        "github.com/shifter-io/shifter/internal/chirpstack"
@@ -160,8 +161,13 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
        PingMQTT func(ctx context.Context, url, user, pass string) error
    }
 
+   // chirpStackConn is the minimum surface ProbeVersion needs from a ChirpStack-bound
+   // *grpc.ClientConn. Tightened per checker Warning #6: exposes Conn() *grpc.ClientConn
+   // directly instead of round-tripping through interface{}. Plan 15's csConn and
+   // Plan 18's csBootConn share this exact shape so a single wrapper
+   // (csConnWrapper) satisfies all three interfaces.
    type chirpStackConn interface {
-       Real() interface{}
+       Conn() *grpc.ClientConn
        Close() error
    }
 
@@ -220,11 +226,10 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
                return
            }
            defer conn.Close()
-           grpcConn, ok := conn.Real().(grpcLikeConn)
-           if !ok {
-               // Tests pass the wrapper; production wraps *grpc.ClientConn.
-               // The cast for prod is one-line in the deps.Dial wrapper. Treat as success edge.
-           }
+           // Conn() returns *grpc.ClientConn directly — no interface{} round-trip
+           // (Warning #6 tightening; both prod and test wrappers expose Conn() so
+           //  no type assertion is needed).
+           grpcConn := conn.Conn()
            version, err := chirpstack.ProbeVersion(ctx, grpcConn)
            ms := int(time.Since(t0).Milliseconds())
            if errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown) {
@@ -253,15 +258,6 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
            writeJSON(w, 200, resp)
        }
    }
-
-   // grpcLikeConn is the minimum surface ProbeVersion needs.
-   // In tests it's a *grpc.ClientConn; we pass it through the wrapper interface.
-   type grpcLikeConn = *interface{} // placeholder — replaced by the actual *grpc.ClientConn import below
-
-   // Real implementation imports:
-   //   "google.golang.org/grpc"
-   //   type grpcLikeConn = *grpc.ClientConn
-   // Tests construct a wrapper and unwrap inside Dial.
 
    func writeJSON(w http.ResponseWriter, code int, body any) {
        w.Header().Set("Content-Type", "application/json")
@@ -327,7 +323,7 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
                return
            }
            defer conn.Close()
-           grpcConn, _ := conn.Real().(grpcLikeConn)
+           grpcConn := conn.Conn()
            if _, err := chirpstack.ProbeVersion(ctx, grpcConn); err != nil {
                if errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown) {
                    writeJSON(w, 422, map[string]string{"error": "v3_detected"})
@@ -367,13 +363,7 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
    }
    ```
 
-   **Replace the placeholder `grpcLikeConn = *interface{}` with the actual import:**
-   ```go
-   import gogrpc "google.golang.org/grpc"
-   // ...
-   type grpcLikeConn = *gogrpc.ClientConn
-   ```
-   And update `(conn.Real().(grpcLikeConn))` calls accordingly. Provide a production `Dial` adapter:
+   **Production `Dial` adapter — wraps `chirpstack.Dial` and exposes `Conn() *grpc.ClientConn` directly (no interface{} round-trip):**
    ```go
    // ProductionDial wraps chirpstack.Dial returning a chirpStackConn.
    func ProductionDial(ctx context.Context, cfg config.CSConfig) (chirpStackConn, error) {
@@ -381,9 +371,9 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
        if err != nil { return nil, err }
        return &realConnWrapper{c: conn}, nil
    }
-   type realConnWrapper struct{ c *gogrpc.ClientConn }
-   func (r *realConnWrapper) Real() interface{} { return r.c }
-   func (r *realConnWrapper) Close() error      { return r.c.Close() }
+   type realConnWrapper struct{ c *grpc.ClientConn }
+   func (r *realConnWrapper) Conn() *grpc.ClientConn { return r.c }
+   func (r *realConnWrapper) Close() error           { return r.c.Close() }
    ```
 
 2. Replace `internal/http/testconn_test.go`:
@@ -409,9 +399,11 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
        "google.golang.org/grpc/credentials/insecure"
    )
 
+   // tcWrapper satisfies chirpStackConn against a bufconn-backed *grpc.ClientConn.
+   // Per Warning #6, exposes Conn() *grpc.ClientConn directly — no interface{} round-trip.
    type tcWrapper struct{ c *gogrpc.ClientConn }
-   func (w *tcWrapper) Real() interface{} { return w.c }
-   func (w *tcWrapper) Close() error      { return w.c.Close() }
+   func (w *tcWrapper) Conn() *gogrpc.ClientConn { return w.c }
+   func (w *tcWrapper) Close() error             { return w.c.Close() }
 
    func setupTestConn(t *testing.T, mode string, mqttErr error) *httptest.Server {
        t.Helper()
@@ -1012,3 +1004,5 @@ After completion, create `.planning/phases/01-foundation/01-17-SUMMARY.md` docum
 - config-check probe sequence
 - Plan 18 wiring (auth middleware on each endpoint)
 </output>
+</content>
+</invoke>
