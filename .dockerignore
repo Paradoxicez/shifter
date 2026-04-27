@@ -1,0 +1,9 @@
+.git
+.gitignore
+/bin
+/web/node_modules
+/web/dist
+/tmp
+/secrets
+*.md
+.planning

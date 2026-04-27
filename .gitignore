@@ -1,0 +1,24 @@
+# Build artifacts
+/bin/
+/web/dist/
+/web/node_modules/
+/tmp/
+/coverage/
+*.test
+*.out
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Environment / secrets — D-06 forbids .env for secrets
+.env
+.env.*
+!.env.example
+/secrets/*
+!/secrets/.gitkeep
+
+# Air hot reload
+/tmp/
