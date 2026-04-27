@@ -39,7 +39,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 **Plans**: 24 plans
 
 Plans:
-- [ ] 01-01-repo-scaffold-PLAN.md — Bootstrap the Go monorepo + Vite/React/Tailwind frontend skeleton + Justfile + Air (D-01..D-04)
+- [x] 01-01-repo-scaffold-PLAN.md — Bootstrap the Go monorepo + Vite/React/Tailwind frontend skeleton + Justfile + Air (D-01..D-04)
 - [ ] 01-02-test-harness-PLAN.md — Wave 0: install testify+testcontainers-go+vitest, create all skeleton test files (VALIDATION.md scaffolding)
 - [ ] 01-03-database-layer-PLAN.md — pgxpool + golang-migrate-as-library + 6 initial migrations + sqlc config (D-13, D-16)
 - [ ] 01-04-config-secrets-PLAN.md — viper YAML+env config + Compose-secrets reader + slog JSON logger + version package (D-05, D-06, D-22, D-24)

@@ -148,7 +148,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Operational Hardening
 
-- [ ] **OPS-01**: Project ships two Docker Compose files — `bundled` (Postgres+TimescaleDB+Mosquitto+ChirpStack+Shifter) and `external` (Postgres+TimescaleDB+Shifter, ChirpStack URLs from env) — using the same backend image
+- [x] **OPS-01**: Project ships two Docker Compose files — `bundled` (Postgres+TimescaleDB+Mosquitto+ChirpStack+Shifter) and `external` (Postgres+TimescaleDB+Shifter, ChirpStack URLs from env) — using the same backend image
 - [ ] **OPS-02**: Project ships a TimescaleDB-aware logical backup script that backs up the database and rsyncs the floor-plan image volume
 - [ ] **OPS-03**: Backup destination is configurable (local filesystem path or S3-compatible URL)
 - [ ] **OPS-04**: Restore procedure is tested in CI (round-trip backup → fresh DB → restore → smoke test)
@@ -313,7 +313,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | AUDIT-01 | Phase 2 | Pending |
 | AUDIT-02 | Phase 6 | Pending |
 | AUDIT-03 | Phase 6 | Pending |
-| OPS-01 | Phase 1 | Pending |
+| OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 6 | Pending |
 | OPS-03 | Phase 6 | Pending |
 | OPS-04 | Phase 6 | Pending |

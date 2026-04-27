@@ -1,23 +1,41 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: Ready to execute
+last_updated: "2026-04-27T18:25:37.045Z"
+progress:
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 24
+  completed_plans: 1
+  percent: 4
+---
+
 # Project State: Shifter
 
-**Last Updated:** 2026-04-27 (initialization)
+**Last Updated:** 2026-04-27 (after Plan 01-01 execution)
 
 ## Project Reference
 
 **Core Value:** The operator runs their entire LoRaWAN water/electricity monitoring operation — provisioning, placement, monitoring, reporting — from Shifter alone, and meter swaps never break historical continuity.
 
-**Current Focus:** Phase 1 ready — Foundation (single Go binary, dual-channel ChirpStack integration, local auth, install wizard, two-flavor compose deploy)
+**Current Focus:** Phase 01 — foundation
 
 ## Current Position
+
+Phase: 01 (foundation) — EXECUTING
+Plan: 2 of 24
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | (none yet — phase planning not started) |
-| **Status** | Not started |
-| **Progress** | `[░░░░░░░░░░] 0/7 phases` |
+| **Plan** | 02 — test-harness (next) |
+| **Status** | Plan 01 complete; Plan 02 ready to execute |
+| **Progress (plans)** | `[░░░░░░░░░░] 1/24 (4%)` |
+| **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-plan-phase 1`
+**Next action:** `/gsd-execute-plan 01 02` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -25,8 +43,14 @@
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 0 |
+| Plans complete | 1 / 24 |
 | Open blockers | 0 |
+
+### Per-plan execution log
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| 01-01 repo-scaffold | 23 min | 2 | 21 |
 
 ## Accumulated Context
 
@@ -44,9 +68,19 @@
 - **Deployment:** Two Docker Compose flavors (`bundled` + `external`) sharing the same backend image. File-based Compose secrets, pinned image tags, Caddy reverse proxy.
 - **Audit middleware:** Ships in Phase 2 before the meter-swap UI so swaps are auditable from day 1; UI + CSV export in Phase 6.
 
+### Phase 01 Execution Decisions
+
+- **Plan 01-01 — Justfile is the canonical entry point.** Every dev/CI/install task goes through a `just` recipe; raw `go`/`pnpm`/`golangci-lint`/`migrate` calls in docs or CI are forbidden going forward (D-02).
+- **Plan 01-01 — `@vitejs/plugin-react` pinned to ^5.** v6 requires Vite 8; we pin Vite 7. Re-evaluate at phase wrap-up if Vite 8 has stabilized.
+- **Plan 01-01 — Biome 2.x config schema.** `assist.actions.source.organizeImports`, `files.includes` with negative globs. Plan template referenced legacy 1.9 schema; future plans must use 2.x.
+- **Plan 01-01 — Cobra root carries a Long description.** Lets `--help` print lowercase "shifter" (verification grep) and seeds the help template for upcoming `serve` / `migrate` / `create-admin` subcommands.
+- **Plan 01-01 — `web/package.json` uses `@types/node` and `type: "module"`.** Required by Vite 7 + ESM `vite.config.ts`.
+- **Plan 01-01 — Host prerequisites:** Go 1.24+, Node 22.12+ (or 20.19+) per Vite 7, pnpm 10.x, `just` (host-installed). Plan 02 (test harness) should add `engines.node` to `web/package.json` and a `.nvmrc`.
+
 ### Open Todos
 
-(none yet — populated by phase planning)
+- **Plan 02 — pin Node engines.** Add `"engines": { "node": ">=22.12" }` to `web/package.json` and a `.nvmrc` so contributors get a clear error instead of a Vite runtime warning.
+- **Plan 02 — Biome OOM workaround.** `pnpm exec biome` is OOM'ing the linter daemon in this sandbox. Investigate `BIOME_LOG_PATH` / heap flags or fall back to `biome ci` mode if pre-commit hooks fail.
 
 ### Open Blockers
 
@@ -69,6 +103,7 @@
 5. Run `/gsd-plan-phase 1` to begin Phase 1 planning
 
 **Files of record:**
+
 - `.planning/PROJECT.md` — vision + constraints + key decisions
 - `.planning/REQUIREMENTS.md` — v1 + v2 + out-of-scope + traceability
 - `.planning/ROADMAP.md` — 7-phase structure with success criteria
