@@ -15,13 +15,16 @@ must_haves:
   truths:
     - "SPAHandler returns index.html for any non-existent route that doesn't look like a static asset"
     - "SPAHandler returns 404 for missing static assets (no fallback for asset paths with extensions)"
-    - "Hashed assets under /assets/* get Cache-Control: public, max-age=31536000, immutable"
-    - "/index.html is served with Cache-Control: no-cache"
+    - "Hashed assets under /assets/* get Cache-Control: public, max-age=31536000, immutable (unit-tested via TestSPA_AssetCacheHeaders against fstest.MapFS)"
+    - "/index.html is served with Cache-Control: no-cache (unit-tested via TestSPA_IndexHasNoCacheHeader)"
+    - "/api/* 404s do NOT return the SPA index — they return a JSON 404 from the router (PITFALL #4; unit-tested via TestSPA_NoFallbackForAPI)"
     - "//go:embed all:web/dist (with the all: prefix per RESEARCH §Pattern 8)"
+    - "SPAHandlerFS(fs.FS) is exported for unit-test injection of synthetic SPA artifacts"
   artifacts:
     - path: "internal/http/spa.go"
-      provides: "go:embed-backed SPA handler with history-mode fallback (RESEARCH §Pattern 8)"
+      provides: "go:embed-backed SPA handler with history-mode fallback (RESEARCH §Pattern 8); also exports SPAHandlerFS(fs.FS) for unit-test injection (Warning #7)"
       contains: "//go:embed all:web/dist"
+      exports: ["SPAHandler", "SPAHandlerFS"]
   key_links:
     - from: "internal/http/spa.go"
       to: "web/dist (Vite build output)"
@@ -84,7 +87,7 @@ RESEARCH §Pattern 8 (lines 668-727) — verbatim SPAHandler implementation. Key
 
 2. Create `web/dist/.gitkeep` — empty file. This satisfies `//go:embed all:web/dist` in CI before `pnpm build` runs.
 
-3. Create `internal/http/spa.go` — VERBATIM from RESEARCH §Pattern 8:
+3. Create `internal/http/spa.go` — VERBATIM from RESEARCH §Pattern 8, refactored to expose a testable `SPAHandlerFS` (Warning #7 fix — lets tests provide a synthetic fs without depending on `pnpm build` having produced real `web/dist/` artifacts at compile time):
    ```go
    package http
 
@@ -99,20 +102,26 @@ RESEARCH §Pattern 8 (lines 668-727) — verbatim SPAHandler implementation. Key
    //go:embed all:web/dist
    var spaFS embed.FS
 
-   // SPAHandler serves the embedded Vite build with history-mode fallback.
-   //
-   // Behavior (RESEARCH §Pattern 8):
-   //   - Existing files under web/dist are served with cache headers.
-   //   - For unknown paths with no extension or .html, fall through to index.html.
-   //   - Other unknown paths (e.g. /missing.png, /missing.json) → 404.
-   //
-   // PITFALL #4: this handler MUST be mounted LAST in the router so /api/* 404s
-   // don't return index.html.
+   // SPAHandler is the production entry point. It serves the embedded Vite build
+   // with history-mode fallback. Mount LAST per PITFALL #4.
    func SPAHandler() http.Handler {
        sub, err := fs.Sub(spaFS, "web/dist")
        if err != nil {
            panic(err)
        }
+       return SPAHandlerFS(sub)
+   }
+
+   // SPAHandlerFS is the testable form: returns a handler over any fs.FS rooted
+   // at the SPA build output (i.e. the dir containing index.html and assets/).
+   //
+   // Behavior (RESEARCH §Pattern 8):
+   //   - Existing files are served with cache headers:
+   //       /assets/*  → Cache-Control: public, max-age=31536000, immutable
+   //       /index.html (and HTML fallback) → Cache-Control: no-cache
+   //   - Unknown paths with no extension or .html → fall through to index.html.
+   //   - Unknown paths with non-.html extension → 404 (PITFALL #4 anchor).
+   func SPAHandlerFS(sub fs.FS) http.Handler {
        fileServer := http.FileServer(http.FS(sub))
 
        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +158,7 @@ RESEARCH §Pattern 8 (lines 668-727) — verbatim SPAHandler implementation. Key
    }
    ```
 
-4. Replace `internal/http/spa_test.go`:
+4. Replace `internal/http/spa_test.go` — uses `testing/fstest.MapFS` to provide synthetic SPA artifacts (no dependency on `pnpm build` at test-compile time, no manipulation of the `web/dist` directory). The PRODUCTION `SPAHandler()` still uses the embedded FS; tests exercise `SPAHandlerFS(sub fs.FS)`:
    ```go
    package http
 
@@ -157,109 +166,136 @@ RESEARCH §Pattern 8 (lines 668-727) — verbatim SPAHandler implementation. Key
        "io"
        "net/http"
        "net/http/httptest"
-       "os"
-       "path/filepath"
        "strings"
        "testing"
+       "testing/fstest"
 
+       "github.com/go-chi/chi/v5"
        "github.com/stretchr/testify/require"
    )
 
-   // ensureFixture writes a minimal index.html and assets/index.js into web/dist
-   // so go:embed has something to serve during the test. The build pipeline
-   // overwrites these in production. We restore originals on cleanup.
-   func ensureFixture(t *testing.T) {
-       t.Helper()
-       dir := "web/dist"
-       require.NoError(t, os.MkdirAll(filepath.Join(dir, "assets"), 0o755))
-       indexPath := filepath.Join(dir, "index.html")
-       assetPath := filepath.Join(dir, "assets", "index-fixture.js")
-
-       indexExisted, _ := os.ReadFile(indexPath)
-       assetExisted, _ := os.ReadFile(assetPath)
-
-       require.NoError(t, os.WriteFile(indexPath,
-           []byte(`<!doctype html><html><body>shifter-spa-fixture</body></html>`), 0o644))
-       require.NoError(t, os.WriteFile(assetPath,
-           []byte(`/* fixture asset */`), 0o644))
-
-       t.Cleanup(func() {
-           if len(indexExisted) > 0 { _ = os.WriteFile(indexPath, indexExisted, 0o644) } else { _ = os.Remove(indexPath) }
-           if len(assetExisted) > 0 { _ = os.WriteFile(assetPath, assetExisted, 0o644) } else { _ = os.Remove(assetPath) }
-       })
-       // Note: this only writes to disk; the go:embed snapshot was made at compile time.
-       // For test isolation we run `go test` after fixture is in place — but go:embed is
-       // baked at compile of the test binary, so re-running `go test` picks up the new
-       // files via subsequent test-binary build.
+   // synthFS returns a small in-memory fs.FS shaped like the Vite build output:
+   //   index.html, assets/index-abc123.js
+   // Used by every SPA test so behavior is deterministic regardless of whether
+   // `pnpm build` has been run.
+   func synthFS() fstest.MapFS {
+       return fstest.MapFS{
+           "index.html": &fstest.MapFile{
+               Data: []byte(`<!doctype html><html><body>shifter-spa-fixture</body></html>`),
+           },
+           "assets/index-abc123.js": &fstest.MapFile{
+               Data: []byte(`/* fixture asset (hashed name) */`),
+           },
+       }
    }
 
-   // Test the underlying fs.Sub directly via the package's spaFS.
-   // We rely on the project's web/dist/.gitkeep + a CI step that runs `pnpm build`
-   // before `go test` so the fixture is real. For unit tests in development, the
-   // ensureFixture helper above writes a minimal page that subsequent runs pick up.
-
    func TestSPA_FallbackIndex(t *testing.T) {
-       handler := SPAHandler()
+       handler := SPAHandlerFS(synthFS())
        req := httptest.NewRequest("GET", "/dashboard", nil)
        w := httptest.NewRecorder()
        handler.ServeHTTP(w, req)
        require.Equal(t, http.StatusOK, w.Code)
        body, _ := io.ReadAll(w.Body)
-       // index.html or fixture should be served — assert it contains some marker
-       // that the dist root has. Skip the body check if there's no index.html embedded
-       // (CI without `pnpm build` first).
-       if w.Code == 200 {
-           // 'shifter' is the brand wordmark; index.html and the placeholder both contain it.
-           require.True(t,
-               strings.Contains(strings.ToLower(string(body)), "shifter") ||
-                   strings.Contains(string(body), "<!doctype"),
-               "fallback should serve an HTML document; body=%q", string(body))
-       }
+       require.Contains(t, strings.ToLower(string(body)), "shifter",
+           "fallback must serve index.html (which contains brand string)")
+       require.Equal(t, "no-cache", w.Header().Get("Cache-Control"),
+           "HTML fallback must set Cache-Control: no-cache (RESEARCH §Pattern 8)")
    }
 
    func TestSPA_NoFallbackForAsset(t *testing.T) {
-       handler := SPAHandler()
+       handler := SPAHandlerFS(synthFS())
        req := httptest.NewRequest("GET", "/missing-image.png", nil)
        w := httptest.NewRecorder()
        handler.ServeHTTP(w, req)
-       require.Equal(t, http.StatusNotFound, w.Code, "non-html asset paths must NOT fall through to index.html")
+       require.Equal(t, http.StatusNotFound, w.Code,
+           "non-html asset paths must NOT fall through to index.html (PITFALL #4)")
    }
 
+   // TestSPA_AssetCacheHeaders verifies the immutable cache-control on hashed
+   // assets. Implemented per checker Warning #7 — replaces the previous t.Skip stub.
    func TestSPA_AssetCacheHeaders(t *testing.T) {
-       // This test only meaningful if the dist has a real assets/<file> embedded.
-       // Skip when the fixture isn't present.
-       t.Skip("Requires real `pnpm build` artifacts; covered by `just compose-smoke-bundled` (Plan 20)")
+       handler := SPAHandlerFS(synthFS())
+       req := httptest.NewRequest("GET", "/assets/index-abc123.js", nil)
+       w := httptest.NewRecorder()
+       handler.ServeHTTP(w, req)
+       require.Equal(t, http.StatusOK, w.Code)
+       cc := w.Header().Get("Cache-Control")
+       require.Contains(t, cc, "max-age=31536000",
+           "hashed asset must set 1-year max-age (RESEARCH §Pattern 8)")
+       require.Contains(t, cc, "immutable",
+           "hashed asset must set immutable (RESEARCH §Pattern 8)")
    }
-   ```
 
-   *Note*: SPA fallback tests are inherently brittle when go:embed targets a directory that doesn't have content during `go test`. The test pattern above checks behavior shape (status code) rather than content; full asset-cache verification happens in Plan 20's compose smoke test.
+   func TestSPA_IndexHasNoCacheHeader(t *testing.T) {
+       handler := SPAHandlerFS(synthFS())
+       req := httptest.NewRequest("GET", "/index.html", nil)
+       w := httptest.NewRecorder()
+       handler.ServeHTTP(w, req)
+       require.Equal(t, http.StatusOK, w.Code)
+       require.Equal(t, "no-cache", w.Header().Get("Cache-Control"),
+           "index.html must NEVER be cached (RESEARCH §Pattern 8)")
+   }
 
-   Add a forwarder for `TestSPA_NoFallbackForAPI` referenced in VALIDATION.md:
-   ```go
+   // TestSPA_NoFallbackForAPI verifies that when SPA is mounted LAST in a chi
+   // router (PITFALL #4 contract), /api/* paths NOT registered by the API
+   // return a JSON 404 from the router's NotFoundHandler — NOT index.html.
+   //
+   // Implemented per checker Warning #7 — replaces the previous t.Skip stub.
+   // This is the canonical PITFALL #4 unit test that runs in <100ms; the full
+   // compose smoke (Plan 20) covers the production path with real builds.
    func TestSPA_NoFallbackForAPI(t *testing.T) {
-       // Router-level test: when /api/* paths are not registered, the chi router
-       // returns 404 from the API surface, not the SPA handler. Verified by Plan 18
-       // router_test.go (TestRouter_APIPathReturns404, exposed through full integration).
-       t.Skip("Covered by Plan 18 router integration tests")
+       r := chi.NewRouter()
+       // Register a JSON 404 handler for unknown /api/* paths — this mirrors
+       // what Plan 18's router does (or should do) at production scale.
+       r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+           if strings.HasPrefix(req.URL.Path, "/api/") {
+               w.Header().Set("Content-Type", "application/json")
+               w.WriteHeader(http.StatusNotFound)
+               _, _ = w.Write([]byte(` + "`{"error":"not_found"}`" + `))
+               return
+           }
+           // Non-API paths fall through to SPA handler.
+           SPAHandlerFS(synthFS()).ServeHTTP(w, req)
+       })
+       // Register a single real /api route so /api/* is a real prefix.
+       r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
+           w.WriteHeader(http.StatusOK)
+       })
+
+       // Hit a missing /api/* path — must NOT be the SPA index.
+       req := httptest.NewRequest("GET", "/api/nonexistent-endpoint", nil)
+       w := httptest.NewRecorder()
+       r.ServeHTTP(w, req)
+       require.Equal(t, http.StatusNotFound, w.Code,
+           "PITFALL #4: /api/* 404s must return 404, not 200 from SPA fallback")
+       require.Contains(t, w.Header().Get("Content-Type"), "application/json",
+           "PITFALL #4: /api/* 404s must return JSON, not HTML")
+       body, _ := io.ReadAll(w.Body)
+       require.NotContains(t, strings.ToLower(string(body)), "<!doctype",
+           "PITFALL #4: /api/* must NEVER return the SPA index.html")
    }
    ```
   </action>
   <verify>
-    <automated>cd web && pnpm build && cd .. && go test ./internal/http -run 'TestSPA_' -race -count=1 -v</automated>
+    <automated>cd web && pnpm build && cd .. && go test ./internal/http -run 'TestSPA_FallbackIndex|TestSPA_NoFallbackForAsset|TestSPA_AssetCacheHeaders|TestSPA_IndexHasNoCacheHeader|TestSPA_NoFallbackForAPI' -race -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - File `internal/http/spa.go` contains the literal directive `//go:embed all:web/dist` (line-anchored, exactly that prefix per RESEARCH §Pattern 8 — `all:` mandatory)
-    - File exports `func SPAHandler() http.Handler`
+    - File exports both `func SPAHandler() http.Handler` (production, uses embedded FS) and `func SPAHandlerFS(sub fs.FS) http.Handler` (testable, accepts any fs.FS)
+    - `SPAHandler()` delegates to `SPAHandlerFS(fs.Sub(spaFS, "web/dist"))` — single source of truth for the SPA serving logic
     - File handles SPA history-mode fallback for paths with no extension or `.html`
     - File returns 404 for paths with non-`.html` extensions that don't exist (PITFALL #4 plus asset-vs-page distinction)
     - File sets `Cache-Control: public, max-age=31536000, immutable` for `/assets/*` paths
-    - File sets `Cache-Control: no-cache` for HTML fallback
+    - File sets `Cache-Control: no-cache` for HTML fallback AND for /index.html
     - File `web/dist/.gitkeep` exists (so go:embed compiles before first frontend build)
     - `.gitignore` has `/web/dist/*` and `!/web/dist/.gitkeep` (allows the placeholder)
     - Command `cd web && pnpm build` produces `web/dist/index.html`
     - Command `go build ./internal/http` exits 0 (with `web/dist/.gitkeep` present)
-    - Command `go test ./internal/http -run TestSPA_FallbackIndex -race` exits 0 (per VALIDATION.md)
-    - Command `go test ./internal/http -run TestSPA_NoFallbackForAsset -race` exits 0
+    - Command `go test ./internal/http -run TestSPA_FallbackIndex -race -count=1` exits 0 (per VALIDATION.md)
+    - Command `go test ./internal/http -run TestSPA_NoFallbackForAsset -race -count=1` exits 0
+    - Command `go test ./internal/http -run TestSPA_AssetCacheHeaders -race -count=1` exits 0 (Warning #7 — no longer a t.Skip; uses fstest.MapFS to provide a synthetic /assets/* file)
+    - Command `go test ./internal/http -run TestSPA_IndexHasNoCacheHeader -race -count=1` exits 0
+    - Command `go test ./internal/http -run TestSPA_NoFallbackForAPI -race -count=1` exits 0 (Warning #7 — no longer a t.Skip; chi-router-level test asserting `/api/*` 404 returns JSON, not the SPA index)
   </acceptance_criteria>
   <done>
     SPA embed wired. `shifter serve` (Plan 18) now serves the full UI in production. Plan 20/21 compose verifies `pnpm build && go build` produces a runnable image.
@@ -289,7 +325,8 @@ RESEARCH §Pattern 8 (lines 668-727) — verbatim SPAHandler implementation. Key
 - `//go:embed all:web/dist` directive present
 - `web/dist/.gitkeep` checked in
 - `.gitignore` updated to allow .gitkeep
-- 2 SPA tests pass (FallbackIndex, NoFallbackForAsset); 1 forwarder for NoFallbackForAPI
+- 5 SPA tests pass (FallbackIndex, NoFallbackForAsset, AssetCacheHeaders, IndexHasNoCacheHeader, NoFallbackForAPI) — Warning #7 fix replaces 2 t.Skip stubs with real fstest.MapFS-backed unit tests
+- `SPAHandlerFS(fs.FS)` exported for testability; production `SPAHandler()` delegates to it
 - `go build` exits 0 even when `web/dist/` only contains `.gitkeep`
 </verification>
 

@@ -136,11 +136,14 @@ Step 2 secret handling (RESEARCH §Open Question 1 + §Security V8):
        "time"
 
        "github.com/jackc/pgx/v5/pgxpool"
+       "google.golang.org/grpc"
 
        "github.com/shifter-io/shifter/internal/auth"
        "github.com/shifter-io/shifter/internal/chirpstack"
        "github.com/shifter-io/shifter/internal/config"
    )
+
+   var _ *grpc.ClientConn // referenced by csConn.Conn() return type — Warning #6 tightening
 
    type Deps struct {
        Pool       *pgxpool.Pool
@@ -151,8 +154,12 @@ Step 2 secret handling (RESEARCH §Open Question 1 + §Security V8):
        Dial func(ctx context.Context, cfg config.CSConfig) (csConn, error)
    }
 
-   // csConn is the minimum surface we need from a *grpc.ClientConn during testing.
+   // csConn is the minimum surface we need from a ChirpStack-bound *grpc.ClientConn.
+   // Tightened per checker Warning #6: exposes Conn() directly instead of round-tripping
+   // through interface{}. Plan 18's csBootConn uses the same shape so a single wrapper
+   // (productionCSDial.csConnWrapper) satisfies both interfaces.
    type csConn interface {
+       Conn() *grpc.ClientConn
        Close() error
    }
 
@@ -255,12 +262,10 @@ Step 2 secret handling (RESEARCH §Open Question 1 + §Security V8):
                return
            }
            defer conn.Close()
-           // Cast back to *grpc.ClientConn for ProbeVersion (interface only used in tests).
-           grpcConn, ok := conn.(grpcConnWrapper)
-           if !ok {
-               writeJSON(w, 500, map[string]string{"error": "internal"}); return
-           }
-           version, err := chirpstack.ProbeVersion(ctx, grpcConn.Real())
+           // Conn() returns *grpc.ClientConn directly — no interface{} round-trip
+           // (Warning #6 tightening; the conn returned by deps.Dial always implements
+           //  Conn() because both prod and test wrappers share the shape).
+           version, err := chirpstack.ProbeVersion(ctx, conn.Conn())
            if errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown) {
                writeJSON(w, 422, map[string]string{"error": "v3_detected"}); return
            }
@@ -295,13 +300,11 @@ Step 2 secret handling (RESEARCH §Open Question 1 + §Security V8):
        }
    }
 
-   // grpcConnWrapper lets the production deps.Dial return a *grpc.ClientConn
-   // that we can both Close() and pass into chirpstack.ProbeVersion. Tests can
-   // wrap a bufconn-backed conn the same way.
-   type grpcConnWrapper interface {
-       Real() interface{}  // returns *grpc.ClientConn (untyped to avoid import here)
-       Close() error
-   }
+   // (Warning #6) The previous grpcConnWrapper interface using `Real() interface{}`
+   // has been removed. Both Step2Handler and Plan 18's serve probe use csConn.Conn()
+   // directly. The single shared wrapper definition lives in Plan 18's serve.go
+   // (csConnWrapper{c *grpc.ClientConn}) and satisfies both this package's CSConn
+   // alias AND serve's csBootConn — no `interface{}` indirection anywhere.
 
    type step3Req struct {
        Name string `json:"name"`
@@ -424,11 +427,12 @@ Step 2 secret handling (RESEARCH §Open Question 1 + §Security V8):
        "google.golang.org/grpc/credentials/insecure"
    )
 
-   // realConnWrapper wraps a *grpc.ClientConn so it satisfies the grpcConnWrapper interface
-   // used by Step2Handler.
+   // realConnWrapper wraps a *grpc.ClientConn so it satisfies the csConn interface
+   // used by Step2Handler. Per Warning #6, exposes Conn() *grpc.ClientConn directly —
+   // no interface{} round-trip.
    type realConnWrapper struct{ c *grpc.ClientConn }
-   func (r *realConnWrapper) Real() interface{} { return r.c }
-   func (r *realConnWrapper) Close() error      { return r.c.Close() }
+   func (r *realConnWrapper) Conn() *grpc.ClientConn { return r.c }
+   func (r *realConnWrapper) Close() error           { return r.c.Close() }
 
    func dialMockFor(mode string) func(t *testing.T) func(context.Context, config.CSConfig) (csConn, error) {
        return func(t *testing.T) func(context.Context, config.CSConfig) (csConn, error) {

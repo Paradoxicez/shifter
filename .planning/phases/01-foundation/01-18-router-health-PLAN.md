@@ -501,20 +501,11 @@ Routes group:
            // 3. ChirpStack adapters — only meaningful AFTER install. We attempt the
            //    dial+probe at boot for diagnostics; if v3 is detected we REFUSE to start
            //    (INST-05 startup gate). If unreachable, log and continue (degraded mode).
-           if cfg.ChirpStack.GRPCURL != "" {
-               csConn, csErr := chirpstack.Dial(ctx, cfg.ChirpStack)
-               if csErr == nil {
-                   probeCtx, probeCancel := context.WithTimeout(ctx, 8*time.Second)
-                   _, probeErr := chirpstack.ProbeVersion(probeCtx, csConn)
-                   probeCancel()
-                   if errors.Is(probeErr, chirpstack.ErrChirpStackV3OrUnknown) {
-                       _ = csConn.Close()
-                       return fmt.Errorf("INST-05: refusing to start — ChirpStack v3 detected at %s", cfg.ChirpStack.GRPCURL)
-                   }
-                   _ = csConn.Close()
-               } else {
-                   log.Warn("chirpstack not reachable on boot — degraded mode", "err", csErr)
-               }
+           //
+           //    Extracted into probeChirpStackOrRefuse so serve_test.go can unit-test
+           //    INST-05 with a bufconn-backed v3 mock (no compose smoke needed).
+           if err := probeChirpStackOrRefuse(ctx, log, productionCSDial, cfg.ChirpStack); err != nil {
+               return err
            }
 
            // 4. MQTT subscriber (CHIRP-02). Phase 1 only logs uplinks; Phase 2 wires persist.
@@ -545,8 +536,15 @@ Routes group:
                SecretsDir: "/run/secrets",
                Log:        log,
                Dial: func(ctx context.Context, c config.CSConfig) (install.CSConn, error) {
+                   // Both csBootConn (Plan 18) and install.CSConn (Plan 15) have the
+                   // identical method set: Conn() *grpc.ClientConn + Close() error.
+                   // The same *csConnWrapper instance satisfies both — reach the concrete
+                   // type and return it under install.CSConn (Go does not implicitly
+                   // convert between distinct interface types even when shapes match).
                    conn, err := chirpstack.Dial(ctx, c)
-                   if err != nil { return nil, err }
+                   if err != nil {
+                       return nil, err
+                   }
                    return &csConnWrapper{c: conn}, nil
                },
            }
@@ -598,49 +596,195 @@ Routes group:
        },
    }
 
-   // csConnWrapper bridges chirpstack.Dial's *grpc.ClientConn into the install package's
-   // CSConn interface (defined in install/handlers.go as csConn).
-   type csConnWrapper struct{ c interface{ Close() error } }
-   func (c *csConnWrapper) Real() interface{} { return c.c }
-   func (c *csConnWrapper) Close() error      { return c.c.Close() }
+   // csConnDialFunc is the testable dial signature used by probeChirpStackOrRefuse.
+   // Production passes productionCSDial; tests pass a bufconn-backed dial.
+   type csConnDialFunc func(ctx context.Context, cfg config.CSConfig) (csBootConn, error)
+
+   // csBootConn is the minimum surface probeChirpStackOrRefuse needs — Close() and
+   // a way to hand the underlying *grpc.ClientConn to chirpstack.ProbeVersion.
+   type csBootConn interface {
+       Conn() *grpc.ClientConn
+       Close() error
+   }
+
+   // productionCSDial is the real dial used at boot. Wraps chirpstack.Dial.
+   func productionCSDial(ctx context.Context, cfg config.CSConfig) (csBootConn, error) {
+       conn, err := chirpstack.Dial(ctx, cfg)
+       if err != nil {
+           return nil, err
+       }
+       return &csConnWrapper{c: conn}, nil
+   }
+
+   // probeChirpStackOrRefuse runs the boot-time gRPC probe per INST-05.
+   //   - GRPCURL empty                        → no-op (pre-install)
+   //   - dial fails                           → log.Warn and return nil (degraded mode)
+   //   - probe returns ErrChirpStackV3OrUnknown → return refusal error mentioning INST-05 + "ChirpStack v3"
+   //   - probe returns any other error        → log.Warn and return nil
+   //   - probe succeeds                       → return nil
+   //
+   // Listener is NOT opened by this function; serve only opens its listener
+   // after this returns nil (so a v3 environment never accepts connections).
+   func probeChirpStackOrRefuse(ctx context.Context, log *slog.Logger, dial csConnDialFunc, cfg config.CSConfig) error {
+       if cfg.GRPCURL == "" {
+           return nil
+       }
+       conn, err := dial(ctx, cfg)
+       if err != nil {
+           log.Warn("chirpstack not reachable on boot — degraded mode", "err", err)
+           return nil
+       }
+       defer conn.Close()
+       probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+       defer cancel()
+       _, probeErr := chirpstack.ProbeVersion(probeCtx, conn.Conn())
+       if errors.Is(probeErr, chirpstack.ErrChirpStackV3OrUnknown) {
+           return fmt.Errorf("INST-05: refusing to start — ChirpStack v3 detected at %s", cfg.GRPCURL)
+       }
+       if probeErr != nil {
+           log.Warn("chirpstack probe failed on boot — degraded mode", "err", probeErr)
+       }
+       return nil
+   }
+
+   // csConnWrapper bridges chirpstack.Dial's *grpc.ClientConn into both the install
+   // package's CSConn interface (Plan 15) and the boot-probe csBootConn interface.
+   type csConnWrapper struct{ c *grpc.ClientConn }
+   func (c *csConnWrapper) Conn() *grpc.ClientConn { return c.c }
+   func (c *csConnWrapper) Close() error           { return c.c.Close() }
    ```
 
-   *Note:* Adjust import — the `install.CSConn` type alias may need to be named `csConn` (interface) and exported as `CSConn`. Update Plan 15's `internal/install/handlers.go` to export it:
+   *Note:* Adjust imports — add `"google.golang.org/grpc"` for the `*grpc.ClientConn` type used by `csConnWrapper.Conn()`. Update Plan 15's `internal/install/handlers.go` to export its conn interface:
    ```go
    // exported alias for serve to import
    type CSConn = csConn
    ```
 
-2. Add a focused `serve` test in `internal/cli/serve_test.go` (replace skip stub):
+   Plan 15's `csConn` interface should also expose `Conn() *grpc.ClientConn` (Warning #6 fix); Plan 15's `realConnWrapper.Real() interface{}` is replaced with `Conn() *grpc.ClientConn` directly. The `csConnWrapper` defined here in serve.go satisfies both Plan 15's `CSConn` (via `Close`) and the boot-probe `csBootConn` (via `Conn` + `Close`).
+
+2. Replace `internal/cli/serve_test.go` with a real unit test for INST-05 startup refusal. Reuse Plan 12's `testsupport.NewChirpStackMockBuf` rather than duplicating the mock (per checker Warning #4 / Plan 12 §6 — that helper already returns Unimplemented from `InternalService.GetVersion` when mode="v3"):
+
    ```go
    package cli
 
    import (
+       "context"
+       "io"
+       "log/slog"
+       "strings"
        "testing"
+       "time"
+
+       "github.com/shifter-io/shifter/internal/chirpstack"
+       "github.com/shifter-io/shifter/internal/config"
+       "github.com/shifter-io/shifter/internal/testsupport"
+       "github.com/stretchr/testify/require"
+       "google.golang.org/grpc"
+       "google.golang.org/grpc/credentials/insecure"
    )
 
-   // TestServe_RefusesV3 is best-tested as an integration test in CI smoke
-   // (Plan 20 verifies via compose), so this unit form is a placeholder
-   // that documents the contract.
+   // bootMockConn satisfies csBootConn against a bufconn-backed *grpc.ClientConn.
+   type bootMockConn struct{ c *grpc.ClientConn }
+
+   func (b *bootMockConn) Conn() *grpc.ClientConn { return b.c }
+   func (b *bootMockConn) Close() error            { return b.c.Close() }
+
+   // dialMockBoot returns a csConnDialFunc that opens a bufconn ClientConn against
+   // the given mock mode ("v4", "v3", "down"). Used to unit-test the boot probe
+   // without spinning up a real ChirpStack.
+   func dialMockBoot(t *testing.T, mode string) csConnDialFunc {
+       t.Helper()
+       dial, _ := testsupport.NewChirpStackMockBuf(t, mode)
+       return func(_ context.Context, _ config.CSConfig) (csBootConn, error) {
+           cc, err := grpc.NewClient("passthrough:///bufnet",
+               grpc.WithContextDialer(dial),
+               grpc.WithTransportCredentials(insecure.NewCredentials()),
+           )
+           if err != nil {
+               return nil, err
+           }
+           return &bootMockConn{c: cc}, nil
+       }
+   }
+
+   // TestServe_RefusesV3 verifies INST-05: when ChirpStack returns
+   // codes.Unimplemented from InternalService.GetVersion (v3 fingerprint),
+   // probeChirpStackOrRefuse returns an error mentioning INST-05 and
+   // "ChirpStack v3", and the caller (serve) MUST NOT proceed to open a
+   // listener.
    func TestServe_RefusesV3(t *testing.T) {
-       t.Skip("Plan 20 (compose-smoke-bundled) covers INST-05 startup refusal end-to-end")
+       log := slog.New(slog.NewTextHandler(io.Discard, nil))
+       ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+       defer cancel()
+       cfg := config.CSConfig{GRPCURL: "passthrough:///bufnet", APIToken: "test", Insecure: true}
+
+       err := probeChirpStackOrRefuse(ctx, log, dialMockBoot(t, "v3"), cfg)
+       require.Error(t, err, "v3 mock must produce a refusal error")
+       require.Contains(t, err.Error(), "INST-05",
+           "INST-05: error message must reference the requirement ID for traceability")
+       require.Contains(t, strings.ToLower(err.Error()), "chirpstack v3",
+           "INST-05: error message must mention ChirpStack v3 so the operator knows to upgrade")
+       // serve.go's RunE returns this error BEFORE srv.ListenAndServe(); no listener
+       // is opened. This test cannot directly assert "listener not opened" without
+       // running the full RunE, so we assert via the error contract above + the
+       // structural property that probeChirpStackOrRefuse is called BEFORE
+       // srv.ListenAndServe() in serve.go (verified by acceptance_criteria).
+   }
+
+   // TestServe_AcceptsV4 verifies the inverse: a v4 mock allows boot to proceed.
+   func TestServe_AcceptsV4(t *testing.T) {
+       log := slog.New(slog.NewTextHandler(io.Discard, nil))
+       ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+       defer cancel()
+       cfg := config.CSConfig{GRPCURL: "passthrough:///bufnet", APIToken: "test", Insecure: true}
+
+       err := probeChirpStackOrRefuse(ctx, log, dialMockBoot(t, "v4"), cfg)
+       require.NoError(t, err, "v4 must permit boot")
+   }
+
+   // TestServe_DegradedOnUnreachable: when ChirpStack is unreachable at boot
+   // (dial error), probeChirpStackOrRefuse logs a warning and returns nil
+   // (degraded mode — install wizard / Settings → Edit can repair).
+   func TestServe_DegradedOnUnreachable(t *testing.T) {
+       log := slog.New(slog.NewTextHandler(io.Discard, nil))
+       ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+       defer cancel()
+       cfg := config.CSConfig{GRPCURL: "passthrough:///bufnet", APIToken: "test", Insecure: true}
+
+       failingDial := func(_ context.Context, _ config.CSConfig) (csBootConn, error) {
+           return nil, context.DeadlineExceeded
+       }
+       err := probeChirpStackOrRefuse(ctx, log, failingDial, cfg)
+       require.NoError(t, err, "unreachable ChirpStack at boot must NOT block startup (degraded mode)")
+   }
+
+   // TestServe_NoConfigSkipsProbe: pre-install (GRPCURL empty), the probe is a no-op.
+   func TestServe_NoConfigSkipsProbe(t *testing.T) {
+       log := slog.New(slog.NewTextHandler(io.Discard, nil))
+       err := probeChirpStackOrRefuse(context.Background(), log, nil, config.CSConfig{GRPCURL: ""})
+       require.NoError(t, err, "empty GRPCURL must skip probe (pre-install state)")
    }
 
    func TestServe_AutoMigrate(t *testing.T) {
-       t.Skip("Plan 20 (compose-smoke-bundled) covers D-13 auto-migrate end-to-end")
+       t.Skip("Plan 20 (compose-smoke-bundled) covers D-13 auto-migrate end-to-end (full binary boot)")
    }
    ```
   </action>
   <verify>
-    <automated>go build ./cmd/shifter && go vet ./...</automated>
+    <automated>go build ./cmd/shifter && go vet ./... && go test ./internal/cli -run 'TestServe_RefusesV3|TestServe_AcceptsV4|TestServe_DegradedOnUnreachable|TestServe_NoConfigSkipsProbe' -race -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - File `internal/cli/serve.go` no longer contains `TODO(plan-09 + plan-13 + plan-18)` marker
-    - File contains `chirpstack.ProbeVersion` call inside `serve` (INST-05 startup gate)
-    - File returns an error mentioning "INST-05" and "ChirpStack v3" when `ErrChirpStackV3OrUnknown` is encountered at boot
+    - File `internal/cli/serve.go` exports `probeChirpStackOrRefuse(ctx, log, dial, cfg) error` (testable extraction — required for TestServe_RefusesV3)
+    - File `internal/cli/serve.go` exports `csConnDialFunc` type and `csBootConn` interface (with `Conn() *grpc.ClientConn` and `Close() error` — Warning #6 tightening, no `interface{}` round-trip)
+    - File `internal/cli/serve.go` exports `productionCSDial` and uses it for both the boot probe AND the install.Deps.Dial wiring (single wrapper shape)
+    - `probeChirpStackOrRefuse` returns an error containing both `"INST-05"` AND (case-insensitive) `"ChirpStack v3"` when `ErrChirpStackV3OrUnknown` is encountered
+    - `serve` calls `probeChirpStackOrRefuse(...)` and returns its error BEFORE constructing the chi router or `srv.ListenAndServe()` (grep proof: line number of `probeChirpStackOrRefuse` < line number of `srv.ListenAndServe`)
     - File constructs `httpapi.Deps` with all 11 fields populated (Pool, SessionMgr, LoginLimiter, UserStore, InstallStore, SecretsDir, Log, SPA, TestConnDeps, InstallDeps)
     - File calls `db.RunMigrations` BEFORE `srv.ListenAndServe()` (D-13)
     - File starts MQTT subscriber via `chirpstack.NewMQTTSubscriber` and calls `Shutdown` on graceful exit
+    - Command `go test ./internal/cli -run TestServe_RefusesV3 -race -count=1` exits 0 (per VALIDATION.md — INST-05 unit-level fast-feedback)
+    - Command `go test ./internal/cli -run 'TestServe_RefusesV3|TestServe_AcceptsV4|TestServe_DegradedOnUnreachable|TestServe_NoConfigSkipsProbe' -race -count=1` exits 0 (full INST-05 unit coverage)
     - Command `go build ./cmd/shifter` exits 0
     - Command `go vet ./...` exits 0
   </acceptance_criteria>
@@ -674,20 +818,22 @@ Routes group:
 <verification>
 - 13 routes registered (auth × 4, account × 2, install × 6, settings × 3, health × 2, plus SPA fallback)
 - Middleware order matches PITFALL #4 contract
-- INST-05 startup refusal active in `serve`
+- INST-05 startup refusal active in `serve` (extracted into `probeChirpStackOrRefuse` + unit-tested via bufconn v3 mock)
 - MQTT subscriber starts in serve; graceful shutdown on SIGTERM
 - 2 health tests pass (Public, AdminRequired)
+- 4 serve tests pass (RefusesV3, AcceptsV4, DegradedOnUnreachable, NoConfigSkipsProbe) — Nyquist Dimension 8 fast-feedback for INST-05 (compose smoke remains in Plan 20)
 - `go vet ./...` exits 0
 </verification>
 
 <success_criteria>
 - All Phase 1 endpoints reachable through one chi router
 - INST-06 satisfied via D-18/D-19 split
-- INST-05 enforced at boot
+- INST-05 enforced at boot (unit-tested via probeChirpStackOrRefuse + bufconn v3 mock — Blocker #4 fix)
 - D-13 auto-migrate on serve
 - AUTH-06 enforced (admin-required endpoints wrapped with RequireAction)
 - PITFALL #4 prevented (SPA last)
 - shifter serve is the canonical binary entry point — install + dev + prod all use it
+- Note (info-level per checker): Plans 17 + 18 ship Phase 1 scaffolding for SETT-01 and SETT-03 (ChirpStack-connection slice). Full SETT-01/SETT-03 surfaces (additional categories, audit, notifications) land in Phase 6.
 </success_criteria>
 
 <output>

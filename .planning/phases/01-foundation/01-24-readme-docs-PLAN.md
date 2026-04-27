@@ -381,7 +381,7 @@ New wording (per D-19): split into `/health` (public summary) + `/health/detaile
    ```
   </action>
   <verify>
-    <automated>test -f docs/install.md && test -f docs/operator-runbook.md && grep -q 'Bundled flavor' docs/install.md && grep -q 'Bundled' docs/install.md && grep -q 'External' docs/install.md && grep -q 'shifter migrate force' docs/operator-runbook.md && grep -q 'shifter create-admin --reset' docs/operator-runbook.md    <automated>test -f docs/install.md && test -f docs/operator-runbook.md && grep -q 'Bundled flavor' docs/install.md && grep -q 'Bundled' docs/install.md && grep -q 'External' docs/install.md && grep -q 'shifter migrate force' docs/operator-runbook.md && grep -q 'shifter create-admin --reset' docs/operator-runbook.md</automated>
+    <automated>test -f docs/install.md && test -f docs/operator-runbook.md && grep -q 'Bundled flavor' docs/install.md && grep -q 'External flavor' docs/install.md && grep -q '/health' docs/install.md && grep -q 'shifter migrate force' docs/operator-runbook.md && grep -q 'shifter create-admin --reset' docs/operator-runbook.md</automated>
   </verify>
   <acceptance_criteria>
     - File `docs/install.md` exists and contains a `## Bundled flavor` section

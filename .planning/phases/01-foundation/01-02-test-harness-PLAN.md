@@ -3,7 +3,7 @@ phase: 01-foundation
 plan: 02
 type: execute
 wave: 2
-depends_on: []
+depends_on: [01]
 files_modified:
   - go.mod
   - go.sum

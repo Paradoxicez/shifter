@@ -8,6 +8,7 @@ files_modified:
   - internal/http/testconn.go
   - internal/http/testconn_test.go
   - internal/cli/configcheck.go
+  - internal/cli/configcheck_test.go
   - web/src/lib/settings.ts
   - web/src/routes/settings.tsx
   - web/src/routes/settings/test-connection.tsx
@@ -27,7 +28,8 @@ must_haves:
     - "ChirpStack section shows mode + grpc_url + mqtt_url READ-ONLY; api_token NEVER displayed (RESEARCH §Security V8)"
     - "Test connection button triggers in-place result panel using StatusRow (Plan 06)"
     - "Edit connection dialog uses ResponsiveDialog; on save re-runs Test Connection (Open Question 2 recommendation)"
-    - "shifter config-check now actually probes Postgres + ChirpStack gRPC + MQTT (D-07 final wiring)"
+    - "shifter config-check now actually probes Postgres + ChirpStack gRPC + MQTT in that order; fails fast on first failure with a per-probe FAIL line (D-07 final wiring; unit-tested via TestConfigCheck_FailsOnBadYAML + TestConfigCheck_ProbeOrder)"
+    - "shifter config-check reuses the same probe primitives as TestConnHandler — no duplicated probe logic (D-07)"
   artifacts:
     - path: "internal/http/testconn.go"
       provides: "POST /api/settings/chirpstack/test handler (RESEARCH §Pattern 14 verbatim)"
@@ -503,7 +505,7 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
 
 <task type="auto">
   <name>Task 2: Settings page UI + Test Connection panel + Edit Connection dialog</name>
-  <files>web/src/lib/settings.ts, web/src/routes/settings.tsx, web/src/routes/settings/test-connection.tsx, web/src/routes/settings/edit-connection-dialog.tsx, web/src/App.tsx</files>
+  <files>web/src/lib/settings.ts, web/src/routes/settings.tsx, web/src/routes/settings/test-connection.tsx, web/src/routes/settings/edit-connection-dialog.tsx, web/src/App.tsx, internal/cli/configcheck.go, internal/cli/configcheck_test.go</files>
   <read_first>
     - .planning/phases/01-foundation/01-UI-SPEC.md §"Settings shell (Phase 1)" (lines 277-287)
     - .planning/phases/01-foundation/01-UI-SPEC.md §"Test Connection result UI" (lines 444-464) — three-row layout
@@ -843,9 +845,95 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
        },
    }
    ```
+
+7. Add a unit test for `shifter config-check` so D-07 has Nyquist Dimension 8 fast-feedback (Warning #8 — replaces silent passthrough that previously lived only in compose smoke):
+
+   Create `internal/cli/configcheck_test.go`:
+   ```go
+   package cli
+
+   import (
+       "bytes"
+       "os"
+       "path/filepath"
+       "strings"
+       "testing"
+
+       "github.com/spf13/cobra"
+       "github.com/stretchr/testify/require"
+   )
+
+   // TestConfigCheck_FailsOnBadYAML asserts D-07: shifter config-check exits non-zero
+   // when config.yaml fails to parse, with a clear FAIL line on stdout.
+   func TestConfigCheck_FailsOnBadYAML(t *testing.T) {
+       dir := t.TempDir()
+       bad := filepath.Join(dir, "config.yaml")
+       require.NoError(t, os.WriteFile(bad, []byte("this: is: not: valid: yaml: ::::"), 0o644))
+       t.Setenv("SHIFTER_CONFIG_FILE", bad)
+
+       // Re-bind the cobra command's stdout to a buffer for assertion.
+       cmd := &cobra.Command{}
+       cmd.SetOut(new(bytes.Buffer))
+       cmd.RunE = configCheckCmd.RunE
+       err := cmd.RunE(cmd, nil)
+       require.Error(t, err, "D-07: bad config must produce a non-zero exit")
+       out := cmd.OutOrStdout().(*bytes.Buffer).String()
+       require.True(t,
+           strings.Contains(out, "FAIL config") || strings.Contains(err.Error(), "config"),
+           "D-07: failure must be surfaced on stdout or in the returned error; out=%q err=%v", out, err)
+   }
+
+   // TestConfigCheck_ProbeOrder asserts the probes run in the documented order:
+   // config syntax → postgres → chirpstack → mqtt. Verified by reading the
+   // implementation; this test pins the observable contract by injecting a
+   // bad postgres URL and asserting we fail on postgres BEFORE attempting CS/MQTT.
+   func TestConfigCheck_ProbeOrder(t *testing.T) {
+       dir := t.TempDir()
+       cfg := filepath.Join(dir, "config.yaml")
+       // Minimal valid config with a bogus DB host so postgres probe fails first.
+       require.NoError(t, os.WriteFile(cfg, []byte(`
+env: dev
+log_level: error
+http_port: "0"
+db:
+  host: 127.0.0.1
+  port: 1   # invalid — guaranteed to fail dial
+  user: shifter
+  password: shifter
+  database: shifter
+  max_conns: 2
+chirpstack:
+  grpc_url: "127.0.0.1:1"
+  api_token: "x"
+mqtt:
+  url: "tcp://127.0.0.1:1"
+session:
+  idle_timeout: 8h
+  lifetime: 24h
+tls:
+  mode: internal
+`), 0o644))
+       t.Setenv("SHIFTER_CONFIG_FILE", cfg)
+
+       cmd := &cobra.Command{}
+       cmd.SetOut(new(bytes.Buffer))
+       cmd.RunE = configCheckCmd.RunE
+       err := cmd.RunE(cmd, nil)
+       require.Error(t, err, "D-07: postgres probe failure must produce non-zero exit")
+       out := cmd.OutOrStdout().(*bytes.Buffer).String()
+       require.Contains(t, out, "PASS config syntax",
+           "D-07: config syntax must pass before any probe runs")
+       require.Contains(t, out, "FAIL postgres",
+           "D-07: postgres failure must surface on stdout; subsequent probes (chirpstack, mqtt) must NOT run")
+       require.NotContains(t, out, "PASS chirpstack",
+           "D-07: chirpstack probe must be skipped after postgres failure")
+   }
+   ```
+
+   Note: A "happy-path" config-check unit test (all 3 probes PASS) requires real Postgres + ChirpStack + MQTT instances, so it lives in Plan 20's compose smoke (not a unit test). The two tests above cover the failure paths and probe ordering — the parts that frequently regress.
   </action>
   <verify>
-    <automated>cd web && pnpm build && go build ./cmd/shifter</automated>
+    <automated>cd web && pnpm build && go build ./cmd/shifter && go test ./internal/cli -run 'TestConfigCheck_' -race -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - File `web/src/lib/settings.ts` exports `fetchChirpStackSettings`, `testChirpStackConnection`, `putChirpStackSettings`
@@ -859,9 +947,17 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
     - Edit dialog title "Edit ChirpStack connection", description "Changes apply immediately. We'll re-test the connection after you save." (UI-SPEC verbatim)
     - Edit dialog submit label idle "Save and test", loading "Saving…"
     - Success toast text "Connection updated"
-    - File `internal/cli/configcheck.go` no longer has `TODO(plan-17)` marker
+    - File `internal/cli/configcheck.go` no longer has `TODO(plan-17)` marker (Plan 05 stub fully replaced)
+    - File `internal/cli/configcheck.go` runs probes in this order: config syntax → Postgres ping → ChirpStack `Dial` + `ProbeVersion` → MQTT `PingMQTT` (D-07 contract)
+    - Each probe writes a `PASS <name>` (success) or `FAIL <name>: <error>` (failure) line to `cmd.OutOrStdout()` (D-07 — operator-readable diagnostics)
+    - On any probe failure, the command returns the underlying error and subsequent probes do NOT run (D-07 — fail-fast semantics; no spurious downstream errors)
+    - On success, exit code is 0 (cobra default for nil-error return)
+    - The same probe primitives used by `TestConnHandler` (`chirpstack.Dial`, `chirpstack.ProbeVersion`, `chirpstack.PingMQTT`) are reused — no duplicated probe logic (grep proof: configcheck.go imports `internal/chirpstack` and calls those three functions directly)
+    - File `internal/cli/configcheck_test.go` exports `TestConfigCheck_FailsOnBadYAML` (asserts non-zero exit on bad YAML) and `TestConfigCheck_ProbeOrder` (asserts probes run in the documented order)
     - Command `cd web && pnpm build` exits 0
     - Command `go build ./cmd/shifter` exits 0
+    - Command `go test ./internal/cli -run TestConfigCheck_FailsOnBadYAML -race -count=1` exits 0
+    - Command `go test ./internal/cli -run TestConfigCheck_ProbeOrder -race -count=1` exits 0
   </acceptance_criteria>
   <done>
     Settings page UI complete. Plan 18 mounts Settings under the protected route. config-check probes wired. Plan 23 login is the navigate target after a session expires.
@@ -901,9 +997,9 @@ PUT /api/settings/chirpstack: SETT-03 — updates the connection. Per Open Quest
 
 <success_criteria>
 - CHIRP-03 satisfied (Test Connection two-channel probe with status-row UI)
-- SETT-01 minimum (Account + ChirpStack categories)
-- SETT-03 satisfied (admin can update credentials with safety probe)
-- D-07 finalized (config-check actually probes)
+- SETT-01 minimum (Account + ChirpStack categories) — note: Plan 17 ships Phase 1 scaffolding for SETT-01; full SETT-01/SETT-03 expansion (notification settings, audit log, etc.) lands Phase 6 (info per checker)
+- SETT-03 satisfied for ChirpStack credentials (admin can update with safety probe; full SETT-03 surface lands Phase 6)
+- D-07 finalized (config-check actually probes Postgres + ChirpStack + MQTT in order; fails fast; per-probe diagnostics to stdout; reuses HTTP probe primitives — Warning #8 fix)
 - UI-SPEC verbatim copy strings used
 - AUTH-06 frontend: viewer doesn't see Edit button
 </success_criteria>

@@ -613,6 +613,7 @@ Headers:
        "encoding/json"
        "log/slog"
        "net/http"
+       "net/http/cookiejar"
        "net/http/httptest"
        "os"
        "strings"
@@ -746,8 +747,6 @@ Headers:
        require.NoError(t, err); defer res.Body.Close()
        require.Equal(t, http.StatusBadRequest, res.StatusCode)
    }
-
-   import "net/http/cookiejar"
 
    func mustJar(t *testing.T) http.CookieJar {
        j, err := cookiejar.New(nil)
