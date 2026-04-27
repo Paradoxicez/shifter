@@ -221,33 +221,124 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 .. AUTH-06 | TBD | Pending |
-| INST-01 .. INST-06 | TBD | Pending |
-| CHIRP-01 .. CHIRP-06 | TBD | Pending |
-| GW-01 .. GW-04 | TBD | Pending |
-| DEV-01 .. DEV-09 | TBD | Pending |
-| SITE-01 .. SITE-06 | TBD | Pending |
-| DATA-01 .. DATA-13 | TBD | Pending |
-| DASH-01 .. DASH-06 | TBD | Pending |
-| DETL-01 .. DETL-03 | TBD | Pending |
-| MAP-01 .. MAP-04 | TBD | Pending |
-| REPT-01 .. REPT-07 | TBD | Pending |
-| ALERT-01 .. ALERT-06 | TBD | Pending |
-| SETT-01 .. SETT-05 | TBD | Pending |
-| USER-01 .. USER-04 | TBD | Pending |
-| AUDIT-01 .. AUDIT-03 | TBD | Pending |
-| OPS-01 .. OPS-08 | TBD | Pending |
-| UX-01 .. UX-03 | TBD | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| INST-01 | Phase 1 | Pending |
+| INST-02 | Phase 1 | Pending |
+| INST-03 | Phase 1 | Pending |
+| INST-04 | Phase 1 | Pending |
+| INST-05 | Phase 1 | Pending |
+| INST-06 | Phase 1 | Pending |
+| CHIRP-01 | Phase 1 | Pending |
+| CHIRP-02 | Phase 1 | Pending |
+| CHIRP-03 | Phase 1 | Pending |
+| CHIRP-04 | Phase 2 | Pending |
+| CHIRP-05 | Phase 3 | Pending |
+| CHIRP-06 | Phase 3 | Pending |
+| GW-01 | Phase 3 | Pending |
+| GW-02 | Phase 3 | Pending |
+| GW-03 | Phase 3 | Pending |
+| GW-04 | Phase 3 | Pending |
+| DEV-01 | Phase 3 | Pending |
+| DEV-02 | Phase 3 | Pending |
+| DEV-03 | Phase 3 | Pending |
+| DEV-04 | Phase 3 | Pending |
+| DEV-05 | Phase 3 | Pending |
+| DEV-06 | Phase 3 | Pending |
+| DEV-07 | Phase 3 | Pending |
+| DEV-08 | Phase 3 | Pending |
+| DEV-09 | Phase 3 | Pending |
+| SITE-01 | Phase 2 | Pending |
+| SITE-02 | Phase 5 | Pending |
+| SITE-03 | Phase 5 | Pending |
+| SITE-04 | Phase 5 | Pending |
+| SITE-05 | Phase 5 | Pending |
+| SITE-06 | Phase 5 | Pending |
+| DATA-01 | Phase 2 | Pending |
+| DATA-02 | Phase 2 | Pending |
+| DATA-03 | Phase 2 | Pending |
+| DATA-04 | Phase 2 | Pending |
+| DATA-05 | Phase 2 | Pending |
+| DATA-06 | Phase 2 | Pending |
+| DATA-07 | Phase 2 | Pending |
+| DATA-08 | Phase 2 | Pending |
+| DATA-09 | Phase 2 | Pending |
+| DATA-10 | Phase 2 | Pending |
+| DATA-11 | Phase 5 | Pending |
+| DATA-12 | Phase 5 | Pending |
+| DATA-13 | Phase 5 | Pending |
+| DASH-01 | Phase 4 | Pending |
+| DASH-02 | Phase 4 | Pending |
+| DASH-03 | Phase 4 | Pending |
+| DASH-04 | Phase 4 | Pending |
+| DASH-05 | Phase 4 | Pending |
+| DASH-06 | Phase 4 | Pending |
+| DETL-01 | Phase 4 | Pending |
+| DETL-02 | Phase 4 | Pending |
+| DETL-03 | Phase 4 | Pending |
+| MAP-01 | Phase 5 | Pending |
+| MAP-02 | Phase 5 | Pending |
+| MAP-03 | Phase 5 | Pending |
+| MAP-04 | Phase 5 | Pending |
+| REPT-01 | Phase 5 | Pending |
+| REPT-02 | Phase 5 | Pending |
+| REPT-03 | Phase 5 | Pending |
+| REPT-04 | Phase 5 | Pending |
+| REPT-05 | Phase 5 | Pending |
+| REPT-06 | Phase 5 | Pending |
+| REPT-07 | Phase 5 | Pending |
+| ALERT-01 | Phase 6 | Pending |
+| ALERT-02 | Phase 6 | Pending |
+| ALERT-03 | Phase 6 | Pending |
+| ALERT-04 | Phase 6 | Pending |
+| ALERT-05 | Phase 6 | Pending |
+| ALERT-06 | Phase 6 | Pending |
+| SETT-01 | Phase 6 | Pending |
+| SETT-02 | Phase 6 | Pending |
+| SETT-03 | Phase 6 | Pending |
+| SETT-04 | Phase 6 | Pending |
+| SETT-05 | Phase 6 | Pending |
+| USER-01 | Phase 6 | Pending |
+| USER-02 | Phase 6 | Pending |
+| USER-03 | Phase 6 | Pending |
+| USER-04 | Phase 6 | Pending |
+| AUDIT-01 | Phase 2 | Pending |
+| AUDIT-02 | Phase 6 | Pending |
+| AUDIT-03 | Phase 6 | Pending |
+| OPS-01 | Phase 1 | Pending |
+| OPS-02 | Phase 6 | Pending |
+| OPS-03 | Phase 6 | Pending |
+| OPS-04 | Phase 6 | Pending |
+| OPS-05 | Phase 6 | Pending |
+| OPS-06 | Phase 6 | Pending |
+| OPS-07 | Phase 6 | Pending |
+| OPS-08 | Phase 6 | Pending |
+| UX-01 | Phase 1 | Pending |
+| UX-02 | Phase 1 | Pending |
+| UX-03 | Phase 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 80 total
-- Mapped to phases: 0 (will be filled by roadmapper)
-- Unmapped: 80 ⚠️ (resolved at roadmap creation)
+- v1 requirements: 99 total
+- Mapped to phases: 99 (100%)
+- Unmapped: 0
+
+**Per-phase counts:**
+- Phase 1 (Foundation): 18 — AUTH-01..06, INST-01..06, CHIRP-01..03, OPS-01, UX-01, UX-02
+- Phase 2 (Domain Model & Canonical Schema): 13 — SITE-01, DATA-01..10, AUDIT-01, CHIRP-04
+- Phase 3 (Provisioning): 16 — GW-01..04, DEV-01..09, CHIRP-05, CHIRP-06, UX-03
+- Phase 4 (Realtime & Dashboard): 9 — DASH-01..06, DETL-01..03
+- Phase 5 (Aggregates, Reports, Map & Floor Plans): 19 — SITE-02..06, MAP-01..04, REPT-01..07, DATA-11..13
+- Phase 6 (Alerts, Users, Audit & Ops Hardening): 24 — ALERT-01..06, USER-01..04, AUDIT-02, AUDIT-03, SETT-01..05, OPS-02..08
+- Phase 7 (Multi-Vendor Breadth & v1.x Differentiators): 0 v1 REQs (carries v1.x differentiators tracked under V2-VEND-01..03 and ALERT-04 anomaly tuning maturing on real-customer signal)
 
 ---
 *Requirements defined: 2026-04-27*
-*Last updated: 2026-04-27 after initial definition*
+*Last updated: 2026-04-27 after roadmap creation (traceability filled)*
