@@ -36,7 +36,34 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
   4. The "Test connection" action in Settings reports gRPC and MQTT reachability with a clear error path; the `/health` endpoint reports DB, ChirpStack, MQTT, disk, last-uplink-age, and the running version.
   5. The shell UI applies the shadcn/ui blue/navy aesthetic in English and uses dialogs for the few CRUD flows present (admin password change, settings edits) — establishing the modal-first convention for every later phase.
 
-**Plans**: TBD
+**Plans**: 24 plans
+
+Plans:
+- [ ] 01-01-repo-scaffold-PLAN.md — Bootstrap the Go monorepo + Vite/React/Tailwind frontend skeleton + Justfile + Air (D-01..D-04)
+- [ ] 01-02-test-harness-PLAN.md — Wave 0: install testify+testcontainers-go+vitest, create all skeleton test files (VALIDATION.md scaffolding)
+- [ ] 01-03-database-layer-PLAN.md — pgxpool + golang-migrate-as-library + 6 initial migrations + sqlc config (D-13, D-16)
+- [ ] 01-04-config-secrets-PLAN.md — viper YAML+env config + Compose-secrets reader + slog JSON logger + version package (D-05, D-06, D-22, D-24)
+- [ ] 01-05-cobra-cli-PLAN.md — Cobra CLI: serve/migrate/version/create-admin/config-check/healthcheck (D-12, D-15)
+- [ ] 01-06-frontend-shell-PLAN.md — shadcn init (new-york + slate + custom navy OKLCH) + 21 components + ResponsiveDialog/StatusRow/Stepper/ThemeProvider + router shell + apiFetch (UX-02)
+- [ ] 01-07-argon2id-PLAN.md — Argon2id Hash/Verify (PHC encoding, OWASP m=19456 t=2 p=1) + password strength evaluator (AUTH-01)
+- [ ] 01-08-session-manager-PLAN.md — alexedwards/scs/v2 + pgxstore session manager with dev-mode Cookie.Secure toggle (AUTH-02, D-23)
+- [ ] 01-09-login-ratelimit-PLAN.md — Login + logout + change-password handlers + per-IP/per-username rate limit + create-admin body (AUTH-01, AUTH-03 reframed, AUTH-04, AUTH-05)
+- [ ] 01-10-authz-PLAN.md — Can(user, action, resource) + RequireAction middleware (PITFALLS §14, AUTH-06 server-side)
+- [ ] 01-11-account-ui-PLAN.md — RootLayout loader + AccountMenu + ChangePasswordDialog (AUTH-05 frontend, AUTH-06 frontend hiding)
+- [ ] 01-12-chirpstack-grpc-PLAN.md — ChirpStack gRPC Dial + ProbeVersion + bufconn mock (CHIRP-01, INST-05 sentinel)
+- [ ] 01-13-mqtt-subscriber-PLAN.md — paho.mqtt.golang subscriber with OnConnect re-subscribe + PingMQTT (CHIRP-02, supports CHIRP-03)
+- [ ] 01-14-install-middleware-PLAN.md — install_state Store (singleton CHECK id=1) + Regions catalog + FirstRunGate with cache (INST-01, D-08, PITFALL #10)
+- [ ] 01-15-install-handlers-PLAN.md — 5 wizard step handlers + atomic Serializable FinishSetup transaction (INST-01..05, D-10, D-11)
+- [ ] 01-16-install-wizard-ui-PLAN.md — 5-step wizard frontend; Thailand AS923-2 default; v3 destructive banner (INST-01..05, PITFALLS §8)
+- [ ] 01-17-test-connection-PLAN.md — Test Connection two-channel probe + Settings page + Edit Connection dialog + config-check probes (CHIRP-03, SETT-01, SETT-03, D-07)
+- [ ] 01-18-router-health-PLAN.md — chi router wiring all routes + middleware stack + /health[/detailed] + serve.go full body with INST-05 boot gate (D-18, D-19, INST-05/06)
+- [ ] 01-19-spa-embed-PLAN.md — //go:embed all:web/dist + history-mode SPA fallback handler (RESEARCH §Pattern 8)
+- [ ] 01-20-compose-bundled-PLAN.md — Bundled compose flavor (Postgres+Mosquitto+ChirpStack+Caddy+Shifter) + Dockerfile + install.sh (OPS-01)
+- [ ] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
+- [ ] 01-22-caddyfile-PLAN.md — Caddyfile with env-driven TLS modes (acme/byo/internal) + security headers + SSE-aware proxy (D-20..D-22, PITFALL #7)
+- [ ] 01-23-login-ui-PLAN.md — Login screen with verbatim UI-SPEC copy + 401/429 error mapping (AUTH-01, AUTH-04, UX-02)
+- [ ] 01-24-readme-docs-PLAN.md — README + docs/install.md + docs/operator-runbook.md + REQUIREMENTS.md INST-06 wording update (D-19)
+
 **UI hint**: yes
 
 ### Phase 2: Domain Model & Canonical Schema
