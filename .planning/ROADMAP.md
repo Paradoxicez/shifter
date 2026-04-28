@@ -59,7 +59,7 @@ Plans:
 - [x] 01-18-router-health-PLAN.md — chi router wiring all routes + middleware stack + /health[/detailed] + serve.go full body with INST-05 boot gate (D-18, D-19, INST-05/06)
 - [x] 01-19-spa-embed-PLAN.md — //go:embed all:web/dist + history-mode SPA fallback handler (RESEARCH §Pattern 8)
 - [x] 01-20-compose-bundled-PLAN.md — Bundled compose flavor (Postgres+Mosquitto+ChirpStack+Caddy+Shifter) + Dockerfile + install.sh (OPS-01)
-- [ ] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
+- [x] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
 - [ ] 01-22-caddyfile-PLAN.md — Caddyfile with env-driven TLS modes (acme/byo/internal) + security headers + SSE-aware proxy (D-20..D-22, PITFALL #7)
 - [x] 01-23-login-ui-PLAN.md — Login screen with verbatim UI-SPEC copy + 401/429 error mapping (AUTH-01, AUTH-04, UX-02)
 - [ ] 01-24-readme-docs-PLAN.md — README + docs/install.md + docs/operator-runbook.md + REQUIREMENTS.md INST-06 wording update (D-19)
