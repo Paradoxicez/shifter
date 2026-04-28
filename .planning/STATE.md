@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T02:17:22.060Z"
+last_updated: "2026-04-28T02:37:17.808Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 14
-  percent: 58
+  completed_plans: 15
+  percent: 63
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-13 execution — MQTT subscriber + PingMQTT shipped: `internal/chirpstack/mqtt.go` exports `NewMQTTSubscriber(brokerURL, user, pass, clientID, log, handler) (*MQTTSubscriber, error)` with the canonical RESEARCH §Pattern 10 opt set (`SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`); subscription to `application/+/device/+/event/up` at QoS 1 is registered inside `OnConnect` so reconnect events re-subscribe automatically. The mandatory `SetDefaultPublishHandler` is installed (logs `topic` + `len(payload)` only — never payload content; T-13-01). `IsSubscribed()` / `ResubscribeCount()` use `atomic.Bool` / `atomic.Int64` for race-free state observation; `Shutdown(timeout)` calls `client.Disconnect(uint(timeout.Milliseconds()))`. `UplinkHandler` is the public Phase-2 hook point — Phase 1 default logs topic+bytes via slog (CHIRP-02 minimum); Phase 2 swaps in normalize+persist by passing a non-nil callback at the Plan 18 call site. `PingMQTT(ctx, url, user, pass)` is the Plan 17 / Plan 05 Test Connection probe with auto-reconnect disabled (fail-fast on misconfigured URL), `SetCleanSession(true)` (zero broker-side state), `SetConnectTimeout(5s)`, and a millisecond-suffix ClientID to avoid duplicate-ID rejection on rapid probes. 4 tests pass against Mosquitto 2.0.18 testcontainer. Plan-verbatim reconnect test rewritten (Rule 1 deviation): replaces broken `client.Disconnect(0)` simulation with an in-process `tcpBreaker` TCP proxy whose `Break()` closes every conn — exercises paho's actual transport-level auto-reconnect path. CHIRP-02 + CHIRP-03 unblocked.)
+**Last Updated:** 2026-04-28 (after Plan 01-15 execution — install wizard handlers + atomic FinishSetup shipped: `internal/install/handlers.go` exports `Deps{Pool, Store, SecretsDir, Log, Dial}` + `csConn` interface (`Conn() *grpc.ClientConn` + `Close()` — no `interface{}` round-trip per Warning #6) + 6 handler factories (`StateHandler`, `Step1Handler`, `Step2Handler`, `Step3Handler`, `Step4Handler`, `FinishHandler`). Step 1 hashes the operator's password via Plan 07's `auth.Hash` (Argon2id) before persistence (D-09 — raw password never reaches DB) and rejects `auth.StrengthWeak` with 422; 256-byte length cap added at the API boundary (T-07-05). Step 2 dials ChirpStack via pluggable `Deps.Dial` (production wires Plan 12's `chirpstack.Dial`; tests inject the bufconn mock), runs `chirpstack.ProbeVersion`, and returns `{"error":"v3_detected"}` on `errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown)` (INST-05). Operator's API token is written to `{SecretsDir}/chirpstack_api_token` at mode 0600 AFTER the v3 probe succeeds — no orphan secrets when the wizard re-renders with an error banner; only the path REF is persisted into `step2_chirpstack` JSONB (T-15-02). Step 3 whitelists region against Plan 14's `Regions()` catalog via `RegionByName` (T-14-04). Step 4 validates timezone via `time.LoadLocation` and units against the install_identity enum (`metric` | `imperial`). Every state-changing POST requires `X-Requested-With: shifter` (T-15-03 / RESEARCH §V13 — symmetric with Plan 09's auth handlers). `internal/install/finish.go` exports `FinishSetup(ctx, deps Deps) error` + `ErrAlreadyCompleted` + `ErrIncompleteWizard` sentinels; runs as `pgx.TxOptions{IsoLevel: pgx.Serializable}` transaction in order: INSERT admin user → UPSERT install_identity → UPSERT chirpstack_connection → DELETE install_state (D-10, D-11). Pre-checks `adminExists` BEFORE BeginTx so the re-run-after-success path is one round-trip. Bug fix (Rule 1): `internal/install/state.go::updateStep` now does `INSERT INTO install_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING` before the UPDATE — the Plan 14 store assumed a preceding `GetOrCreate`, but the Plan 15 step handlers don't call it; without the upsert, bare UPDATE silently no-ops on a fresh DB. 27 install tests pass (-race); INST-01..05 + D-09 + D-10 + D-11 all satisfied.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14)
+Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 15 — install-handlers (next) |
-| **Status** | Plans 01–14 complete. Plan 13 shipped the MQTT subscriber + PingMQTT probe (CHIRP-02 + CHIRP-03). `internal/chirpstack/mqtt.go` exports `NewMQTTSubscriber(brokerURL, user, pass, clientID, log, handler) (*MQTTSubscriber, error)` with paho v1.5.1 wired per RESEARCH §Pattern 10: `SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`. Subscription to `UplinkTopicFilter = "application/+/device/+/event/up"` at QoS 1 is registered inside `OnConnect` so reconnects re-subscribe automatically (paho does NOT replay top-level subscribes). Mandatory `SetDefaultPublishHandler` installed (T-13-01: logs `topic` + `len(payload)` only — never payload content). `IsSubscribed()` / `ResubscribeCount()` use `atomic.Bool` / `atomic.Int64` for race-free state observation. `Shutdown(timeout)` calls `client.Disconnect(uint(timeout.Milliseconds()))` for graceful drain. `UplinkHandler` is the Phase-2 hook point: Phase 1 default logs topic+bytes via slog; Phase 2 swaps in normalize+persist by passing a non-nil callback at the Plan 18 call site (mqtt.go itself does not change). `PingMQTT(ctx, url, user, pass)` is the canonical Test Connection MQTT probe — `SetAutoReconnect(false)` + `SetCleanSession(true)` + `SetConnectTimeout(5s)`, ClientID = `"shifter-ping-" + time.Now().Format("150405.000")` (millisecond suffix avoids duplicate-ID rejection); returns three distinguishable error categories (`ctx.Err()`, `mqtt ping: connect timeout`, wrapped paho error). 7 chirpstack tests pass against Mosquitto 2.0.18 testcontainer with `-race`; full short suite 110 passed across 12 packages. CHIRP-02 + CHIRP-03 unblocked. |
-| **Progress (plans)** | `[██████░░░░] 14/24 (58%)` |
+| **Plan** | 16 — install-wizard-ui (next) |
+| **Status** | Plans 01–15 complete. Plan 15 shipped the install wizard backend: 5 step endpoints + atomic finish (INST-01..05 + D-09 + D-10 + D-11). `internal/install/handlers.go` exports `Deps{Pool, Store, SecretsDir, Log, Dial}` + `csConn` interface (Warning #6 tightening: `Conn() *grpc.ClientConn` typed, no `interface{}` round-trip) + 6 handler factories. Step 1 calls `auth.Hash` (Argon2id) before persistence + 256-byte cap; rejects `StrengthWeak` with 422. Step 2 dials via pluggable `Deps.Dial`, runs `chirpstack.ProbeVersion`, returns `{"error":"v3_detected"}` on `ErrChirpStackV3OrUnknown` (INST-05); writes API token to `{SecretsDir}/chirpstack_api_token` at mode 0600 AFTER the probe succeeds (no orphan secrets) and persists path REF only (T-15-02). Step 3 whitelists via `RegionByName` (T-14-04). Step 4 validates timezone via `time.LoadLocation` + units enum. Every POST requires `X-Requested-With: shifter` (T-15-03 / RESEARCH §V13). `internal/install/finish.go` exports `FinishSetup` running pgx.Serializable txn order INSERT user → UPSERT install_identity → UPSERT chirpstack_connection → DELETE install_state (D-10, D-11); pre-checks `adminExists` before BeginTx so re-run-after-success is one round-trip. `ErrAlreadyCompleted` (410) + `ErrIncompleteWizard` (422) sentinels for handler error mapping. Rule 1 bug fix in `internal/install/state.go::updateStep` — added `INSERT .. ON CONFLICT DO NOTHING` upstream of every UPDATE so bare `UpdateStepN` calls (without preceding `GetOrCreate`) no longer silently no-op on a fresh DB. 27 install tests pass with -race; full short suite 124 passed / 1 flake (Plan 09 documented testcontainer port-mapping race; auth re-run alone passes 58/58). |
+| **Progress (plans)** | `[██████░░░░] 15/24 (63%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 15` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 16` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 14 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14) |
+| Plans complete | 15 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -64,6 +64,7 @@ Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-12 chirpstack-grpc | 5 min | 1 | 10 |
 | 01-14 install-middleware | 7 min | 2 | 6 |
 | 01-13 mqtt-subscriber | 5 min | 1 | 4 |
+| 01-15 install-handlers | 12 min | 2 | 5 |
 
 ## Accumulated Context
 
@@ -181,6 +182,12 @@ Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-13 — `UplinkHandler` is the Phase-2 hook point, exposed as the 6th param of `NewMQTTSubscriber`.** Phase 1 default (nil → stdout-log `topic` + `bytes`) satisfies CHIRP-02 minimum; Phase 2 swaps in the normalize+persist pipeline by passing a non-nil callback at the Plan 18 call site. `internal/chirpstack/mqtt.go` itself does NOT change at the Phase 1 → Phase 2 boundary. T-13-01 mitigation: default handler logs `len(payload)` only — never payload content (vendor-specific PII / customer-meter data may appear in payloads). The mandatory `DefaultPublishHandler` follows the same discipline.
 - **Plan 01-13 — Subscribe inside `OnConnect` is the ONLY sanctioned place to register MQTT topic handlers.** paho does NOT replay top-level `Subscribe` calls after auto-reconnect, so registering anywhere outside the `OnConnect` callback silently breaks on the first transport loss. Canonical opt set per RESEARCH §Pattern 10 + paho-mqtt-golang/issues/22: `SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetConnectRetry(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`. `SetOrderMatters(false)` because Phase 2's normalize+persist will fan out by `metering_point_id` at the SQL layer — per-topic ordering at the MQTT layer is unnecessary overhead. `SetDefaultPublishHandler` is mandatory (prevents inflight-message-limit deadlocks); logs `topic` + `len(payload)` at Warn.
 - **Plan 01-13 — `PingMQTT(ctx, url, user, pass)` is the canonical MQTT-half probe shared by Plan 17 (Test Connection) and Plan 05 (config-check).** `SetAutoReconnect(false)` + `SetConnectRetry(false)` so a misconfigured URL fails fast (no spin under retry policy). `SetCleanSession(true)` so the probe leaves zero broker-side state. ClientID = `"shifter-ping-" + time.Now().Format("150405.000")` — millisecond suffix prevents paho's "duplicate ClientID" rejection on rapid successive probes. Returns three distinguishable error categories: `ctx.Err()` (caller cancel), `mqtt ping: connect timeout` (paho-token timeout), `mqtt ping: %w` (wrapped paho error) — Plan 17's UI can render specific copy per category. Symmetric with Plan 12's `Client.PingDevices` for the gRPC half — both are `func(ctx, ...) error` so the Test Connection handler renders reachable/unreachable uniformly across protocols.
+- **Plan 01-15 — `updateStep` upserts before update (Rule 1 bug fix).** Plan 14's `Store.UpdateStepN` did a bare `UPDATE install_state SET ... WHERE id = 1`. The Plan 14 store-only tests passed because every test called `s.GetOrCreate(ctx)` first; the Plan 15 step handlers do NOT call GetOrCreate (POST step/N goes straight to `UpdateStepN`). On a fresh DB the UPDATE silently affected zero rows but did NOT error — the handler returned 200 with stale state. Fix: `INSERT INTO install_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING` upstream of every UPDATE in `updateStep`. Cost: one extra round-trip on the first write per process; subsequent writes are pure UPDATE. Step handlers are now correct in isolation regardless of call order. Future plan-check should grep `UPDATE install_state` for any caller that bypasses the upsert path.
+- **Plan 01-15 — `csConn` interface keeps `Conn() *grpc.ClientConn` typed (Warning #6 tightening).** Plan-verbatim returned `interface{}` requiring Step2Handler to type-assert before calling `chirpstack.ProbeVersion`. The typed interface lets test code (`realConnWrapper`) and Plan 18's production wrapper share a single shape with no `interface{}` indirection. Plan 17 / Plan 18 wrappers MUST satisfy this interface AND serve.go's `csBootConn` shape — one wrapper, two interfaces, no round-trip. The `csConn` interface itself is package-private; Plan 18 may export an `install.NewProductionDial` constructor to keep wiring compact.
+- **Plan 01-15 — Step2Handler writes the API token AFTER the v3 probe succeeds.** If the operator types a bad URL or hits a v3 server, NO secret hits disk — the wizard re-renders step 2 with the error banner (`v3_detected` or `grpc_unreachable`) and the operator can correct without leaving an orphan file in `{SecretsDir}`. Cost: two round-trips on the happy path (probe, then write secret); benefit: zero disk residue on the unhappy path. T-15-02 mitigation tightening — same principle applies to any future wizard/edit flow that gates secret persistence on connectivity validation.
+- **Plan 01-15 — `FinishSetup` pre-checks `adminExists` BEFORE `BeginTx`.** Serializable isolation alone handles concurrent finishes correctly (the second INSERT fails on `user_email_unique`, txn rolls back), but the pre-check makes the re-run-after-success path one round-trip vs `BEGIN tx + INSERT + ROLLBACK + close`. Idempotency is the dominant case in production — the operator clicks Finish, the network blips, the SPA retries — the second call must be cheap. `ErrAlreadyCompleted` is returned without ever opening a txn.
+- **Plan 01-15 — `TestFinishSetup_RollsBackOnFailure` injects an invalid `units` enum via `UpdateStep4`** (bypassing the handler's enum validation) to exercise the txn-internal failure path without mocking pgx. Asserts what matters: when ANY step in `FinishSetup` errors, the admin user is NOT created (T-15-04 / Serializable rollback). Defence-in-depth verification beyond the plan-listed three finish tests. Pattern locks: future atomic-commit tests for setup-style flows must include a "rollback under failure" assertion that verifies the canonical-table writes did NOT land.
+- **Plan 01-15 — `step{1..4}Draft` structs are unexported** in `internal/install/finish.go`. `FinishSetup` is the SOLE consumer; no other plan needs them. Future plans wanting these structs should consume the canonical `chirpstack_connection` / `install_identity` / `user` rows that `FinishSetup` writes, NOT the `install_state` JSONB drafts (which are deleted after finish). Keeping the drafts package-private prevents accidental coupling.
 
 ### Open Todos
 
@@ -228,4 +235,4 @@ Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T02:14Z — Stopped at: Completed 01-13-mqtt-subscriber-PLAN.md*
+*Last session: 2026-04-28T02:34Z — Stopped at: Completed 01-15-install-handlers-PLAN.md*
