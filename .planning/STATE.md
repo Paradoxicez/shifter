@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T03:06:46.960Z"
+last_updated: "2026-04-28T03:25:13.854Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 17
-  percent: 71
+  completed_plans: 18
+  percent: 75
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-17 execution — Test Connection backend + Phase 1 Settings page shipped. `internal/http/testconn.go` exports `TestConnHandler` (POST /api/settings/chirpstack/test — two-channel gRPC ProbeVersion + MQTT PingMQTT probe; failure encoded in channel results so SPA renders StatusRow uniformly), `GetChirpStackHandler` (GET — metadata-only; api_token NEVER returned, T-17-01/V8), `PutChirpStackHandler` (PUT — admin-only; re-runs Dial+ProbeVersion+PingMQTT BEFORE persist per Open Q 2; 4-branch UPDATE ladder honors "leave blank to keep current" for api_token / mqtt_password), and `ProductionDial` adapter (chirpstack.Dial → chirpStackConn). 7 backend tests pass: TestTestConn_Happy/V3Refused/BothFail/RequiresCSRFHeader, TestSettings_GetChirpStack_HidesAPIToken, TestSettings_PutChirpStack_RequiresAdmin/RejectsV3. Phase 1 Settings page at `/settings`: Account card (email + role badge) + ChirpStack connection card (mode/grpc_url/mqtt_url read-only); Edit connection button admin-only (AUTH-06 frontend hiding); Test connection button uses TanStack Query useMutation; TestConnectionPanel uses StatusRow (Plan 06 component) — three-row visual contract; EditConnectionDialog uses ResponsiveDialog with "Save and test" CTA + UI-SPEC verbatim copy. SettingsPage lazy-loaded via React.lazy + Suspense; lazy chunk emitted at `dist/assets/settings-DFYudpur.js` (19.76 kB). `shifter config-check` now actually probes Postgres + ChirpStack gRPC + MQTT in order using the SAME chirpstack.Dial / ProbeVersion / PingMQTT primitives the HTTP handler uses (D-07 finalized; Warning #8 fix). 2 config-check tests pass: TestConfigCheck_FailsOnBadYAML + TestConfigCheck_ProbeOrder. CHIRP-03 + SETT-01 (Phase 1 minimum) + SETT-03 (Phase 1 ChirpStack credentials) complete.)
+**Last Updated:** 2026-04-28 (after Plan 01-18 execution — chi router + /health (D-18) + /health/detailed (D-19) + serve.go full wiring shipped. `internal/http/router.go` exports `NewRouter(deps Deps) http.Handler` mounting all 13 Phase 1 routes with the canonical PITFALL #4 middleware order (RequestID -> RealIP -> SlogLogger -> Recoverer -> SessionMgr.LoadAndSave -> install.FirstRunGate -> routes -> SPA last). `internal/http/health.go` exports `Health()` (public; status/version/uptime_seconds; NO checks per D-18) and `HealthDetailed(pool)` (admin via RequireAction(ActionHealthDetailed); DB ping + status='ok'|'degraded'). `internal/http/middleware.go` SlogLogger emits one structured line/request (D-24); never logs headers/body (T-18-06). `internal/cli/serve.go` replaces Plan 05 stub: config + DB pool + auto-migrate (D-13) + `probeChirpStackOrRefuse` (INST-05 boot gate — extracted as testable function returning error containing both 'INST-05' and 'ChirpStack v3' on v3 detection) + MQTT subscriber start (CHIRP-02) + chi router + graceful SIGTERM. `csConnWrapper` bridges `install.CSConn` (new exported alias for the previously package-private csConn) and the boot-probe `csBootConn` from one concrete value (Warning #6 tightening). `internal/http/spa.go` SPAHandler() is a 503 placeholder Plan 19 will replace. 6 net-new tests pass (2 health + 4 INST-05 unit tests using Plan 12 bufconn mock). `chi v5.2.5` added; `go test ./... -short -race` passes 140 tests across 12 packages with zero regressions. INST-06 + AUTH-06 complete; INST-05 enforced at boot with fast-feedback unit coverage.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 17 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17)
+Plan: 18 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 18 — router-health (next) |
-| **Status** | Plans 01–17 complete. Plan 17 shipped Test Connection + Phase 1 Settings page. Backend: `internal/http/testconn.go` exports `TestConnHandler` (POST /api/settings/chirpstack/test — two-channel gRPC ProbeVersion + MQTT PingMQTT probe; always 200; failure encoded in channel results), `GetChirpStackHandler` (GET — metadata-only; api_token NEVER returned, T-17-01/V8), `PutChirpStackHandler` (PUT — re-runs Dial+ProbeVersion+PingMQTT BEFORE persist per Open Q 2; 4-branch UPDATE ladder honors "leave blank to keep current" for api_token / mqtt_password), `ProductionDial` adapter. 7 backend tests pass. Frontend: `web/src/lib/settings.ts` typed client; `web/src/routes/settings.tsx` Account + ChirpStack cards (Edit admin-only via AUTH-06 frontend hiding; Test connection both roles); `TestConnectionPanel` uses StatusRow (Plan 06); `EditConnectionDialog` uses ResponsiveDialog with "Save and test" CTA. SettingsPage lazy-loaded; lazy chunk `dist/assets/settings-DFYudpur.js` (19.76 kB). `shifter config-check` now probes Postgres + ChirpStack + MQTT in order using SAME `chirpstack.{Dial, ProbeVersion, PingMQTT}` primitives the HTTP handler uses — D-07 finalized; Warning #8 fix. 2 config-check tests pass. CHIRP-03 + SETT-01 (Phase 1) + SETT-03 (Phase 1 ChirpStack credentials) complete. Plan 18 mounts the 3 endpoints behind chi: `RequireAction(sm, ActionConnectionTest)` for GET + POST; `RequireAction(sm, ActionConnectionEdit)` for PUT (admin only). |
-| **Progress (plans)** | `[███████░░░] 17/24 (71%)` |
+| **Plan** | 19 — spa-embed (next) |
+| **Status** | Plans 01–18 complete. Plan 18 shipped chi router + /health + /health/detailed + serve.go full wiring. `internal/http/router.go` exports `NewRouter(deps Deps) http.Handler` mounting all 13 Phase 1 routes with the canonical PITFALL #4 middleware order (RequestID -> RealIP -> SlogLogger -> Recoverer -> SessionMgr.LoadAndSave -> install.FirstRunGate -> routes -> SPA last). `internal/http/health.go` exports `Health()` (public; status/version/uptime_seconds; NO checks per D-18) and `HealthDetailed(pool)` (admin via RequireAction(ActionHealthDetailed); DB ping + status='ok'\|'degraded'). `internal/http/middleware.go` SlogLogger emits one structured line per request (D-24); never logs request headers/body (T-18-06). `internal/cli/serve.go` replaces the Plan 05 stub: config.Load + DB pool + auto-migrate (D-13) + `probeChirpStackOrRefuse` (INST-05 boot gate — extracted as a testable top-level function; on `ErrChirpStackV3OrUnknown` returns an error containing both 'INST-05' and 'ChirpStack v3' [case-insensitive] for operator log clarity) + MQTT subscriber start (CHIRP-02) + chi router + graceful SIGTERM (mqttSub.Shutdown precedes srv.Shutdown). `csConnWrapper` bridges `install.CSConn` (new exported type alias for the previously package-private csConn) and the boot-probe `csBootConn` interface from one concrete value with `{Conn() *grpc.ClientConn; Close() error}` — Warning #6 tightening preserved. `internal/http/spa.go` `SPAHandler()` is a 503 placeholder Plan 19 will replace. 6 net-new tests pass (TestHealth_Public, TestHealthDetailed_RequiresAdmin via testcontainer, TestServe_RefusesV3/AcceptsV4/DegradedOnUnreachable/NoConfigSkipsProbe via Plan 12 bufconn mock — fast-feedback INST-05 coverage with no compose dependency). `chi v5.2.5` added to go.mod. Full short-suite: 140 passed across 12 packages, zero regressions. INST-06 + AUTH-06 complete; INST-05 enforced at boot with unit-level coverage. Plan 19 will fill `SPAHandler()` body with the go:embed-backed Vite dist surface; the chi router's `/*` catch-all already targets it. |
+| **Progress (plans)** | `[████████░░] 18/24 (75%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 18` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 19` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 17 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 17 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17) |
+| Plans complete | 18 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -67,6 +67,7 @@ Plan: 17 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-15 install-handlers | 12 min | 2 | 5 |
 | 01-16 install-wizard-ui | 5 min | 2 | 10 |
 | 01-17 test-connection | 9 min | 2 | 9 |
+| 01-18 router-health | 9 min | 3 | 10 |
 
 ## Accumulated Context
 
@@ -205,6 +206,14 @@ Plan: 17 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-17 — `chirpStackConn` / `csConn` interface duality.** `internal/http` and `internal/install` each define their own narrow interface (`{ Conn() *grpc.ClientConn; Close() error }`) so neither imports the other (no cycle once Plan 18 wires both). Plan 18 builds ONE adapter struct that satisfies BOTH interfaces (identical methods); package boundaries stay clean. `http.ProductionDial` is the canonical production wrapper for both call sites.
 - **Plan 01-17 — Settings page lazy-loaded via React.lazy + Suspense `fallback={null}`.** Symmetric with Plan 16's InstallWizard pattern; both routes are gated by `rootLoader` (settings is post-install only, install is pre-install only). Lazy chunk emitted at `dist/assets/settings-*.js` (~20 kB raw / ~6.5 kB gzipped). Plan 19 (spa-embed) consumes via go:embed FS.Sub(dist) — no per-route wiring change required.
 - **Plan 01-17 — AUTH-06 frontend hiding: Edit connection button only renders when `meQ.data?.role === 'admin'`.** Backend `RequireAction(sm, ActionConnectionEdit)` (wired by Plan 18) is the security boundary; frontend hiding is UX clarity, not a security gate. Viewers see Test connection (probe is read-only, viewers keep `ActionConnectionTest`) but never Edit. Test `TestSettings_PutChirpStack_RequiresAdmin` verifies the backend gate against a viewer session (403).
+- **Plan 01-18 — chi middleware order is locked at the source (PITFALL #4 anchor).** `internal/http/router.go` documents and enforces: `RequestID -> RealIP -> SlogLogger -> Recoverer -> SessionMgr.LoadAndSave -> install.FirstRunGate -> routes -> SPA last`. Reordering any layer requires explicit justification: RequestID-not-first would emit log lines without `request_id`; Recoverer-upstream-of-LoadAndSave would let session-store panics escape; SPA-before-/api/* would cause unknown /api/* routes to return HTML (the entire class of bug PITFALL #4 calls out). The catch-all `r.Handle("/*", deps.SPA)` is the LAST registered route in NewRouter — verified by code position.
+- **Plan 01-18 — INST-05 boot gate extracted as a testable top-level function.** `serve.RunE` calls `probeChirpStackOrRefuse(ctx, log, productionCSDial, cfg.ChirpStack)` BEFORE constructing the chi router or invoking `srv.ListenAndServe()`. v3 detection returns an error containing both `INST-05` and `ChirpStack v3` (case-insensitive) so operator logs spell the cause. 4 unit tests (`TestServe_RefusesV3 / AcceptsV4 / DegradedOnUnreachable / NoConfigSkipsProbe`) cover the four branches via Plan 12's bufconn mock — no compose dependency for fast feedback. Plan 20's compose smoke remains the integration anchor. Future startup-time validations (license check, vendor compat probe) MUST follow the same extract-and-unit-test pattern.
+- **Plan 01-18 — `install.CSConn` type alias exported.** Plan 15 declared `csConn` as package-private; Plan 18's `serve.go` needed a way to construct an adapter that satisfies both `install.CSConn` AND the boot-probe `csBootConn` interface from one concrete type. Go does not implicitly convert between distinct interface types even when method sets match, so the type alias makes the package-private and exported names literally the same type. `csConnWrapper` (in serve.go) is the single concrete value that implements both shapes via `{Conn() *grpc.ClientConn; Close() error}` — Warning #6 tightening preserved end-to-end across http / install / cli packages.
+- **Plan 01-18 — `secretsDir` is a package-level const ('/run/secrets') in serve.go.** Plan 04's `Config` did not ship a `SecretsDir` field; the const-default matches both deployment shapes (Plans 20/21 mount /run/secrets via Compose secrets). `installDeps.SecretsDir` and `httpapi.Deps.SecretsDir` both source from the same const. Adding a Config field is straightforward when an operator demand surfaces, but a const is correct for Phase 1.
+- **Plan 01-18 — SlogLogger never logs request headers or body (T-18-06 mitigation).** Only `method / path / status / bytes / ms / request_id`. Authorization / Cookie / request payloads would otherwise leak via D-24 structured logs. Future API surfaces (Phase 2+ device routes) inherit this discipline; a future plan extending the logger to include extra fields MUST audit for header/body content.
+- **Plan 01-18 — `/health` is unauthenticated (D-18 / INST-06 reframed via D-19).** FirstRunGate's whitelist already covers it. `/health/detailed` is admin-only via `RequireAction(ActionHealthDetailed)` and surfaces DB ping + status (`ok` | `degraded`); CS / MQTT / disk / last-uplink-age move to Phase 6 because they need richer DI (CS client + MQTT subscriber handles + storage stat probe). The Phase 1 surface is enough for monitoring dashboards and matches Plan 22 (Caddyfile) upstream-health expectations.
+- **Plan 01-18 — Graceful shutdown order: `mqttSub.Shutdown(5s)` precedes `srv.Shutdown(15s)`.** In-flight uplinks finish persistence (Phase 2) before HTTP responses drain. Future long-running goroutines (river jobs, SSE fan-out) MUST register their own Shutdown hook in `serve.RunE` and order them BEFORE `srv.Shutdown` so request handlers see a stable backend during the drain.
+- **Plan 01-18 — `SPAHandler()` is a 503 placeholder.** Plan 19 fills the body with a `go:embed`-backed Vite dist surface. The chi router's `r.Handle("/*", deps.SPA)` already targets it; Plan 19 is purely additive at the function-body level. This avoids a circular dependency between Plan 18 (router that needs an SPA target) and Plan 19 (SPA implementation that needs a router slot).
 
 ### Open Todos
 
