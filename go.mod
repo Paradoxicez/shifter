@@ -6,6 +6,8 @@ require (
 	github.com/alexedwards/scs/pgxstore v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/chirpstack/chirpstack/api/go/v4 v4.17.0
+	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/spf13/cobra v1.10.2
@@ -35,7 +37,6 @@ require (
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
-	github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
