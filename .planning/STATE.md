@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T01:12:46.743Z"
+last_updated: "2026-04-28T01:21:54.102Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 9
-  percent: 38
+  completed_plans: 10
+  percent: 42
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-08 execution — Session manager (scs/v2 + pgxstore) shipped; AUTH-02 satisfied; Plans 09/11/14/15 unblocked)
+**Last Updated:** 2026-04-28 (after Plan 01-10 execution — Authorization API + RequireAction middleware shipped; AUTH-06 satisfied; Plans 11/17/18 unblocked at the authz boundary)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
+Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 10 — authz (next) |
-| **Status** | Plans 01–09 complete; Plan 09 shipped login + logout + change-password handlers (`auth.LoginHandler` / `LogoutHandler` / `ChangePasswordHandler`) with `LoginLimiter` (per-IP + per-username token bucket via golang.org/x/time/rate, 5 burst / 1-min refill), `Store` user-table facade, X-Requested-With CSRF guard, 256-byte password length cap (T-07-05), constant-time-ish dummyHash() on user-not-found (T-09-02), and AUTH-05 defense-in-depth session revocation (iterateAndRevoke walks scs sessions and DELETEs other tokens). `shifter create-admin --email --password [--reset]` body is wired. AUTH-01 / AUTH-04 / AUTH-05 / D-09 / D-14 satisfied. Plan 10 (RBAC role middleware), Plan 11 (account UI), Plan 14 (install middleware uses `Store.AdminExists`), Plan 15 (wizard finish uses `Store.InsertAdminUser` + `auth.PutUser`), Plan 18 (chi router mounts the three handlers), and Plan 23 (login UI consumes the API contracts) are all unblocked. |
-| **Progress (plans)** | `[████░░░░░░] 9/24 (38%)` |
+| **Plan** | 11 — account-ui (next) |
+| **Status** | Plans 01–10 complete; Plan 10 shipped the authorization API (`auth.Can(user, action, resource)`) backed by a package-private `roleBundles map[Role]map[Action]bool`, a chi-friendly `auth.RequireAction(sm, action)` middleware factory with the 401 (no session) / 403 (authenticated-but-forbidden) split, and 9 declared Action constants (4 Phase 1 — connection.edit / connection.test / account.self.edit / health.detailed — plus 5 forward-declared Phase 2+ — user.manage / device.{create,update,delete} / audit.view) so Phase 6 USER-04 only extends roleBundles without touching call sites. AUTH-06 satisfied; PITFALLS §14 (forward-compat role bundle) honored. Plan 11 (account UI) wraps `POST /api/account/password` with `RequireAction(sm, ActionAccountSelfEdit)`; Plan 17 (test-connection) wraps mutating settings endpoint with `ActionConnectionEdit`, probe with `ActionConnectionTest`; Plan 18 (router-health) wraps `/health/detailed` with `ActionHealthDetailed`, leaves `/health` public. |
+| **Progress (plans)** | `[████░░░░░░] 10/24 (42%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 10` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 11` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 9 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09) |
+| Plans complete | 10 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -59,6 +59,7 @@ Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
 | 01-07 argon2id | 3 min | 2 | 6 |
 | 01-08 session-manager | 5 min | 1 | 5 |
 | 01-09 login-ratelimit | 11 min | 3 | 13 |
+| 01-10 authz | 3 min | 1 | 3 |
 
 ## Accumulated Context
 
@@ -141,6 +142,14 @@ Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
 - **Plan 01-09 — `shifter create-admin --reset` refuses to promote viewer → admin.** If a viewer row already exists at the email and the operator runs --reset, the command errors with "user exists but is not an admin (role=viewer) — refusing to promote". Recovery escape hatch must NOT silently change roles; promotion is an explicit operator action that belongs in the future admin UI.
 - **Plan 01-09 — `must_change_password=FALSE` is the only path that creates admins.** Both `Store.InsertAdminUser` (create-admin CLI + Plan 15 wizard finish) hardcode `must_change_password=FALSE`. D-09 reframes AUTH-03: bootstrap admins set their own password — there is no force-change UI gate today. TestWizardAdmin_NoForceChange asserts the schema invariant directly so future regressions surface in CI.
 - **Plan 01-09 — Testcontainer port flake noted.** Two separate runs in this session hit `postgres dsn: port "5432/tcp" not found` on a single test case under default-parallelism `go test ./internal/... -short`. Re-running the affected test always passed. Per-package runs (`go test ./internal/auth ...`) are stable. Logged to Open Todos for the CI plan to address with `-p 1` or per-package serialization.
+- **Plan 01-10 — `roleBundles` is package-private.** External consumers MUST go through `Can()` only — exposing the map would let downstream plans iterate it and accidentally introduce a divergent permission check. Plans 11 / 17 / 18 import only the Action constants and `Can` / `RequireAction` functions; the map stays an implementation detail.
+- **Plan 01-10 — 9 Action constants declared (4 Phase 1 + 5 forward-declared Phase 2+).** Per PITFALLS §14: declaring `ActionUserManage` / `ActionDevice{Create,Update,Delete}` / `ActionAuditView` now (alongside the wired-today set `ActionConnectionEdit` / `ActionConnectionTest` / `ActionAccountSelfEdit` / `ActionHealthDetailed`) locks the API surface so Phase 6 USER-04 and Phase 2/3 device CRUD only extend `roleBundles` — call sites already point at the right constants.
+- **Plan 01-10 — `Action` / `Role` are string-aliased types, not int enums.** Audit logs (Phase 6) record the action verbatim (`connection.edit`, not `4`); future per-namespace policy can prefix-match by string without an additional registry. Trade-off accepted: a typo in a string literal at a call site won't be caught at compile time, but every plan uses the exported `auth.ActionX` constants so a typo would be on a constant identifier the compiler does check.
+- **Plan 01-10 — `RequireAction(sm, action)` is the chi-friendly middleware factory shape `func(http.Handler) http.Handler`.** Plans 11 / 17 / 18 wrap routes via `auth.RequireAction(sm, ActionX)(handler)`; never call `Can()` directly in handlers. The shape composes naturally with `sm.LoadAndSave` (which is also `func(http.Handler) http.Handler`); chi's `r.Method`, `r.With`, and `chi.Chain` all consume this signature.
+- **Plan 01-10 — Viewer keeps `connection.test` (probe is read-only) but is denied `connection.edit` / `health.detailed` / `user.manage` / `device.{create,update,delete}` / `audit.view`.** Locked into `roleBundles` source code with inline comments so future plans cannot tighten/loosen by accident. Test Connection probe leaks only "reachable / unreachable" — same info the dashboard already shows; tightening would add friction for zero security benefit.
+- **Plan 01-10 — `health.detailed` is admin-only even though `/health` (basic) is unauthenticated.** Plan 18 mounts both: `/health` stays public for monitoring systems, `/health/detailed` (DB connection counts, MQTT broker status, migration version) goes behind `RequireAction(sm, ActionHealthDetailed)` because it leaks operational fingerprint useful to an attacker.
+- **Plan 01-10 — `Can(user, action, resource any)` keeps the third parameter even though Phase 1 ignores it.** Reserved for Phase 6 / Phase 7 per-row authz ("user can manage own dashboard") so the body extends without re-signing every call site. The cost is one ignored parameter at every call site (`Can(&u, ActionX, nil)`); the benefit is API stability across two future phases.
+- **Plan 01-10 — `RequireAction` returns 401 / 403 with JSON `{"error": "unauthorized" | "forbidden"}`.** Mirrors Plan 09's handler error shape (same `errorResp` JSON envelope from `handlers.go`) but uses a private `writeAuthzError` helper inside `authz.go` rather than re-using `writeJSON`. Self-contained; if a future refactor splits `internal/auth` into sub-packages, `authz.go` does not need to import its sibling. Cost: 4 duplicated lines.
 
 ### Open Todos
 
@@ -187,4 +196,4 @@ Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T01:08Z — Stopped at: Completed 01-09-login-ratelimit-PLAN.md*
+*Last session: 2026-04-28T01:19Z — Stopped at: Completed 01-10-authz-PLAN.md*

@@ -48,7 +48,7 @@ Plans:
 - [x] 01-07-argon2id-PLAN.md — Argon2id Hash/Verify (PHC encoding, OWASP m=19456 t=2 p=1) + password strength evaluator (AUTH-01)
 - [x] 01-08-session-manager-PLAN.md — alexedwards/scs/v2 + pgxstore session manager with dev-mode Cookie.Secure toggle (AUTH-02, D-23)
 - [x] 01-09-login-ratelimit-PLAN.md — Login + logout + change-password handlers + per-IP/per-username rate limit + create-admin body (AUTH-01, AUTH-03 reframed, AUTH-04, AUTH-05)
-- [ ] 01-10-authz-PLAN.md — Can(user, action, resource) + RequireAction middleware (PITFALLS §14, AUTH-06 server-side)
+- [x] 01-10-authz-PLAN.md — Can(user, action, resource) + RequireAction middleware (PITFALLS §14, AUTH-06 server-side)
 - [ ] 01-11-account-ui-PLAN.md — RootLayout loader + AccountMenu + ChangePasswordDialog (AUTH-05 frontend, AUTH-06 frontend hiding)
 - [ ] 01-12-chirpstack-grpc-PLAN.md — ChirpStack gRPC Dial + ProbeVersion + bufconn mock (CHIRP-01, INST-05 sentinel)
 - [ ] 01-13-mqtt-subscriber-PLAN.md — paho.mqtt.golang subscriber with OnConnect re-subscribe + PingMQTT (CHIRP-02, supports CHIRP-03)

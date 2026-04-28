@@ -14,7 +14,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **AUTH-03**: User is forced to change the default admin password on first login
 - [x] **AUTH-04**: Failed login attempts are rate-limited to prevent brute force
 - [x] **AUTH-05**: User can change their own password from their account menu
-- [ ] **AUTH-06**: System enforces two roles — admin (full control) and viewer (read-only) — across every API endpoint and every UI surface
+- [x] **AUTH-06**: System enforces two roles — admin (full control) and viewer (read-only) — across every API endpoint and every UI surface
 
 ### Install & Setup
 
@@ -230,7 +230,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | AUTH-03 | Phase 1 | Pending |
 | AUTH-04 | Phase 1 | Complete |
 | AUTH-05 | Phase 1 | Complete |
-| AUTH-06 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Complete |
 | INST-01 | Phase 1 | Pending |
 | INST-02 | Phase 1 | Pending |
 | INST-03 | Phase 1 | Pending |
