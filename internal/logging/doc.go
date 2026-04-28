@@ -1,7 +1,9 @@
-// Package logging — slog handler bootstrap (D-24, D-25).
+// Package logging emits Shifter's structured operational logs (D-24, D-25).
 //
-// Plan 04 (config-secrets) replaces this stub with a JSON handler bound to the
-// config-driven log level. Plan 05 only needs the New(level) constructor today
-// so the CLI subcommands can pass a *slog.Logger into db.RunMigrations and
-// other helpers.
+// Output is JSON, one event per line, written to stdout so the Docker
+// `json-file` driver captures it under the operator's configured size +
+// rotation caps. Per D-25 only two levels are exposed: `info` (default) and
+// `debug` (toggled via `SHIFTER_LOG_LEVEL=debug`); anything else falls back
+// to `info`. PITFALL #9 (slog pretty-printing) is defused by relying on
+// slog.NewJSONHandler's default single-line JSON contract.
 package logging
