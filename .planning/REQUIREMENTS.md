@@ -127,9 +127,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Settings
 
-- [ ] **SETT-01**: Settings are organized into clear categories — install identity, ChirpStack connection, units, timezone, alerts, data retention, backup status
+- [x] **SETT-01**: Settings are organized into clear categories — install identity, ChirpStack connection, units, timezone, alerts, data retention, backup status
 - [ ] **SETT-02**: Admin can update install identity at any time and changes propagate to report branding
-- [ ] **SETT-03**: Admin can update ChirpStack gRPC + MQTT credentials at any time without redeploying
+- [x] **SETT-03**: Admin can update ChirpStack gRPC + MQTT credentials at any time without redeploying
 - [ ] **SETT-04**: Admin can configure data retention windows for raw measurements and each aggregate level
 - [ ] **SETT-05**: Settings page surfaces the most recent backup timestamp and a warning if backup is older than the configured threshold
 
@@ -301,9 +301,9 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | ALERT-04 | Phase 6 | Pending |
 | ALERT-05 | Phase 6 | Pending |
 | ALERT-06 | Phase 6 | Pending |
-| SETT-01 | Phase 6 | Pending |
+| SETT-01 | Phase 6 | Complete |
 | SETT-02 | Phase 6 | Pending |
-| SETT-03 | Phase 6 | Pending |
+| SETT-03 | Phase 6 | Complete |
 | SETT-04 | Phase 6 | Pending |
 | SETT-05 | Phase 6 | Pending |
 | USER-01 | Phase 6 | Pending |

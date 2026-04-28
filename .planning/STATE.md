@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T02:49:13.772Z"
+last_updated: "2026-04-28T03:06:46.960Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 16
-  percent: 67
+  completed_plans: 17
+  percent: 71
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-16 execution — install wizard SPA shipped: `web/src/lib/install.ts` typed client (`fetchInstallState`, `postStep1..4`, `postFinish`, `REGIONS` catalog with AS923-2 default for Thailand), `web/src/routes/install/index.tsx` wizard shell branching on `state.CurrentStep` (1..5) using Plan 06's Stepper, 5 step components (`admin-step` / `chirpstack-step` / `region-step` / `identity-step` / `review-step`) with per-step inline error mapping. Step 2 catches 422 v3_detected → destructive Alert with UI-SPEC verbatim copy "Shifter doesn't support ChirpStack v3" (INST-05). Step 3 pre-selects `as923_2` with Thailand helper hint (PITFALLS §8). Review renders drafts via `<pre>{JSON.stringify(...)}</pre>` (T-16-01 React auto-escape). On finish success or 410 Gone, navigates to `/login` (Plan 23). `App.tsx` lazy-loads InstallWizard via React.lazy + Suspense at /install. `_root.tsx::rootLoader` composes install-state pre-check BEFORE session-check: 200 (in progress) → throw redirect('/install'); 410 (completed) → continue to fetchSessionUser; network error → fall through (FirstRunGate catches missing-admin on /api/account/me). 22 frontend tests pass / 3 still-skipped Plan 02 stubs (auth/login/account-menu — Plans 23/11 territory); region-step's 3 `describe.skip` tests replaced with passing tests (mocks @/lib/install postStep3). `pnpm build` exits 0; lazy chunk emitted at `dist/assets/index-iiuy9VXU.js` (34.08 kB). INST-01..05 + UX-01 frontend complete.)
+**Last Updated:** 2026-04-28 (after Plan 01-17 execution — Test Connection backend + Phase 1 Settings page shipped. `internal/http/testconn.go` exports `TestConnHandler` (POST /api/settings/chirpstack/test — two-channel gRPC ProbeVersion + MQTT PingMQTT probe; failure encoded in channel results so SPA renders StatusRow uniformly), `GetChirpStackHandler` (GET — metadata-only; api_token NEVER returned, T-17-01/V8), `PutChirpStackHandler` (PUT — admin-only; re-runs Dial+ProbeVersion+PingMQTT BEFORE persist per Open Q 2; 4-branch UPDATE ladder honors "leave blank to keep current" for api_token / mqtt_password), and `ProductionDial` adapter (chirpstack.Dial → chirpStackConn). 7 backend tests pass: TestTestConn_Happy/V3Refused/BothFail/RequiresCSRFHeader, TestSettings_GetChirpStack_HidesAPIToken, TestSettings_PutChirpStack_RequiresAdmin/RejectsV3. Phase 1 Settings page at `/settings`: Account card (email + role badge) + ChirpStack connection card (mode/grpc_url/mqtt_url read-only); Edit connection button admin-only (AUTH-06 frontend hiding); Test connection button uses TanStack Query useMutation; TestConnectionPanel uses StatusRow (Plan 06 component) — three-row visual contract; EditConnectionDialog uses ResponsiveDialog with "Save and test" CTA + UI-SPEC verbatim copy. SettingsPage lazy-loaded via React.lazy + Suspense; lazy chunk emitted at `dist/assets/settings-DFYudpur.js` (19.76 kB). `shifter config-check` now actually probes Postgres + ChirpStack gRPC + MQTT in order using the SAME chirpstack.Dial / ProbeVersion / PingMQTT primitives the HTTP handler uses (D-07 finalized; Warning #8 fix). 2 config-check tests pass: TestConfigCheck_FailsOnBadYAML + TestConfigCheck_ProbeOrder. CHIRP-03 + SETT-01 (Phase 1 minimum) + SETT-03 (Phase 1 ChirpStack credentials) complete.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16)
+Plan: 17 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 17 — test-connection (next) |
-| **Status** | Plans 01–16 complete. Plan 16 shipped the install wizard SPA: `web/src/lib/install.ts` typed client (fetchInstallState, postStep1..4, postFinish, REGIONS catalog with AS923-2 default for Thailand) + 7 component files at `web/src/routes/install/*` (index shell + 5 step bodies + region-step.test.tsx). Wizard shell uses useEffect-driven `state.CurrentStep` branching with Plan 06's Stepper; per-step components own their own ApiError → inline-Alert mapping. Step 2 catches 422 v3_detected → destructive Alert with UI-SPEC verbatim copy "Shifter doesn't support ChirpStack v3" (INST-05). Step 3 pre-selects `as923_2` with the "We pre-selected AS923-2 because the install address is in Thailand." helper hint (PITFALLS §8). Review renders drafts via `<pre>{JSON.stringify(...)}</pre>` (T-16-01 React auto-escape). On finish success or 410, navigates to `/login` with `replace: true` (Plan 23 owns that route). App.tsx lazy-loads InstallWizard via React.lazy + Suspense fallback={null} at /install. `_root.tsx::rootLoader` composes install-state pre-check BEFORE session-check: 200 → throw redirect('/install'); 410 → continue to fetchSessionUser; network/non-redirect error → fall through (belt-and-suspenders with backend FirstRunGate from Plan 14). 22 frontend tests pass / 3 still-skipped Plan 02 stubs (auth/login/account-menu — Plans 23/11 territory); region-step's 3 `describe.skip` tests replaced with passing tests that mock `@/lib/install`'s postStep3. `pnpm build` exits 0; lazy chunk emitted at `dist/assets/index-iiuy9VXU.js` (34.08 kB). INST-01..05 + UX-01 frontend complete. |
-| **Progress (plans)** | `[███████░░░] 16/24 (67%)` |
+| **Plan** | 18 — router-health (next) |
+| **Status** | Plans 01–17 complete. Plan 17 shipped Test Connection + Phase 1 Settings page. Backend: `internal/http/testconn.go` exports `TestConnHandler` (POST /api/settings/chirpstack/test — two-channel gRPC ProbeVersion + MQTT PingMQTT probe; always 200; failure encoded in channel results), `GetChirpStackHandler` (GET — metadata-only; api_token NEVER returned, T-17-01/V8), `PutChirpStackHandler` (PUT — re-runs Dial+ProbeVersion+PingMQTT BEFORE persist per Open Q 2; 4-branch UPDATE ladder honors "leave blank to keep current" for api_token / mqtt_password), `ProductionDial` adapter. 7 backend tests pass. Frontend: `web/src/lib/settings.ts` typed client; `web/src/routes/settings.tsx` Account + ChirpStack cards (Edit admin-only via AUTH-06 frontend hiding; Test connection both roles); `TestConnectionPanel` uses StatusRow (Plan 06); `EditConnectionDialog` uses ResponsiveDialog with "Save and test" CTA. SettingsPage lazy-loaded; lazy chunk `dist/assets/settings-DFYudpur.js` (19.76 kB). `shifter config-check` now probes Postgres + ChirpStack + MQTT in order using SAME `chirpstack.{Dial, ProbeVersion, PingMQTT}` primitives the HTTP handler uses — D-07 finalized; Warning #8 fix. 2 config-check tests pass. CHIRP-03 + SETT-01 (Phase 1) + SETT-03 (Phase 1 ChirpStack credentials) complete. Plan 18 mounts the 3 endpoints behind chi: `RequireAction(sm, ActionConnectionTest)` for GET + POST; `RequireAction(sm, ActionConnectionEdit)` for PUT (admin only). |
+| **Progress (plans)** | `[███████░░░] 17/24 (71%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 17` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 18` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 16 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16) |
+| Plans complete | 17 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -66,6 +66,7 @@ Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-13 mqtt-subscriber | 5 min | 1 | 4 |
 | 01-15 install-handlers | 12 min | 2 | 5 |
 | 01-16 install-wizard-ui | 5 min | 2 | 10 |
+| 01-17 test-connection | 9 min | 2 | 9 |
 
 ## Accumulated Context
 
@@ -197,6 +198,13 @@ Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-16 — `App.tsx` lazy-loads InstallWizard via React.lazy + Suspense fallback={null}.** The wizard chunk (5 step components, no charts/maps) is excluded from the post-install bundle (it never renders once install is complete; FirstRunGate would 307 / → /install only when install is incomplete). The `fallback={null}` choice over a loading spinner is intentional: the wizard chunk is small (~34 KB), the spinner introduces flash on a fast load. Plan 19 (spa-embed) inherits this — lazy chunks are emitted as separate JS files under `dist/assets/`.
 - **Plan 01-16 — `InstallState` field names use Go-export casing verbatim.** `CurrentStep`, `Step1Admin`, `Step2ChirpStack`, etc. — matches Plan 15's pgx-scanned struct field names 1:1. No JSON-tag layer at the Plan 15 boundary. If Phase 2+ moves to JSON tags, `lib/install.ts` updates in lockstep. Phase 1's `json.Marshal` of a struct without tags emits exported field names exactly as-is, so the SPA TypeScript types match the Go struct field names directly.
 - **Plan 01-16 — ReviewStep renders drafts via `<pre>{JSON.stringify(...)}</pre>`.** T-16-01 mitigation: React + `<pre>` auto-escapes; embedded HTML in display name or address is rendered as text, not interpreted. T-16-02 (password hash visible in review) is plan-accepted residual: operator sees Argon2id PHC string for their own admin account; the hash is non-reversible (ASVS V8). Future audit-log views MUST NOT render arbitrary user input via `dangerouslySetInnerHTML` — `<pre>` + JSON.stringify is the canonical safe rendering.
+- **Plan 01-17 — TestConnHandler always returns 200; failure encoded in channel results.** Allows the SPA to render the StatusRow panel uniformly without HTTP-status branching. Each channel carries `status` (reachable | unreachable | skipped), `latency_ms` (when measured), and `detail` (when not happy-path). UI-SPEC three-row contract preserved. When gRPC fails, MQTT is `skipped` with detail `"gRPC failed first"` — operator gets the actionable cause inline (RESEARCH §Pattern 14).
+- **Plan 01-17 — `GET /api/settings/chirpstack` hides api_token (T-17-01 / V8).** SQL SELECT omits `api_token_ref` and `mqtt_password_ref`; JSON response omits any `api_token` field. Operators rotate credentials via the `PUT`/Edit dialog, never read them back. `TestSettings_GetChirpStack_HidesAPIToken` pins the contract; future plans extending settings (Phase 6 SETT-01 expansion) MUST follow the same metadata-only-on-read discipline.
+- **Plan 01-17 — `PUT /api/settings/chirpstack` re-runs Dial+ProbeVersion+PingMQTT BEFORE persist (Open Q 2 recommendation).** A typo'd URL or v3 endpoint never lands in the live config; the prior good config keeps the running server happy. Cost: one extra round-trip per save; benefit: zero risk of a connection-edit click bricking the install. 4-branch UPDATE ladder honors "leave blank to keep current" for `api_token` / `mqtt_password` — empty fields don't blank the on-disk references.
+- **Plan 01-17 — `shifter config-check` probe primitives are unified with `TestConnHandler` (D-07 finalized; Warning #8 fix).** Both call `chirpstack.Dial` / `chirpstack.ProbeVersion` / `chirpstack.PingMQTT` directly; no parallel implementation. One regression surface, two operator affordances (CLI + UI). Probe order locked: config syntax → Postgres ping → ChirpStack Dial+ProbeVersion → MQTT PingMQTT; failure short-circuits the rest of the chain so the operator sees one root cause, not a cascade.
+- **Plan 01-17 — `chirpStackConn` / `csConn` interface duality.** `internal/http` and `internal/install` each define their own narrow interface (`{ Conn() *grpc.ClientConn; Close() error }`) so neither imports the other (no cycle once Plan 18 wires both). Plan 18 builds ONE adapter struct that satisfies BOTH interfaces (identical methods); package boundaries stay clean. `http.ProductionDial` is the canonical production wrapper for both call sites.
+- **Plan 01-17 — Settings page lazy-loaded via React.lazy + Suspense `fallback={null}`.** Symmetric with Plan 16's InstallWizard pattern; both routes are gated by `rootLoader` (settings is post-install only, install is pre-install only). Lazy chunk emitted at `dist/assets/settings-*.js` (~20 kB raw / ~6.5 kB gzipped). Plan 19 (spa-embed) consumes via go:embed FS.Sub(dist) — no per-route wiring change required.
+- **Plan 01-17 — AUTH-06 frontend hiding: Edit connection button only renders when `meQ.data?.role === 'admin'`.** Backend `RequireAction(sm, ActionConnectionEdit)` (wired by Plan 18) is the security boundary; frontend hiding is UX clarity, not a security gate. Viewers see Test connection (probe is read-only, viewers keep `ActionConnectionTest`) but never Edit. Test `TestSettings_PutChirpStack_RequiresAdmin` verifies the backend gate against a viewer session (403).
 
 ### Open Todos
 
@@ -244,4 +252,4 @@ Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T02:46Z — Stopped at: Completed 01-16-install-wizard-ui-PLAN.md*
+*Last session: 2026-04-28T03:02Z — Stopped at: Completed 01-17-test-connection-PLAN.md*
