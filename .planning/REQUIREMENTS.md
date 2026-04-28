@@ -12,8 +12,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **AUTH-01**: User can log in with email and password
 - [x] **AUTH-02**: User session persists across browser refresh and times out after configurable idle period
 - [ ] **AUTH-03**: User is forced to change the default admin password on first login
-- [ ] **AUTH-04**: Failed login attempts are rate-limited to prevent brute force
-- [ ] **AUTH-05**: User can change their own password from their account menu
+- [x] **AUTH-04**: Failed login attempts are rate-limited to prevent brute force
+- [x] **AUTH-05**: User can change their own password from their account menu
 - [ ] **AUTH-06**: System enforces two roles — admin (full control) and viewer (read-only) — across every API endpoint and every UI surface
 
 ### Install & Setup
@@ -228,8 +228,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| AUTH-05 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Complete |
+| AUTH-05 | Phase 1 | Complete |
 | AUTH-06 | Phase 1 | Pending |
 | INST-01 | Phase 1 | Pending |
 | INST-02 | Phase 1 | Pending |

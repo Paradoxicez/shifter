@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T00:54:24.823Z"
+last_updated: "2026-04-28T01:12:46.743Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 8
-  percent: 33
+  completed_plans: 9
+  percent: 38
 ---
 
 # Project State: Shifter
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
+Plan: 9 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 09 — login-ratelimit (next) |
-| **Status** | Plans 01–08 complete; Plan 08 shipped `auth.NewSessionManager` (alexedwards/scs/v2 + pgxstore backend) with locked cookie attrs (HttpOnly + SameSite=Lax + Secure=!devMode + Path=/) and helpers (PutUser/GetUser/Destroy/RotateOnLogin/EnsureCSRFToken/UserFromContext). AUTH-02 (idle timeout + persistence) is satisfied; the sessions table from migration 0003 is now the live store. No Redis dep (D-06 honored); pgxstore default 5-min cleanup goroutine mitigates T-08-05. Plans 09 (login + LoadAndSave wiring), 11 (logout + password change), 14 (install middleware), 15 (wizard finish atomic admin login) are unblocked. |
-| **Progress (plans)** | `[███░░░░░░░] 8/24 (33%)` |
+| **Plan** | 10 — authz (next) |
+| **Status** | Plans 01–09 complete; Plan 09 shipped login + logout + change-password handlers (`auth.LoginHandler` / `LogoutHandler` / `ChangePasswordHandler`) with `LoginLimiter` (per-IP + per-username token bucket via golang.org/x/time/rate, 5 burst / 1-min refill), `Store` user-table facade, X-Requested-With CSRF guard, 256-byte password length cap (T-07-05), constant-time-ish dummyHash() on user-not-found (T-09-02), and AUTH-05 defense-in-depth session revocation (iterateAndRevoke walks scs sessions and DELETEs other tokens). `shifter create-admin --email --password [--reset]` body is wired. AUTH-01 / AUTH-04 / AUTH-05 / D-09 / D-14 satisfied. Plan 10 (RBAC role middleware), Plan 11 (account UI), Plan 14 (install middleware uses `Store.AdminExists`), Plan 15 (wizard finish uses `Store.InsertAdminUser` + `auth.PutUser`), Plan 18 (chi router mounts the three handlers), and Plan 23 (login UI consumes the API contracts) are all unblocked. |
+| **Progress (plans)** | `[████░░░░░░] 9/24 (38%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 09` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 10` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 8 / 24 (01, 02, 03, 04, 05, 06, 07, 08) |
+| Plans complete | 9 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -58,6 +58,7 @@ Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 | 01-04 config-secrets | 10 min | 2 | 11 |
 | 01-07 argon2id | 3 min | 2 | 6 |
 | 01-08 session-manager | 5 min | 1 | 5 |
+| 01-09 login-ratelimit | 11 min | 3 | 13 |
 
 ## Accumulated Context
 
@@ -128,6 +129,18 @@ Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 - **Plan 01-08 — Two rotate entry points.** `PutUser` bundles `Put + RenewToken` for the common login path (Plans 09 + 15); `RotateOnLogin` exposes pure `RenewToken` for Plan 11 password-change where the user blob isn't changing but the session ID must rotate. Both call `sm.RenewToken` under the hood — call sites stay readable. Plan 11 will additionally `DELETE FROM sessions WHERE ...` to invalidate other devices on password change.
 - **Plan 01-08 — `sm.LoadAndSave` is wired exactly once, in Plan 09's chi router setup.** No plan beyond 09 should call `LoadAndSave` again; double-wrapping would double-write the cookie. `auth.UserFromContext + ErrNoUser` is the only sanctioned way for handlers to fetch the current user — Plan 10's role middleware and Plan 14's install middleware both build on top of it.
 - **Plan 01-08 — `EnsureCSRFToken` ships pre-emptively.** Phase 1 enforcement is `SameSite=Lax + X-Requested-With` (RESEARCH §Security; Plan 06 apiFetch sends the header, Plan 11/15 will reject POST/PUT/DELETE without it). Adding the per-session token now means later phases can adopt token-pair CSRF without a session-data migration. base64.RawURLEncoding chosen for URL-safe transport.
+- **Plan 01-09 — Per-IP + per-username login rate limiter via golang.org/x/time/rate.** 5 burst, `rate.Every(time.Minute)` refill. Both buckets must allow before login proceeds. Username key is lowercased before bucket lookup so `Alice@`, `alice@`, `ALICE@` cannot multiply the per-username budget. The cleanup goroutine evicts entries older than 1h every 15m so the map stays bounded under attack. AUTH-04 satisfied.
+- **Plan 01-09 — `RetryAfter` cancels its `Reserve()`.** Plan-verbatim used `Reserve().Delay()` without canceling, which would silently consume one token per query — turning the 429 path into a feedback loop where every error response stole an extra attempt from the budget. `Reserve+Cancel` is the canonical query-without-consuming idiom in `golang.org/x/time/rate`. Future rate-limited endpoints (test-connection probes, per-route limiters) MUST follow this pattern.
+- **Plan 01-09 — `X-Requested-With: shifter` is required on every state-changing POST.** csrfHeaderPresent(r) check sits at the top of every handler (login, logout, change-password). Combined with SameSite=Lax cookies (Plan 08), this defeats classic cross-site form CSRF without per-request token plumbing. T-09-03 mitigated. Plan 11/14/15/17 handlers MUST start with the same guard.
+- **Plan 01-09 — 256-byte password length cap at the API boundary.** `maxPasswordLength = 256` constant in handlers.go. LoginHandler and ChangePasswordHandler reject oversize passwords with 400 BEFORE calling Hash/Verify. Argon2id cost scales with input length; this is the T-07-05 mitigation Plan 07 deferred to the API layer. Plan 11/16 password forms inherit the same cap.
+- **Plan 01-09 — Constant-time-ish login: `dummyHash()` Verify on user-not-found.** When `GetUserByEmail` returns ErrUserNotFound, the handler still calls `Verify(password, dummyHash())` so wall-clock between "no such email" and "wrong password" is comparable. dummyHash() is a static valid PHC string (not a runtime-computed hash — computing on start would burn ~20ms per cold start for zero security gain). T-09-02 mitigated.
+- **Plan 01-09 — `clientIP` honors X-Forwarded-For first hop.** Caddy / Compose deployments terminate TLS in front of shifter; the operator-controlled reverse proxy is the trust boundary. `clientIP(r)` returns the first XFF entry when present, else `net.SplitHostPort(r.RemoteAddr)`. Plan 22 (Caddyfile) MUST configure XFF correctly. Future rate-limited endpoints reuse this helper.
+- **Plan 01-09 — `auth.Store` is the narrow user-table facade.** 5 methods + Pool() accessor: `GetUserByEmail` / `GetUserByID` / `AdminExists` / `InsertAdminUser` / `UpdatePassword`. Email lowercased in BOTH `InsertAdminUser` SQL (`lower($1)`) AND in callers — belt + suspenders defense for the user_email_lowercase CHECK. Disabled users (disabled_at IS NOT NULL) are filtered out — login path treats them as non-existent. Plans 10/11/14/15 MUST import this Store; raw queries against `"user"` from outside the package are forbidden.
+- **Plan 01-09 — `iterateAndRevoke` defense-in-depth on password change.** AUTH-05: changing a password drops every OTHER active session for that user. Implementation uses scs.SessionManager.Iterate to decode each session's user_id (SCS payloads are gob-encoded; using SCS's iterator gives us pre-loaded ictx for free) and DELETEs matching tokens via raw pgx. The current session stays valid (operator's own device). T-09-08 mitigated.
+- **Plan 01-09 — `ChangePasswordHandler` does NOT rotate the current session token after success.** The session was already authenticated; password just changed → no fixation scenario. Skipping the rotate avoids one extra session-store write. Plan 11 may revisit if a UI need surfaces.
+- **Plan 01-09 — `shifter create-admin --reset` refuses to promote viewer → admin.** If a viewer row already exists at the email and the operator runs --reset, the command errors with "user exists but is not an admin (role=viewer) — refusing to promote". Recovery escape hatch must NOT silently change roles; promotion is an explicit operator action that belongs in the future admin UI.
+- **Plan 01-09 — `must_change_password=FALSE` is the only path that creates admins.** Both `Store.InsertAdminUser` (create-admin CLI + Plan 15 wizard finish) hardcode `must_change_password=FALSE`. D-09 reframes AUTH-03: bootstrap admins set their own password — there is no force-change UI gate today. TestWizardAdmin_NoForceChange asserts the schema invariant directly so future regressions surface in CI.
+- **Plan 01-09 — Testcontainer port flake noted.** Two separate runs in this session hit `postgres dsn: port "5432/tcp" not found` on a single test case under default-parallelism `go test ./internal/... -short`. Re-running the affected test always passed. Per-package runs (`go test ./internal/auth ...`) are stable. Logged to Open Todos for the CI plan to address with `-p 1` or per-package serialization.
 
 ### Open Todos
 
@@ -139,6 +152,7 @@ Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 - **Plan 24 — Justfile build recipe.** Update `just build` to use the production -ldflags invocation documented in `internal/version/version.go`'s package comment so release artifacts ship with real Version / Commit / BuildTime.
 - **Plan 18 — Cobra completion subcommand visibility.** `shifter --help` lists `completion` (Cobra's auto-registered shell completion). Decide whether to keep visible (useful for ops), hide via `rootCmd.CompletionOptions.DisableDefaultCmd = true`, or move to a `tools` group.
 - **Plan 19 — Bundle size review.** Frontend bundle jumped from 193 KB to 463 KB after Plan 06 (react-router-dom v7 + @tanstack/react-query + radix primitives). Plan 19 (spa-embed) should consider route-level code splitting if the size becomes a concern at install time.
+- **CI plan — Testcontainer port-mapping race.** Default-parallel `go test ./internal/... -short` occasionally fails one test case with `postgres dsn: port "5432/tcp" not found` when many TimescaleDB containers spin up simultaneously. Re-running the affected test always passes; per-package runs are stable. CI plan should use `-p 1` or per-package serialization for full-suite verification.
 
 ### Open Blockers
 
@@ -173,4 +187,4 @@ Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T00:54Z — Stopped at: Completed 01-08-session-manager-PLAN.md*
+*Last session: 2026-04-28T01:08Z — Stopped at: Completed 01-09-login-ratelimit-PLAN.md*
