@@ -121,3 +121,74 @@ func seedAllFourSteps(t *testing.T, store *Store) {
 	require.NoError(t, store.UpdateStep4(context.Background(),
 		[]byte(`{"display_name":"Acme","timezone":"Asia/Bangkok","units":"metric"}`)))
 }
+
+// TestFinishSetup_AtomicCommit — D-10: a full wizard ends in one transaction
+// that creates the admin user, install_identity, chirpstack_connection rows
+// and deletes install_state. After commit, GET /state returns 410 (D-11).
+func TestFinishSetup_AtomicCommit(t *testing.T) {
+	deps, store := setupForFinish(t)
+	seedAllFourSteps(t, store)
+	require.NoError(t, FinishSetup(context.Background(), deps))
+
+	var n int
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM "user" WHERE role='admin'`).Scan(&n))
+	require.Equal(t, 1, n, "atomic commit must create admin user")
+
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM install_identity`).Scan(&n))
+	require.Equal(t, 1, n, "atomic commit must create install_identity")
+
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM chirpstack_connection`).Scan(&n))
+	require.Equal(t, 1, n, "atomic commit must create chirpstack_connection")
+
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM install_state`).Scan(&n))
+	require.Equal(t, 0, n, "D-11: install_state row deleted after finish")
+}
+
+// TestFinishSetup_Idempotent — re-running FinishSetup after a successful commit
+// must return ErrAlreadyCompleted (admin row already exists). The pre-check
+// short-circuits before opening the txn so concurrent finishes never duplicate
+// the admin row.
+func TestFinishSetup_Idempotent(t *testing.T) {
+	deps, store := setupForFinish(t)
+	seedAllFourSteps(t, store)
+	require.NoError(t, FinishSetup(context.Background(), deps))
+
+	err := FinishSetup(context.Background(), deps)
+	require.ErrorIs(t, err, ErrAlreadyCompleted)
+}
+
+// TestFinishSetup_Incomplete — when fewer than four step drafts are captured,
+// FinishSetup returns ErrIncompleteWizard without opening a txn or writing
+// any user / identity / connection rows.
+func TestFinishSetup_Incomplete(t *testing.T) {
+	deps, store := setupForFinish(t)
+	require.NoError(t, store.UpdateStep1(context.Background(),
+		[]byte(`{"email":"a@x.com","name":"b","password_hash":"x"}`)))
+	err := FinishSetup(context.Background(), deps)
+	require.ErrorIs(t, err, ErrIncompleteWizard)
+
+	// Confirm nothing was written.
+	var n int
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM "user"`).Scan(&n))
+	require.Equal(t, 0, n)
+}
+
+// TestFinishSetup_RollsBackOnFailure — if the txn fails mid-way (here we
+// simulate by feeding step4 a bogus units enum value bypassing the handler),
+// the entire transaction rolls back: no admin user is created.
+func TestFinishSetup_RollsBackOnFailure(t *testing.T) {
+	deps, store := setupForFinish(t)
+	// Re-seed with an invalid units enum value — the handlers reject this
+	// upstream, but FinishSetup is the last line of defence (D-10).
+	seedAllFourSteps(t, store)
+	require.NoError(t, store.UpdateStep4(context.Background(),
+		[]byte(`{"display_name":"Acme","timezone":"Asia/Bangkok","units":"furlongs"}`)))
+
+	err := FinishSetup(context.Background(), deps)
+	require.Error(t, err, "invalid units enum must error inside the txn")
+
+	// Crucially, the admin user must NOT exist — Serializable txn rolled back.
+	var n int
+	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM "user"`).Scan(&n))
+	require.Equal(t, 0, n, "Serializable rollback must drop the partial admin insert")
+}
