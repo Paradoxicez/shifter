@@ -7,3 +7,7 @@
 /secrets
 *.md
 .planning
+/coverage
+*.test
+*.out
+/shifter

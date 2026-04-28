@@ -39,11 +39,47 @@ lint:
 migrate *args:
     go run ./cmd/shifter migrate {{args}}
 
-# Smoke-test bundled compose (Wave 0 stub — Plan 20 implements)
-compose-smoke-bundled:
-    @echo "TODO: implemented in Plan 20"
-    @exit 1
+# Build the local shifter:0.1.0 image (used by both compose flavors).
+_compose-build-image:
+    docker build -t shifter:0.1.0 \
+      --build-arg SHIFTER_VERSION=0.1.0 \
+      --build-arg SHIFTER_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo dev)" \
+      --build-arg SHIFTER_BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      .
 
+# Pre-populate dummy secrets so smoke tests can run without operator setup.
+_compose-prep-secrets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p secrets
+    [ -s secrets/postgres_password.txt ]    || openssl rand -base64 24 > secrets/postgres_password.txt
+    [ -s secrets/session_signing_key.txt ]  || openssl rand -hex 32     > secrets/session_signing_key.txt
+    [ -s secrets/chirpstack_api_token.txt ] || echo placeholder         > secrets/chirpstack_api_token.txt
+    [ -s secrets/mqtt_password.txt ]        || echo ""                  > secrets/mqtt_password.txt
+    chmod 0600 secrets/*.txt
+
+# Smoke-test bundled compose flavor (OPS-01): bring up stack, poll /health, tear down.
+compose-smoke-bundled:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _compose-prep-secrets
+    just _compose-build-image
+    (cd compose && docker compose -f bundled.yml up -d)
+    echo "Waiting for shifter /health ..."
+    deadline=$((SECONDS + 90))
+    until curl -fs http://localhost:8080/health > /dev/null 2>&1; do
+      if [ $SECONDS -gt $deadline ]; then
+        echo "TIMEOUT waiting for /health"
+        (cd compose && docker compose -f bundled.yml logs shifter)
+        (cd compose && docker compose -f bundled.yml down -v)
+        exit 1
+      fi
+      sleep 2
+    done
+    echo "PASS bundled smoke"
+    (cd compose && docker compose -f bundled.yml down -v)
+
+# Smoke-test external compose flavor (Wave 0 stub — Plan 21 implements).
 compose-smoke-external:
     @echo "TODO: implemented in Plan 21"
     @exit 1

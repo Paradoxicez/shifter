@@ -22,6 +22,7 @@
 !.env.example
 /secrets/*
 !/secrets/.gitkeep
+!/secrets/README.md
 
 # Air hot reload
 /tmp/

@@ -1,0 +1,191 @@
+# Shifter — bundled compose flavor (OPS-01).
+#
+# Brings up the full LoRaWAN stack for greenfield customers:
+#
+#   postgres                      — Postgres 16 + TimescaleDB 2.26 (D-04, time-series store)
+#   mosquitto                     — Eclipse Mosquitto 2.0 (NOT exposed externally; T-20-03)
+#   redis                         — ChirpStack v4 dependency
+#   chirpstack                    — LoRaWAN Network Server (Shifter is the operator UI)
+#   chirpstack-gateway-bridge     — UDP packet-forwarder bridge (port 1700/udp)
+#   chirpstack-rest-api           — internal-only REST shim, used by ChirpStack web UI consumers
+#   shifter                       — the binary built from Dockerfile in this repo
+#   caddy                         — reverse proxy + automatic TLS (D-20; ports 80/443)
+#
+# Conventions enforced by this file (see plan 01-20):
+#
+#   • All image tags PINNED — no `:latest` (OPS-07, T-20-02, PITFALLS §15)
+#   • Compose `secrets:` for every credential — no `.env` for secrets (D-06, T-20-01)
+#   • Mosquitto + ChirpStack + Postgres + Redis NOT exposed externally;
+#     only Caddy (80/443) and the gateway-bridge (1700/udp) bind host ports
+#   • json-file logging driver with size + file caps on EVERY service (OPS-05 forward-look, T-20-04)
+#   • Shifter HEALTHCHECK runs `shifter healthcheck` (D-15, PITFALL #11)
+#
+# To run: `just compose-smoke-bundled` from the repo root, or
+#         `cd compose && docker compose -f bundled.yml up -d` after running
+#         `install/bundled/install.sh` (which pre-populates ../secrets/).
+
+secrets:
+  postgres_password:
+    file: ../secrets/postgres_password.txt
+  chirpstack_api_token:
+    file: ../secrets/chirpstack_api_token.txt
+  session_signing_key:
+    file: ../secrets/session_signing_key.txt
+  mqtt_password:
+    file: ../secrets/mqtt_password.txt
+
+x-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  postgres:
+    image: timescale/timescaledb:2.26.0-pg16
+    restart: unless-stopped
+    secrets: [postgres_password]
+    environment:
+      POSTGRES_USER: shifter
+      POSTGRES_DB: shifter
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shifter -d shifter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *json-logging
+    networks: [shifter]
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    restart: unless-stopped
+    command: ["mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+    # No `ports:` block — broker reachable ONLY on the internal `shifter`
+    # network (T-20-03 / CONTEXT.md `<specifics>`).
+    logging: *json-logging
+    networks: [shifter]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    logging: *json-logging
+    networks: [shifter]
+
+  chirpstack:
+    image: chirpstack/chirpstack:4.10
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
+    secrets: [postgres_password]
+    environment:
+      POSTGRESQL__DSN_FILE: /run/secrets/postgres_password
+    volumes:
+      - chirpstack_config:/etc/chirpstack
+    logging: *json-logging
+    networks: [shifter]
+
+  chirpstack-gateway-bridge:
+    image: chirpstack/chirpstack-gateway-bridge:4.0
+    restart: unless-stopped
+    depends_on: [mosquitto]
+    ports:
+      - "1700:1700/udp"
+    logging: *json-logging
+    networks: [shifter]
+
+  chirpstack-rest-api:
+    image: chirpstack/chirpstack-rest-api:4.10
+    restart: unless-stopped
+    depends_on: [chirpstack]
+    command: ["--server", "chirpstack:8080", "--bind", "0.0.0.0:8090", "--insecure"]
+    logging: *json-logging
+    networks: [shifter]
+
+  shifter:
+    image: shifter:0.1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      chirpstack:
+        condition: service_started
+    secrets:
+      - postgres_password
+      - chirpstack_api_token
+      - session_signing_key
+      - mqtt_password
+    environment:
+      SHIFTER_ENV: production
+      SHIFTER_HTTP_PORT: "8080"
+      SHIFTER_LOG_LEVEL: info
+      SHIFTER_DB_HOST: postgres
+      SHIFTER_DB_PORT: "5432"
+      SHIFTER_DB_USER: shifter
+      SHIFTER_DB_DATABASE: shifter
+      SHIFTER_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      SHIFTER_DB_SSL_MODE: disable
+      SHIFTER_CHIRPSTACK_GRPC_URL: chirpstack:8080
+      SHIFTER_CHIRPSTACK_INSECURE: "true"
+      SHIFTER_CHIRPSTACK_API_TOKEN_FILE: /run/secrets/chirpstack_api_token
+      SHIFTER_MQTT_URL: tcp://mosquitto:1883
+      SHIFTER_MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+      SHIFTER_SESSION_KEY_FILE: /run/secrets/session_signing_key
+      SHIFTER_TLS_MODE: internal
+      SHIFTER_LOGO_STORAGE_DIR: /var/lib/shifter/logos
+    ports:
+      # Exposed for the bundled smoke test (`just compose-smoke-bundled`
+      # polls /health on the host). In production deploys behind Caddy
+      # this can be removed; Caddy reaches Shifter on the internal network.
+      - "8080:8080"
+    volumes:
+      - shifter_logos:/var/lib/shifter/logos
+    logging: *json-logging
+    networks: [shifter]
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on: [shifter]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SHIFTER_DOMAIN: ${SHIFTER_DOMAIN:-localhost}
+      SHIFTER_TLS_EMAIL: ${SHIFTER_TLS_EMAIL:-}
+      CADDY_TLS_BLOCK: ${CADDY_TLS_BLOCK:-tls internal}
+      CADDY_GLOBAL_TLS_BLOCK: ${CADDY_GLOBAL_TLS_BLOCK:-}
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *json-logging
+    networks: [shifter]
+
+volumes:
+  postgres_data:
+  mosquitto_data:
+  redis_data:
+  chirpstack_config:
+  shifter_logos:
+  caddy_data:
+  caddy_config:
+
+networks:
+  shifter:
+    driver: bridge
