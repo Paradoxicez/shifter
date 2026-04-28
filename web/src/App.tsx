@@ -4,15 +4,15 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
 import AuthLayout from '@/routes/_auth'
-import RootLayout from '@/routes/_root'
+import RootLayout, { rootLoader } from '@/routes/_root'
 import IndexRedirect from '@/routes/index-redirect'
 
 /**
  * Phase 1 router skeleton.
  *
  * Public auth-flow routes (login, install) are children of <AuthLayout />;
- * protected routes (everything else) are children of <RootLayout />,
- * which renders the topbar + sidebar shell.
+ * protected routes (everything else) are children of <RootLayout />, whose
+ * `rootLoader` (Plan 11) gates on session presence — 401 → /login redirect.
  *
  * Placeholder elements at /login, /install, /settings will be filled by:
  *   - /login    → Plan 23 (login-ui)
@@ -30,6 +30,7 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <RootLayout />,
+    loader: rootLoader,
     children: [
       { index: true, element: <IndexRedirect /> },
       { path: 'settings', element: <div>Settings — Plan 17</div> },

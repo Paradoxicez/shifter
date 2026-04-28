@@ -11,6 +11,19 @@ const mockFetch = (status: number, body: unknown, headers: Record<string, string
     headers: new Headers(headers),
   } as unknown as Response)
 
+// jsdom 29 makes window.location.assign non-configurable. Replace the whole
+// location object with a stub via Object.defineProperty (configurable:true) so
+// the spy can intercept assign() calls without redefining a sealed accessor.
+function stubLocationAssign() {
+  const fn = vi.fn()
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    writable: true,
+    value: { ...window.location, assign: fn, pathname: window.location.pathname },
+  })
+  return fn
+}
+
 describe('auth client (Plan 11)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -27,11 +40,9 @@ describe('auth client (Plan 11)', () => {
   })
 
   it('fetchSessionUser throws ApiError on 401 (apiFetch handles redirect)', async () => {
-    const beforeAssign = window.location.assign
-    window.location.assign = vi.fn() as unknown as typeof window.location.assign
+    stubLocationAssign()
     mockFetch(401, { error: 'unauthorized' })
     await expect(fetchSessionUser()).rejects.toBeInstanceOf(ApiError)
-    window.location.assign = beforeAssign
   })
 
   it('login posts to /api/auth/login with X-Requested-With and returns user', async () => {
@@ -74,8 +85,7 @@ describe('auth client (Plan 11)', () => {
   })
 
   it('changePassword on 401 throws ApiError(401) with current_password_incorrect body', async () => {
-    const beforeAssign = window.location.assign
-    window.location.assign = vi.fn() as unknown as typeof window.location.assign
+    stubLocationAssign()
     mockFetch(401, { error: 'current_password_incorrect' })
     let caught: unknown
     try {
@@ -85,6 +95,5 @@ describe('auth client (Plan 11)', () => {
     }
     expect(caught).toBeInstanceOf(ApiError)
     expect((caught as ApiError).status).toBe(401)
-    window.location.assign = beforeAssign
   })
 })
