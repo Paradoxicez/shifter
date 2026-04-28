@@ -109,7 +109,18 @@ func (s *Store) UpdateStep4(ctx context.Context, payload []byte) error {
 // it is NEVER user input (T-14-04, ASVS V5). nextStep is the target floor;
 // GREATEST keeps current_step monotonic so a re-submission of an earlier
 // step doesn't regress the wizard pointer.
+//
+// Behaviour: the singleton install_state row may not exist yet when a step
+// handler is invoked (e.g. the first POST goes straight to /step/1 without a
+// preceding GET /state). We ensure-row-exists then UPDATE in two statements;
+// pgx pool checks out a single conn for the second UPDATE which avoids the
+// "no rows affected" silent failure mode of UPDATE-only.
 func (s *Store) updateStep(ctx context.Context, column string, nextStep int, payload []byte) error {
+	if _, err := s.pool.Exec(ctx,
+		`INSERT INTO install_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+	); err != nil {
+		return fmt.Errorf("ensure install_state row: %w", err)
+	}
 	// Static interpolation of a hardcoded column name. The four call sites
 	// above are the only producers; payload remains a $-bound parameter.
 	q := fmt.Sprintf(

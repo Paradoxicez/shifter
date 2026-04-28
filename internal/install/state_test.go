@@ -91,3 +91,33 @@ func TestRegions_HasThailand(t *testing.T) {
 	}
 	require.True(t, found, "INST-04: Regions must include Thailand AS923-2 default")
 }
+
+// setupForFinish builds a minimal Deps backed by a freshly-migrated
+// testcontainer pool. Used by FinishSetup tests + TestState_ReturnsGoneAfterFinish.
+func setupForFinish(t *testing.T) (Deps, *Store) {
+	t.Helper()
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	store := NewStore(pool)
+	deps := Deps{
+		Pool:  pool,
+		Store: store,
+		Log:   slog.New(slog.NewTextHandler(os.Stderr, nil)),
+	}
+	return deps, store
+}
+
+// seedAllFourSteps populates install_state with valid drafts for every step
+// so FinishSetup has a complete wizard to commit. Used by FinishSetup tests
+// and the post-finish 410 handler test.
+func seedAllFourSteps(t *testing.T, store *Store) {
+	t.Helper()
+	require.NoError(t, store.UpdateStep1(context.Background(),
+		[]byte(`{"email":"alice@example.com","name":"Alice","password_hash":"$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}`)))
+	require.NoError(t, store.UpdateStep2(context.Background(),
+		[]byte(`{"mode":"bundled","grpc_url":"chirpstack:8080","api_token_ref":"/run/secrets/cs","mqtt_url":"tcp://mosquitto:1883"}`)))
+	require.NoError(t, store.UpdateStep3(context.Background(),
+		[]byte(`{"name":"as923_2","common_name":"AS923_2"}`)))
+	require.NoError(t, store.UpdateStep4(context.Background(),
+		[]byte(`{"display_name":"Acme","timezone":"Asia/Bangkok","units":"metric"}`)))
+}
