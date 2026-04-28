@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T00:18:51.243Z"
+last_updated: "2026-04-28T00:35:31.802Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 5
-  percent: 21
+  completed_plans: 6
+  percent: 25
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-06 execution — Plan 04 still pending stub fill-in)
+**Last Updated:** 2026-04-28 (after Plan 01-04 execution — config + secrets + logging + ImageTag wired)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub fill-in)
+Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 04 — config-secrets (next; replaces internal/config + internal/logging stubs created by Plan 05) |
-| **Status** | Plans 01–03 + 05 + 06 complete; Plan 04 must fill in viper / Validate / JSON handler bodies (signatures locked by Plan 05) |
-| **Progress (plans)** | `[██░░░░░░░░] 5/24 (21%)` |
+| **Plan** | 07 — argon2id (next) |
+| **Status** | Plans 01–06 complete; Plan 04 fully replaced Plan 05's interface stubs (viper YAML+env loader, ReadSecret(_FILE) idiom, slog one-line JSON to stdout, ImageTag pin). Public signatures preserved — internal/cli/* compiles unchanged. |
+| **Progress (plans)** | `[███░░░░░░░] 6/24 (25%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 04` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 07` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub 
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 5 / 24 (01, 02, 03, 05, 06 — Plan 04 still pending) |
+| Plans complete | 6 / 24 (01, 02, 03, 04, 05, 06) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -55,6 +55,7 @@ Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub 
 | 01-03 database-layer | 33 min | 1 | 29 |
 | 01-05 cobra-cli | 4 min | 2 | 13 |
 | 01-06 frontend-shell | 6 min | 3 | 38 |
+| 01-04 config-secrets | 10 min | 2 | 11 |
 
 ## Accumulated Context
 
@@ -104,6 +105,15 @@ Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub 
 - **Plan 01-06 — Theme persistence key locked to `localStorage['shifter-theme']`.** Plan 11+ MUST NOT change the key — operator-set theme survives across logins.
 - **Plan 01-06 — Self-hosted fonts via @fontsource (no Google Fonts CDN).** Inter Variable + JetBrains Mono 400/600 imported from `@fontsource-variable/inter` + `@fontsource/jetbrains-mono` per UI-SPEC §Design System; satisfies the self-hosted constraint.
 - **Plan 01-06 — App.tsx provider order: `<ThemeProvider><QueryClientProvider><RouterProvider/><Toaster/></QueryClientProvider></ThemeProvider>`.** RouterProvider MUST be inside QueryClientProvider; ThemeProvider is outermost so theme switches don't blow away query cache.
+- **Plan 01-04 — Layered config loader (env > YAML > defaults).** viper.AutomaticEnv + SetEnvPrefix("SHIFTER") + SetEnvKeyReplacer(".", "_") so dotted YAML keys (`db.host`) overlay onto `SHIFTER_DB_HOST` env vars (D-05). Future plans MUST read configuration only via `*config.Config`, never `os.Getenv` directly for runtime config. `SHIFTER_CONFIG_FILE` overrides the `/etc/shifter/config.yaml` default; missing file is tolerated (env+defaults can satisfy a valid Config).
+- **Plan 01-04 — Compose-secrets idiom locked.** Every secret has both a `SHIFTER_<NAME>` direct env (dev paths only) and a `SHIFTER_<NAME>_FILE` env pointing into `/run/secrets/<name>` (production). `ReadSecret(name)` prefers direct then file, errors when neither is set. `ReadSecretOrEmpty(name)` returns `("", nil)` for "neither set" but propagates real read errors. `Session.Key` uses `ReadSecret` (T-04-03 hard requirement); DB password / CS token / MQTT password use `ReadSecretOrEmpty`. Future plans adding secrets MUST follow this pattern (both env vars; pick required vs optional; never put raw secrets in `config.yaml`).
+- **Plan 01-04 — CRLF-safe file read.** `strings.TrimRight(content, "\r\n")` so a Windows-edited secret file does not silently corrupt the password (PITFALL #8). Tested by `TestReadSecret_CRLF`. Plan reference's `\n`-only trim was insufficient; corrected to drop both `\r` and `\n`.
+- **Plan 01-04 — Validate() rejects `tls.mode=none` AND empty.** D-22 forbids plain HTTP. Empty string also rejected because a hand-edited config with the line removed could otherwise reach an unsafe runtime state with a confusing error message. `tls.mode=acme` additionally requires `tls.domain` to be set.
+- **Plan 01-04 — Session key length floor enforced.** `len(Session.Key) >= 32` per OWASP ASVS V6 / T-04-03. Plan listed this as a must_haves "truth" but plan-verbatim Validate() omitted the check; added explicitly with a regression test (`TestValidate_RejectsShortSessionKey`).
+- **Plan 01-04 — slog JSON to stdout (not stderr).** `slog.NewJSONHandler(os.Stdout, &HandlerOptions{Level: lvl, AddSource: false})` — D-24 calls for stdout so the Docker `json-file` driver captures it under operator-configured rotation caps. Plan 05's stub used stderr; corrected. `AddSource: false` keeps event size small (file:line strings have low operational value when logs aggregate across containers). PITFALL #9 (slog pretty-print) is defused by relying on the handler's documented one-event-one-line contract.
+- **Plan 01-04 — Log-level whitelist.** D-25 limits operator-configurable levels to `info|debug`; `debug` → LevelDebug, `info`/empty → LevelInfo, anything else (warn, error, trace, garbage) silently falls back to LevelInfo. Future logging changes MUST NOT add warn/error/trace as configurable levels without amending D-25.
+- **Plan 01-04 — `version.ImageTag = Version` single source of truth.** Top-level package var (not function) so the OPS-01 unit test (`TestImageTagPinned`) is `require.Equal(t, Version, ImageTag)` and the same `-ldflags -X version.Version=...` injection updates both at link time. Compose plans (20/21) MUST read this constant rather than hardcode a tag string.
+- **Plan 01-04 — Build sentinel defaults.** `Version = "dev" / Commit = "none" / BuildTime = "unknown"` so an unstamped local `go build` is self-describing rather than printing empty strings. Production builds inject via `-ldflags "-X github.com/shifter-io/shifter/internal/version.Version=$(git describe --always --dirty) -X .Commit=$(git rev-parse --short HEAD) -X .BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Plan 24 wires the Justfile recipe.
 
 ### Open Todos
 
@@ -111,7 +121,6 @@ Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub 
 - **CI plan — Node version >=22.13.** jsdom 29 (vitest worker) requires Node 22.13+ even though the project floor is 22.12. Whichever plan lands the GitHub Actions / CI config must pin the runner image accordingly.
 - **Plan 12 — `mockgen` on PATH.** `just bootstrap` should add `$(go env GOPATH)/bin` to PATH or document the requirement so contributors don't get "mockgen not found" after `go install`.
 - **Plan-check enhancement — verify command wording.** Plans whose `<verify>` uses `grep -q 'PASS'` against `go test ./...` (non-verbose) silently fail; either use `-v` mode or change the assertion to `grep -E 'PASS|ok\s'`. Flag during plan-check.
-- **Plan 04 — replace Plan 05's interface stubs.** Plan 05 created `internal/config/config.go` (env-only loader), `internal/logging/logging.go` (minimal slog wrapper), and `internal/version/version.go` (BuildInfo + ldflags vars). Plan 04 must replace the bodies of `config.go` and `logging.go` with the full viper-driven layered loader, secrets file reader, Validate(), and the canonical D-24/D-25 one-line JSON handler. Public signatures (`config.Load()`, `logging.New(level)`) are LOCKED — changing them breaks `internal/cli/{migrate,serve,configcheck}.go`. Config struct field names (Env, HTTPPort, LogLevel, DB, TLS) are also locked; new fields can be added freely.
 - **Plan-check enhancement — depends_on accuracy.** Plan 05's frontmatter declared `depends_on: [01, 02]` but the plan's task code requires Plan 04's outputs (config.Load, logging.New, version.Info). Future plan-check passes should grep for cross-package imports (`internal/config`, `internal/logging`, `internal/version`) and require the providing plan to be in `depends_on`.
 - **Plan 24 — Justfile build recipe.** Update `just build` to use the production -ldflags invocation documented in `internal/version/version.go`'s package comment so release artifacts ship with real Version / Commit / BuildTime.
 - **Plan 18 — Cobra completion subcommand visibility.** `shifter --help` lists `completion` (Cobra's auto-registered shell completion). Decide whether to keep visible (useful for ops), hide via `rootCmd.CompletionOptions.DisableDefaultCmd = true`, or move to a `tools` group.
@@ -150,4 +159,4 @@ Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub 
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T00:18Z — Stopped at: Completed 01-06-frontend-shell-PLAN.md (Plan 04 still pending stub replacement)*
+*Last session: 2026-04-28T00:32Z — Stopped at: Completed 01-04-config-secrets-PLAN.md*
