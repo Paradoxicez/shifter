@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T01:21:54.102Z"
+last_updated: "2026-04-28T01:42:56.791Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 10
-  percent: 42
+  completed_plans: 11
+  percent: 46
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-10 execution — Authorization API + RequireAction middleware shipped; AUTH-06 satisfied; Plans 11/17/18 unblocked at the authz boundary)
+**Last Updated:** 2026-04-28 (after Plan 01-11 execution — Account UI shipped: typed auth client (`web/src/lib/auth.ts`), rootLoader gating protected routes on `/api/account/me`, ChangePasswordDialog with UI-SPEC verbatim copy, AccountInfoHandler at the API. AUTH-05 frontend complete; AUTH-06 frontend hiding scaffolding plumbed (userRole prop ready for Phase 2+ admin-only menu items).)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
+Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 11 — account-ui (next) |
-| **Status** | Plans 01–10 complete; Plan 10 shipped the authorization API (`auth.Can(user, action, resource)`) backed by a package-private `roleBundles map[Role]map[Action]bool`, a chi-friendly `auth.RequireAction(sm, action)` middleware factory with the 401 (no session) / 403 (authenticated-but-forbidden) split, and 9 declared Action constants (4 Phase 1 — connection.edit / connection.test / account.self.edit / health.detailed — plus 5 forward-declared Phase 2+ — user.manage / device.{create,update,delete} / audit.view) so Phase 6 USER-04 only extends roleBundles without touching call sites. AUTH-06 satisfied; PITFALLS §14 (forward-compat role bundle) honored. Plan 11 (account UI) wraps `POST /api/account/password` with `RequireAction(sm, ActionAccountSelfEdit)`; Plan 17 (test-connection) wraps mutating settings endpoint with `ActionConnectionEdit`, probe with `ActionConnectionTest`; Plan 18 (router-health) wraps `/health/detailed` with `ActionHealthDetailed`, leaves `/health` public. |
-| **Progress (plans)** | `[████░░░░░░] 10/24 (42%)` |
+| **Plan** | 12 — chirpstack-grpc (next) |
+| **Status** | Plans 01–11 complete; Plan 11 shipped the account UI: backend `AccountInfoHandler` at GET /api/account/me (returns `{user: {id, email, role, must_change_password}}`, 401 for missing session AND for disabled-mid-session admins via `ErrUserNotFound` short-circuit); typed frontend auth client at `web/src/lib/auth.ts` (fetchSessionUser / login / logout / changePassword + SessionUser type, ApiError re-export) — every `/api/auth/*` and `/api/account/*` consumer now goes through this module; `rootLoader` in `web/src/routes/_root.tsx` calls fetchSessionUser before any protected route renders and `throw redirect('/login?next=...')` on 401; `ChangePasswordDialog` (ResponsiveDialog wrapper, UI-SPEC verbatim copy strings, 401/422 inline error mapping, Cancel-LEFT/primary-RIGHT footer) wired into RootLayout via the AccountMenu's "Change password" item; sonner success toast "Password changed" on commit + revalidator.revalidate(). AUTH-05 frontend complete; AUTH-06 frontend hiding scaffolding plumbed (userRole prop reaches AccountMenu; Phase 1 has no admin-only menu items but Phase 2+ adds will be one-line `userRole === 'admin' && …` guards). D-09 verified at the API: `TestAccountInfo_ReturnsUser` asserts `must_change_password=false` for the create-admin / wizard admin. |
+| **Progress (plans)** | `[█████░░░░░] 11/24 (46%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 11` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 12` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 10 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10) |
+| Plans complete | 11 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -60,6 +60,7 @@ Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 | 01-08 session-manager | 5 min | 1 | 5 |
 | 01-09 login-ratelimit | 11 min | 3 | 13 |
 | 01-10 authz | 3 min | 1 | 3 |
+| 01-11 account-ui | 6 min | 2 | 9 |
 
 ## Accumulated Context
 
@@ -150,6 +151,16 @@ Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 - **Plan 01-10 — `health.detailed` is admin-only even though `/health` (basic) is unauthenticated.** Plan 18 mounts both: `/health` stays public for monitoring systems, `/health/detailed` (DB connection counts, MQTT broker status, migration version) goes behind `RequireAction(sm, ActionHealthDetailed)` because it leaks operational fingerprint useful to an attacker.
 - **Plan 01-10 — `Can(user, action, resource any)` keeps the third parameter even though Phase 1 ignores it.** Reserved for Phase 6 / Phase 7 per-row authz ("user can manage own dashboard") so the body extends without re-signing every call site. The cost is one ignored parameter at every call site (`Can(&u, ActionX, nil)`); the benefit is API stability across two future phases.
 - **Plan 01-10 — `RequireAction` returns 401 / 403 with JSON `{"error": "unauthorized" | "forbidden"}`.** Mirrors Plan 09's handler error shape (same `errorResp` JSON envelope from `handlers.go`) but uses a private `writeAuthzError` helper inside `authz.go` rather than re-using `writeJSON`. Self-contained; if a future refactor splits `internal/auth` into sub-packages, `authz.go` does not need to import its sibling. Cost: 4 duplicated lines.
+- **Plan 01-11 — Backend-hydrated `/api/account/me`.** AccountInfoHandler reads email + must_change_password from the user table on every call rather than storing them in the session payload (Plan 08's deliberate slimness — id + role only — per T-08-06). Single indexed lookup per protected page nav is cheap; the alternative (denormalize email into the session) would force a session-store migration on every email change. Bonus: `errors.Is(err, ErrUserNotFound)` short-circuits to 401 so a disabled-mid-session admin's next page nav bounces them to /login without an explicit revoke step — symmetric with Plan 09's user-store `disabled_at IS NULL` filter.
+- **Plan 01-11 — Loader-thrown redirect + apiFetch redirect overlap is intentional.** rootLoader (`web/src/routes/_root.tsx`) calls fetchSessionUser and `throw redirect('/login?next=...')` on failure. apiFetch ALSO does `window.location.assign('/login?...')` on 401. Both end at the same /login URL; the loader-thrown redirect is the react-router-native control-flow signal that prevents the protected layout from rendering with `useLoaderData() === undefined` between apiFetch's window-level redirect and the browser navigation completing. Belt-and-suspenders: apiFetch handles non-loader 401s (SSE reconnect after session expiry); the loader handles initial-mount 401 cleanly.
+- **Plan 01-11 — `web/src/lib/auth.ts` is the canonical client.** Every Phase 1+ feature consuming `/api/auth/*` or `/api/account/*` MUST go through fetchSessionUser / login / logout / changePassword. Raw `fetch('/api/auth/...')` from any other file is forbidden going forward — apiFetch's CSRF header injection (X-Requested-With: shifter, locked at Plan 06) and ApiError envelope are non-negotiable. Plans 16 / 17 / 23 inherit this contract.
+- **Plan 01-11 — UI-SPEC verbatim copy lives in JSX, not in a strings table.** Phase 1 is English-only (UX-02 lock). Strings table is V2-I18N-01 ceremony with zero Phase 1 payoff. The future i18n pass is one mechanical sweep replacing literals with `t(key)` calls — easier than maintaining a strings table while it has only one consumer. ChangePasswordDialog title / submit labels / error mapping / strength hint live in `web/src/routes/change-password-dialog.tsx`'s JSX.
+- **Plan 01-11 — Dialog-Submit-Error-Toast pattern locked.** Mutation dialogs follow this skeleton: `useState(inputs + busy + error); onSubmit setBusy(true) → try { await mutate(); onSuccess(); onOpenChange(false); reset() } catch ApiError → setError(byStatus(err.status)) finally setBusy(false)`. Parent owns the success toast (sonner) and `revalidator.revalidate()`. Plans 16 (wizard step submits), 17 (Edit Connection), Phase 2 (Add device, Meter swap) MUST follow this shape.
+- **Plan 01-11 — Cancel-LEFT, primary-RIGHT footer.** UI-SPEC §Dialog Conventions lock. ResponsiveDialog's `footer` prop receives a `<>...<button cancel /><button primary /></>` fragment — the order in JSX IS the visual order. Every CRUD dialog inherits.
+- **Plan 01-11 — AccountInfoHandler is NOT wrapped in `RequireAction(sm, …)`.** The 401-on-no-session path IS the entire authz contract for "self read" — every authenticated user has it. Wrapping in RequireAction would require declaring a `ActionAccountSelfRead` and registering it in `roleBundles` for both roles, which is ceremony with no security gain. Other "every authenticated user" endpoints (V2 saved views, V2 personalization) will reuse this "authenticated → 200, unauthenticated → 401, no role gate" pattern. State-changing self-edit endpoints (e.g. POST /api/account/password from Plan 09) still get RequireAction(sm, ActionAccountSelfEdit) — the read/write split is the boundary.
+- **Plan 01-11 — `Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...window.location, assign: vi.fn() } })` is the canonical jsdom 29 location stub.** jsdom 29 sealed `window.location.assign` (non-configurable accessor); direct `window.location.assign = vi.fn()` throws in strict mode. The whole-object replacement keeps the spy interceptable. Reused in any future test that asserts apiFetch's 401 redirect path; lives in `web/src/lib/auth.test.ts`'s `stubLocationAssign()` helper.
+- **Plan 01-11 — Sonner success toast string is verbatim "Password changed".** UI-SPEC §"Phase 1 copy table" locks it. Resisting the upgrade to "Password changed successfully" / "Your password has been updated" — the shorter form is louder, and richColors styling already implies success via the green check. Same principle applies to all future operator-facing success toasts: terse + verbatim.
+- **Plan 01-11 — RootLayout success-side calls `revalidator.revalidate()` on password change even though the response payload doesn't change.** Pattern locks for mutations that DO produce new server state (e.g. Plan 16 region pick → revalidates capabilities; Plan 17 connection edit → revalidates /api/health). The cost on Plan 11 (one extra `/api/account/me` round-trip) is negligible; the consistency win is "every mutation dialog ends with a revalidator pulse."
 
 ### Open Todos
 
@@ -162,6 +173,7 @@ Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 - **Plan 18 — Cobra completion subcommand visibility.** `shifter --help` lists `completion` (Cobra's auto-registered shell completion). Decide whether to keep visible (useful for ops), hide via `rootCmd.CompletionOptions.DisableDefaultCmd = true`, or move to a `tools` group.
 - **Plan 19 — Bundle size review.** Frontend bundle jumped from 193 KB to 463 KB after Plan 06 (react-router-dom v7 + @tanstack/react-query + radix primitives). Plan 19 (spa-embed) should consider route-level code splitting if the size becomes a concern at install time.
 - **CI plan — Testcontainer port-mapping race.** Default-parallel `go test ./internal/... -short` occasionally fails one test case with `postgres dsn: port "5432/tcp" not found` when many TimescaleDB containers spin up simultaneously. Re-running the affected test always passes; per-package runs are stable. CI plan should use `-p 1` or per-package serialization for full-suite verification.
+- **Bootstrap docs — Node version pre-flight check.** Local Node `<22.12` (e.g. 22.11) silently breaks vitest's forks pool with `ERR_REQUIRE_ESM` from `html-encoding-sniffer@6.0.0` requiring `@exodus/bytes`'s ESM `encoding-lite.js` — Node 22.12+ added the `node:diagnostics_channel` `TracingChannel.traceSync` interop machinery jsdom 29 transitively depends on. Reproduced during Plan 11 resume. The .nvmrc=22.12 floor is correct; the operator's shell needs `nvm use` (or fnm/asdf equivalent) before `pnpm test:run`. Plan 24 (readme-docs) or whichever plan lands developer onboarding instructions should document an explicit `node --version` pre-flight check or wire a Justfile recipe (`just bootstrap-check`) that fails fast on a stale local Node.
 
 ### Open Blockers
 
@@ -196,4 +208,4 @@ Plan: 10 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T01:19Z — Stopped at: Completed 01-10-authz-PLAN.md*
+*Last session: 2026-04-28T01:42Z — Stopped at: Completed 01-11-account-ui-PLAN.md*
