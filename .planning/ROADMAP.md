@@ -46,7 +46,7 @@ Plans:
 - [x] 01-05-cobra-cli-PLAN.md — Cobra CLI: serve/migrate/version/create-admin/config-check/healthcheck (D-12, D-15)
 - [x] 01-06-frontend-shell-PLAN.md — shadcn init (new-york + slate + custom navy OKLCH) + 21 components + ResponsiveDialog/StatusRow/Stepper/ThemeProvider + router shell + apiFetch (UX-02)
 - [x] 01-07-argon2id-PLAN.md — Argon2id Hash/Verify (PHC encoding, OWASP m=19456 t=2 p=1) + password strength evaluator (AUTH-01)
-- [ ] 01-08-session-manager-PLAN.md — alexedwards/scs/v2 + pgxstore session manager with dev-mode Cookie.Secure toggle (AUTH-02, D-23)
+- [x] 01-08-session-manager-PLAN.md — alexedwards/scs/v2 + pgxstore session manager with dev-mode Cookie.Secure toggle (AUTH-02, D-23)
 - [ ] 01-09-login-ratelimit-PLAN.md — Login + logout + change-password handlers + per-IP/per-username rate limit + create-admin body (AUTH-01, AUTH-03 reframed, AUTH-04, AUTH-05)
 - [ ] 01-10-authz-PLAN.md — Can(user, action, resource) + RequireAction middleware (PITFALLS §14, AUTH-06 server-side)
 - [ ] 01-11-account-ui-PLAN.md — RootLayout loader + AccountMenu + ChangePasswordDialog (AUTH-05 frontend, AUTH-06 frontend hiding)

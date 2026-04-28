@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T00:43:47.198Z"
+last_updated: "2026-04-28T00:54:24.823Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 7
-  percent: 29
+  completed_plans: 8
+  percent: 33
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-07 execution — Argon2id Hash/Verify + PasswordStrength shipped; AUTH-01 unblocked)
+**Last Updated:** 2026-04-28 (after Plan 01-08 execution — Session manager (scs/v2 + pgxstore) shipped; AUTH-02 satisfied; Plans 09/11/14/15 unblocked)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
+Plan: 8 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 08 — session-manager (next) |
-| **Status** | Plans 01–07 complete; Plan 07 shipped Argon2id Hash/Verify with PHC encoding (OWASP-2025 params m=19456 / t=2 / p=1 / salt=16 / key=32) plus a stateless PasswordStrength tier evaluator. AUTH-01 unblocked for Plan 09 login handler and Plan 11 change-password. No bcrypt anywhere; subtle.ConstantTimeCompare grep-verified. |
-| **Progress (plans)** | `[███░░░░░░░] 7/24 (29%)` |
+| **Plan** | 09 — login-ratelimit (next) |
+| **Status** | Plans 01–08 complete; Plan 08 shipped `auth.NewSessionManager` (alexedwards/scs/v2 + pgxstore backend) with locked cookie attrs (HttpOnly + SameSite=Lax + Secure=!devMode + Path=/) and helpers (PutUser/GetUser/Destroy/RotateOnLogin/EnsureCSRFToken/UserFromContext). AUTH-02 (idle timeout + persistence) is satisfied; the sessions table from migration 0003 is now the live store. No Redis dep (D-06 honored); pgxstore default 5-min cleanup goroutine mitigates T-08-05. Plans 09 (login + LoadAndSave wiring), 11 (logout + password change), 14 (install middleware), 15 (wizard finish atomic admin login) are unblocked. |
+| **Progress (plans)** | `[███░░░░░░░] 8/24 (33%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 08` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 09` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 7 / 24 (01, 02, 03, 04, 05, 06, 07) |
+| Plans complete | 8 / 24 (01, 02, 03, 04, 05, 06, 07, 08) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -57,6 +57,7 @@ Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
 | 01-06 frontend-shell | 6 min | 3 | 38 |
 | 01-04 config-secrets | 10 min | 2 | 11 |
 | 01-07 argon2id | 3 min | 2 | 6 |
+| 01-08 session-manager | 5 min | 1 | 5 |
 
 ## Accumulated Context
 
@@ -120,6 +121,13 @@ Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
 - **Plan 01-07 — Verify wraps every error path with `argon2id:` prefix.** Deviation from plan-verbatim bare `errors.New` / unwrapped `err`. Production logging via slog needs a stable namespace to filter parse failures from unrelated subsystem errors; cost is one `fmt.Errorf` per branch. Plan 09 login handler will treat any non-nil `Verify` error as "invalid credentials" for the user but log the wrapped chain for triage.
 - **Plan 01-07 — Long-password DoS cap is Plan 09's responsibility, not Plan 07's.** T-07-05 mitigation note: Plan 09 (login) and Plan 11 (change password) MUST reject `len(password) > 256` BEFORE calling `Hash` / `Verify`. The crypto primitive itself does not enforce a length cap because the cost belongs at the API boundary.
 - **Plan 01-07 — `golang.org/x/crypto` promoted from indirect to direct.** Bumped v0.48.0 → v0.50.0; transitively bumped `x/sync` v0.20.0, `x/sys` v0.43.0, `x/text` v0.36.0, added `x/term` v0.42.0. All stdlib-extension packages with stable APIs; no other code changes.
+- **Plan 01-08 — Cookie attribute set is locked.** `Name="shifter_session"`, `HttpOnly=true`, `SameSite=Lax`, `Path="/"`, `Domain=""` always; `Secure=!devMode` (D-23). No future plan may flip any of these values without amending D-23 — `SameSite=Strict` would break the SPA login redirect (PITFALL §5); `Domain` set to anything would scope the cookie wider than the issuing host.
+- **Plan 01-08 — `auth.User` is the canonical session-bound identity.** Stores ONLY `(ID, Role)`. Plans 09/10/11/14/15 use this struct via `PutUser`/`GetUser`/`UserFromContext`; future plans MUST NOT add complex types or PII (email, display_name, audit fields) to the session payload. Profile data is joined on demand from the `user` table — T-08-06 mitigation. The two role values are `"admin"` and `"viewer"` (matches the `user_role` enum from migration 0002).
+- **Plan 01-08 — `GetUser` is panic-safe.** SCS panics with `"scs: no session data in context"` when its context key is absent (bare `context.Background()`, unauthenticated requests). `GetUser` recovers and returns `(zero, false)` instead — matches the comma-ok idiom of stdlib `m[k]`. Required by the plan's own acceptance criterion (`TestGetUser_NoSession_ReturnsZero`); without it every Plan 09/11 handler would need a panic guard around every call.
+- **Plan 01-08 — `pgxstore.New(pool)` default 5-minute cleanup is the T-08-05 mitigation.** Production code MUST use the default constructor; `NewWithConfig(CleanUpInterval=0)` is reserved for tests that need to stop the goroutine. The session store reuses the application pgxpool — no second pool, no Redis (D-06 honored).
+- **Plan 01-08 — Two rotate entry points.** `PutUser` bundles `Put + RenewToken` for the common login path (Plans 09 + 15); `RotateOnLogin` exposes pure `RenewToken` for Plan 11 password-change where the user blob isn't changing but the session ID must rotate. Both call `sm.RenewToken` under the hood — call sites stay readable. Plan 11 will additionally `DELETE FROM sessions WHERE ...` to invalidate other devices on password change.
+- **Plan 01-08 — `sm.LoadAndSave` is wired exactly once, in Plan 09's chi router setup.** No plan beyond 09 should call `LoadAndSave` again; double-wrapping would double-write the cookie. `auth.UserFromContext + ErrNoUser` is the only sanctioned way for handlers to fetch the current user — Plan 10's role middleware and Plan 14's install middleware both build on top of it.
+- **Plan 01-08 — `EnsureCSRFToken` ships pre-emptively.** Phase 1 enforcement is `SameSite=Lax + X-Requested-With` (RESEARCH §Security; Plan 06 apiFetch sends the header, Plan 11/15 will reject POST/PUT/DELETE without it). Adding the per-session token now means later phases can adopt token-pair CSRF without a session-data migration. base64.RawURLEncoding chosen for URL-safe transport.
 
 ### Open Todos
 
@@ -165,4 +173,4 @@ Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T00:42Z — Stopped at: Completed 01-07-argon2id-PLAN.md*
+*Last session: 2026-04-28T00:54Z — Stopped at: Completed 01-08-session-manager-PLAN.md*
