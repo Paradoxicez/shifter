@@ -1,11 +1,46 @@
-import { describe, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { ResponsiveDialog } from './responsive-dialog'
 
-// Implementation: Plan 06 (frontend-shell).
-// ResponsiveDialog wraps shadcn's Dialog (md+) and Sheet (<md) so the same
-// CRUD surface auto-swaps between modal and bottom-sheet. PROJECT.md requires
-// every CRUD to be a dialog; this component is the canonical implementation.
-describe.skip('ResponsiveDialog (Plan 06)', () => {
-  it('renders Dialog on md+ viewport', () => {})
-  it('renders Sheet bottom on <md viewport', () => {})
-  it('forwards open/onOpenChange to underlying primitive', () => {})
+function setViewport(width: number) {
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: width })
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('max-width') ? width < 768 : false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }))
+}
+
+describe('ResponsiveDialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('renders Dialog with title on md+ viewport', () => {
+    setViewport(1024)
+    render(
+      <ResponsiveDialog open onOpenChange={() => {}} title="Test title" description="Test desc">
+        <div>body</div>
+      </ResponsiveDialog>,
+    )
+    expect(screen.getByText('Test title')).toBeInTheDocument()
+    expect(screen.getByText('Test desc')).toBeInTheDocument()
+    expect(screen.getByText('body')).toBeInTheDocument()
+  })
+
+  it('renders Sheet content on <md viewport', () => {
+    setViewport(500)
+    render(
+      <ResponsiveDialog open onOpenChange={() => {}} title="Mobile title">
+        <div>mobile body</div>
+      </ResponsiveDialog>,
+    )
+    expect(screen.getByText('Mobile title')).toBeInTheDocument()
+    expect(screen.getByText('mobile body')).toBeInTheDocument()
+  })
 })
