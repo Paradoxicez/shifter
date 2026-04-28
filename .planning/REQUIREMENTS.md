@@ -159,7 +159,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### UX Conventions
 
-- [ ] **UX-01**: All create / edit / delete flows happen in dialogs — no separate full-page CRUD screens
+- [x] **UX-01**: All create / edit / delete flows happen in dialogs — no separate full-page CRUD screens
 - [x] **UX-02**: UI uses shadcn/ui components, blue/navy palette, modern minimal aesthetic, English-only copy
 - [ ] **UX-03**: Operator never sees ChirpStack-native terminology in the day-to-day UI (no "tenant", "application" — Shifter speaks in customer/site/device language)
 
@@ -321,7 +321,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | OPS-06 | Phase 6 | Pending |
 | OPS-07 | Phase 6 | Pending |
 | OPS-08 | Phase 6 | Pending |
-| UX-01 | Phase 1 | Pending |
+| UX-01 | Phase 1 | Complete |
 | UX-02 | Phase 1 | Complete |
 | UX-03 | Phase 3 | Pending |
 

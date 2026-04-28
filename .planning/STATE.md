@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T02:37:17.808Z"
+last_updated: "2026-04-28T02:49:13.772Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 15
-  percent: 63
+  completed_plans: 16
+  percent: 67
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-15 execution — install wizard handlers + atomic FinishSetup shipped: `internal/install/handlers.go` exports `Deps{Pool, Store, SecretsDir, Log, Dial}` + `csConn` interface (`Conn() *grpc.ClientConn` + `Close()` — no `interface{}` round-trip per Warning #6) + 6 handler factories (`StateHandler`, `Step1Handler`, `Step2Handler`, `Step3Handler`, `Step4Handler`, `FinishHandler`). Step 1 hashes the operator's password via Plan 07's `auth.Hash` (Argon2id) before persistence (D-09 — raw password never reaches DB) and rejects `auth.StrengthWeak` with 422; 256-byte length cap added at the API boundary (T-07-05). Step 2 dials ChirpStack via pluggable `Deps.Dial` (production wires Plan 12's `chirpstack.Dial`; tests inject the bufconn mock), runs `chirpstack.ProbeVersion`, and returns `{"error":"v3_detected"}` on `errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown)` (INST-05). Operator's API token is written to `{SecretsDir}/chirpstack_api_token` at mode 0600 AFTER the v3 probe succeeds — no orphan secrets when the wizard re-renders with an error banner; only the path REF is persisted into `step2_chirpstack` JSONB (T-15-02). Step 3 whitelists region against Plan 14's `Regions()` catalog via `RegionByName` (T-14-04). Step 4 validates timezone via `time.LoadLocation` and units against the install_identity enum (`metric` | `imperial`). Every state-changing POST requires `X-Requested-With: shifter` (T-15-03 / RESEARCH §V13 — symmetric with Plan 09's auth handlers). `internal/install/finish.go` exports `FinishSetup(ctx, deps Deps) error` + `ErrAlreadyCompleted` + `ErrIncompleteWizard` sentinels; runs as `pgx.TxOptions{IsoLevel: pgx.Serializable}` transaction in order: INSERT admin user → UPSERT install_identity → UPSERT chirpstack_connection → DELETE install_state (D-10, D-11). Pre-checks `adminExists` BEFORE BeginTx so the re-run-after-success path is one round-trip. Bug fix (Rule 1): `internal/install/state.go::updateStep` now does `INSERT INTO install_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING` before the UPDATE — the Plan 14 store assumed a preceding `GetOrCreate`, but the Plan 15 step handlers don't call it; without the upsert, bare UPDATE silently no-ops on a fresh DB. 27 install tests pass (-race); INST-01..05 + D-09 + D-10 + D-11 all satisfied.)
+**Last Updated:** 2026-04-28 (after Plan 01-16 execution — install wizard SPA shipped: `web/src/lib/install.ts` typed client (`fetchInstallState`, `postStep1..4`, `postFinish`, `REGIONS` catalog with AS923-2 default for Thailand), `web/src/routes/install/index.tsx` wizard shell branching on `state.CurrentStep` (1..5) using Plan 06's Stepper, 5 step components (`admin-step` / `chirpstack-step` / `region-step` / `identity-step` / `review-step`) with per-step inline error mapping. Step 2 catches 422 v3_detected → destructive Alert with UI-SPEC verbatim copy "Shifter doesn't support ChirpStack v3" (INST-05). Step 3 pre-selects `as923_2` with Thailand helper hint (PITFALLS §8). Review renders drafts via `<pre>{JSON.stringify(...)}</pre>` (T-16-01 React auto-escape). On finish success or 410 Gone, navigates to `/login` (Plan 23). `App.tsx` lazy-loads InstallWizard via React.lazy + Suspense at /install. `_root.tsx::rootLoader` composes install-state pre-check BEFORE session-check: 200 (in progress) → throw redirect('/install'); 410 (completed) → continue to fetchSessionUser; network error → fall through (FirstRunGate catches missing-admin on /api/account/me). 22 frontend tests pass / 3 still-skipped Plan 02 stubs (auth/login/account-menu — Plans 23/11 territory); region-step's 3 `describe.skip` tests replaced with passing tests (mocks @/lib/install postStep3). `pnpm build` exits 0; lazy chunk emitted at `dist/assets/index-iiuy9VXU.js` (34.08 kB). INST-01..05 + UX-01 frontend complete.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15)
+Plan: 16 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 16 — install-wizard-ui (next) |
-| **Status** | Plans 01–15 complete. Plan 15 shipped the install wizard backend: 5 step endpoints + atomic finish (INST-01..05 + D-09 + D-10 + D-11). `internal/install/handlers.go` exports `Deps{Pool, Store, SecretsDir, Log, Dial}` + `csConn` interface (Warning #6 tightening: `Conn() *grpc.ClientConn` typed, no `interface{}` round-trip) + 6 handler factories. Step 1 calls `auth.Hash` (Argon2id) before persistence + 256-byte cap; rejects `StrengthWeak` with 422. Step 2 dials via pluggable `Deps.Dial`, runs `chirpstack.ProbeVersion`, returns `{"error":"v3_detected"}` on `ErrChirpStackV3OrUnknown` (INST-05); writes API token to `{SecretsDir}/chirpstack_api_token` at mode 0600 AFTER the probe succeeds (no orphan secrets) and persists path REF only (T-15-02). Step 3 whitelists via `RegionByName` (T-14-04). Step 4 validates timezone via `time.LoadLocation` + units enum. Every POST requires `X-Requested-With: shifter` (T-15-03 / RESEARCH §V13). `internal/install/finish.go` exports `FinishSetup` running pgx.Serializable txn order INSERT user → UPSERT install_identity → UPSERT chirpstack_connection → DELETE install_state (D-10, D-11); pre-checks `adminExists` before BeginTx so re-run-after-success is one round-trip. `ErrAlreadyCompleted` (410) + `ErrIncompleteWizard` (422) sentinels for handler error mapping. Rule 1 bug fix in `internal/install/state.go::updateStep` — added `INSERT .. ON CONFLICT DO NOTHING` upstream of every UPDATE so bare `UpdateStepN` calls (without preceding `GetOrCreate`) no longer silently no-op on a fresh DB. 27 install tests pass with -race; full short suite 124 passed / 1 flake (Plan 09 documented testcontainer port-mapping race; auth re-run alone passes 58/58). |
-| **Progress (plans)** | `[██████░░░░] 15/24 (63%)` |
+| **Plan** | 17 — test-connection (next) |
+| **Status** | Plans 01–16 complete. Plan 16 shipped the install wizard SPA: `web/src/lib/install.ts` typed client (fetchInstallState, postStep1..4, postFinish, REGIONS catalog with AS923-2 default for Thailand) + 7 component files at `web/src/routes/install/*` (index shell + 5 step bodies + region-step.test.tsx). Wizard shell uses useEffect-driven `state.CurrentStep` branching with Plan 06's Stepper; per-step components own their own ApiError → inline-Alert mapping. Step 2 catches 422 v3_detected → destructive Alert with UI-SPEC verbatim copy "Shifter doesn't support ChirpStack v3" (INST-05). Step 3 pre-selects `as923_2` with the "We pre-selected AS923-2 because the install address is in Thailand." helper hint (PITFALLS §8). Review renders drafts via `<pre>{JSON.stringify(...)}</pre>` (T-16-01 React auto-escape). On finish success or 410, navigates to `/login` with `replace: true` (Plan 23 owns that route). App.tsx lazy-loads InstallWizard via React.lazy + Suspense fallback={null} at /install. `_root.tsx::rootLoader` composes install-state pre-check BEFORE session-check: 200 → throw redirect('/install'); 410 → continue to fetchSessionUser; network/non-redirect error → fall through (belt-and-suspenders with backend FirstRunGate from Plan 14). 22 frontend tests pass / 3 still-skipped Plan 02 stubs (auth/login/account-menu — Plans 23/11 territory); region-step's 3 `describe.skip` tests replaced with passing tests that mock `@/lib/install`'s postStep3. `pnpm build` exits 0; lazy chunk emitted at `dist/assets/index-iiuy9VXU.js` (34.08 kB). INST-01..05 + UX-01 frontend complete. |
+| **Progress (plans)** | `[███████░░░] 16/24 (67%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 16` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 17` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 15 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15) |
+| Plans complete | 16 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -65,6 +65,7 @@ Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-14 install-middleware | 7 min | 2 | 6 |
 | 01-13 mqtt-subscriber | 5 min | 1 | 4 |
 | 01-15 install-handlers | 12 min | 2 | 5 |
+| 01-16 install-wizard-ui | 5 min | 2 | 10 |
 
 ## Accumulated Context
 
@@ -188,6 +189,14 @@ Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-15 — `FinishSetup` pre-checks `adminExists` BEFORE `BeginTx`.** Serializable isolation alone handles concurrent finishes correctly (the second INSERT fails on `user_email_unique`, txn rolls back), but the pre-check makes the re-run-after-success path one round-trip vs `BEGIN tx + INSERT + ROLLBACK + close`. Idempotency is the dominant case in production — the operator clicks Finish, the network blips, the SPA retries — the second call must be cheap. `ErrAlreadyCompleted` is returned without ever opening a txn.
 - **Plan 01-15 — `TestFinishSetup_RollsBackOnFailure` injects an invalid `units` enum via `UpdateStep4`** (bypassing the handler's enum validation) to exercise the txn-internal failure path without mocking pgx. Asserts what matters: when ANY step in `FinishSetup` errors, the admin user is NOT created (T-15-04 / Serializable rollback). Defence-in-depth verification beyond the plan-listed three finish tests. Pattern locks: future atomic-commit tests for setup-style flows must include a "rollback under failure" assertion that verifies the canonical-table writes did NOT land.
 - **Plan 01-15 — `step{1..4}Draft` structs are unexported** in `internal/install/finish.go`. `FinishSetup` is the SOLE consumer; no other plan needs them. Future plans wanting these structs should consume the canonical `chirpstack_connection` / `install_identity` / `user` rows that `FinishSetup` writes, NOT the `install_state` JSONB drafts (which are deleted after finish). Keeping the drafts package-private prevents accidental coupling.
+- **Plan 01-16 — REGIONS catalog hardcoded inline at `web/src/lib/install.ts`.** Plan 18 will eventually mount `GET /api/install/regions` (Plan 14 backend already exposes the catalog), but the Phase-1 wizard hardcodes the same 8 entries client-side. Saves a round-trip on the most-visited wizard step (region picker is step 3 of 5); matches RESEARCH §Pattern 13 example; the Plan-02 region-step.test.tsx contract assumes the inline catalog (mocks `@/lib/install`'s `postStep3`, doesn't hit the network at all). Promote to a fetched endpoint only when a Phase-7 regulator-versioned catalog needs server-controlled rotation — only the data source changes, the wizard structure stays.
+- **Plan 01-16 — `rootLoader` install-state pre-check is belt-and-suspenders with backend `FirstRunGate`.** The backend gate (Plan 14) handles fresh HTML loads (307 redirect / →  /install) and the /api/* 409 install_required envelope. The frontend pre-check makes SPA-internal navigation (e.g., a stale-cookie-induced login → / hop) consistent: navigation that doesn't trigger a fresh HTML round-trip still bounces to /install. Cost: one /api/install/state call per protected-route load; cached by the browser within a tab session. Plans 11/17/18+ MUST NOT remove the pre-check on the assumption that FirstRunGate covers all paths — it doesn't cover SPA-internal `<Link to="/">` navigation.
+- **Plan 01-16 — Wizard shell uses useEffect + state.CurrentStep branching, not react-router nested routes.** The 5 step components share `InstallState` (fetched once, passed to ReviewStep) and the transition is server-driven (backend's `current_step` is the source of truth). Nested routes would require `<Outlet />` + per-step loaders + the same `onAdvance` callback indirection. Trade-off: deep-linking to a specific step (e.g., /install/step/3) is intentionally impossible — the operator MUST flow through steps in order to validate inputs incrementally. Future stepped flows (Phase 2 Add device, Phase 5 Floor-plan upload) inherit this pattern.
+- **Plan 01-16 — Step components own their own ApiError → inline-Alert mapping.** Per-step UX is precise (step 2's grpc_unreachable copy ≠ step 4's invalid_timezone copy; step 3's unknown_region copy is unique). No central error boundary. Matches Plan 11's Dialog-Submit-Error pattern lock. The plan-verbatim Step3 / Step4 handlers had no error mapping at all; added inline Alert + per-error-code copy as Rule 1 fix during implementation. Future wizard steps MUST follow this pattern.
+- **Plan 01-16 — Step 2 distinguishes 422 v3_detected from generic 422 errors.** The destructive `<Alert>` with UI-SPEC verbatim copy "Shifter doesn't support ChirpStack v3" is a hard requirement; generic error rendering would fail acceptance. The `setV3(true)` state resets on every submit so the operator can correct the URL and try again without page reload. Plan 17 (Test Connection) will reuse the same ChirpStack form pattern — but the Test Connection probe is post-install (settings page), so the v3 detection there can be a banner OR a status row, not a full page-blocking destructive alert.
+- **Plan 01-16 — `App.tsx` lazy-loads InstallWizard via React.lazy + Suspense fallback={null}.** The wizard chunk (5 step components, no charts/maps) is excluded from the post-install bundle (it never renders once install is complete; FirstRunGate would 307 / → /install only when install is incomplete). The `fallback={null}` choice over a loading spinner is intentional: the wizard chunk is small (~34 KB), the spinner introduces flash on a fast load. Plan 19 (spa-embed) inherits this — lazy chunks are emitted as separate JS files under `dist/assets/`.
+- **Plan 01-16 — `InstallState` field names use Go-export casing verbatim.** `CurrentStep`, `Step1Admin`, `Step2ChirpStack`, etc. — matches Plan 15's pgx-scanned struct field names 1:1. No JSON-tag layer at the Plan 15 boundary. If Phase 2+ moves to JSON tags, `lib/install.ts` updates in lockstep. Phase 1's `json.Marshal` of a struct without tags emits exported field names exactly as-is, so the SPA TypeScript types match the Go struct field names directly.
+- **Plan 01-16 — ReviewStep renders drafts via `<pre>{JSON.stringify(...)}</pre>`.** T-16-01 mitigation: React + `<pre>` auto-escapes; embedded HTML in display name or address is rendered as text, not interpreted. T-16-02 (password hash visible in review) is plan-accepted residual: operator sees Argon2id PHC string for their own admin account; the hash is non-reversible (ASVS V8). Future audit-log views MUST NOT render arbitrary user input via `dangerouslySetInnerHTML` — `<pre>` + JSON.stringify is the canonical safe rendering.
 
 ### Open Todos
 
@@ -235,4 +244,4 @@ Plan: 15 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T02:34Z — Stopped at: Completed 01-15-install-handlers-PLAN.md*
+*Last session: 2026-04-28T02:46Z — Stopped at: Completed 01-16-install-wizard-ui-PLAN.md*
