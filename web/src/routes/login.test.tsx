@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import LoginScreen from './login'
 
 vi.mock('@/lib/auth', async (orig) => {
@@ -49,9 +49,7 @@ describe('Login screen (Plan 23)', () => {
 
   it('renders the verbatim footer copy', () => {
     renderLogin()
-    expect(
-      screen.getByText('Forgot password? Contact your administrator.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Forgot password? Contact your administrator.')).toBeInTheDocument()
   })
 
   it('uses the navy primary class on the submit button (UX-02 navy palette)', () => {

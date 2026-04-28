@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { Suspense, lazy } from 'react'
-import { RouterProvider, createBrowserRouter } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
@@ -10,6 +10,7 @@ import IndexRedirect from '@/routes/index-redirect'
 
 const InstallWizard = lazy(() => import('@/routes/install'))
 const SettingsPage = lazy(() => import('@/routes/settings'))
+const LoginScreen = lazy(() => import('@/routes/login'))
 
 /**
  * Phase 1 router skeleton.
@@ -19,16 +20,19 @@ const SettingsPage = lazy(() => import('@/routes/settings'))
  * `rootLoader` (Plan 11 + Plan 16) gates on session presence (with an
  * install-state pre-check) — 401 → /login redirect; install incomplete →
  * /install redirect.
- *
- * Placeholder elements at /login, /settings will be filled by:
- *   - /login    → Plan 23 (login-ui)
- *   - /settings → Plan 17 (test-connection) and Plan 11 (account-ui)
  */
 const router = createBrowserRouter([
   {
     element: <AuthLayout />,
     children: [
-      { path: '/login', element: <div>Login screen — Plan 23</div> },
+      {
+        path: '/login',
+        element: (
+          <Suspense fallback={null}>
+            <LoginScreen />
+          </Suspense>
+        ),
+      },
       {
         path: '/install',
         element: (
