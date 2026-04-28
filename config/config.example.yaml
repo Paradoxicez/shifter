@@ -1,0 +1,71 @@
+# Shifter — canonical configuration example.
+#
+# The install kit copies this file to /etc/shifter/config.yaml when one does
+# not already exist. Operators edit /etc/shifter/config.yaml; SHIFTER_*
+# environment variables override any value here (D-05). Secrets are NEVER
+# stored in this file — they are mounted from Compose `secrets:` and
+# referenced via *_FILE env vars (D-06, RESEARCH §Pattern 12).
+#
+# Override mapping (D-05):
+#   env                  → SHIFTER_ENV
+#   http_port            → SHIFTER_HTTP_PORT
+#   log_level            → SHIFTER_LOG_LEVEL  (info | debug — D-25)
+#   db.host              → SHIFTER_DB_HOST
+#   db.port              → SHIFTER_DB_PORT
+#   db.database          → SHIFTER_DB_DATABASE
+#   db.user              → SHIFTER_DB_USER
+#   db.ssl_mode          → SHIFTER_DB_SSL_MODE
+#   db.max_conns         → SHIFTER_DB_MAX_CONNS
+#   chirpstack.grpc_url  → SHIFTER_CHIRPSTACK_GRPC_URL
+#   chirpstack.insecure  → SHIFTER_CHIRPSTACK_INSECURE
+#   mqtt.url             → SHIFTER_MQTT_URL
+#   mqtt.user            → SHIFTER_MQTT_USER
+#   session.idle_timeout → SHIFTER_SESSION_IDLE_TIMEOUT
+#   session.lifetime     → SHIFTER_SESSION_LIFETIME
+#   tls.mode             → SHIFTER_TLS_MODE
+#   tls.domain           → SHIFTER_TLS_DOMAIN
+#   tls.email            → SHIFTER_TLS_EMAIL
+#   logo_storage_dir     → SHIFTER_LOGO_STORAGE_DIR
+#
+# Required secret env vars (D-06):
+#   SHIFTER_DB_PASSWORD or SHIFTER_DB_PASSWORD_FILE
+#   SHIFTER_SESSION_KEY or SHIFTER_SESSION_KEY_FILE   (>=32 bytes, REQUIRED)
+#
+# Optional secret env vars:
+#   SHIFTER_CHIRPSTACK_API_TOKEN or SHIFTER_CHIRPSTACK_API_TOKEN_FILE
+#   SHIFTER_MQTT_PASSWORD or SHIFTER_MQTT_PASSWORD_FILE
+
+env: production              # production | dev (D-23: dev disables Cookie.Secure)
+http_port: "8080"
+log_level: info              # info | debug (D-25)
+
+db:
+  host: postgres
+  port: 5432
+  database: shifter
+  user: shifter
+  # password resolved via SHIFTER_DB_PASSWORD or SHIFTER_DB_PASSWORD_FILE (D-06)
+  ssl_mode: prefer           # disable | prefer | require
+  max_conns: 10
+
+chirpstack:
+  grpc_url: chirpstack:8080
+  # api_token resolved via SHIFTER_CHIRPSTACK_API_TOKEN_FILE (D-06)
+  insecure: false            # true = no TLS to the gRPC endpoint (in-cluster only)
+
+mqtt:
+  url: tcp://mosquitto:1883
+  user: ""
+  # password resolved via SHIFTER_MQTT_PASSWORD_FILE if set (D-06)
+
+session:
+  # key resolved via SHIFTER_SESSION_KEY_FILE (D-06) — REQUIRED, >=32 bytes
+  idle_timeout: 8h
+  lifetime: 24h
+
+tls:
+  mode: acme                 # acme | byo | internal (D-21); "none" REJECTED (D-22)
+  domain: ""                 # required when mode=acme
+  email: ""                  # ACME contact
+
+logo_storage_dir: /var/lib/shifter/logos
