@@ -44,7 +44,7 @@ Plans:
 - [x] 01-03-database-layer-PLAN.md — pgxpool + golang-migrate-as-library + 6 initial migrations + sqlc config (D-13, D-16)
 - [ ] 01-04-config-secrets-PLAN.md — viper YAML+env config + Compose-secrets reader + slog JSON logger + version package (D-05, D-06, D-22, D-24)
 - [x] 01-05-cobra-cli-PLAN.md — Cobra CLI: serve/migrate/version/create-admin/config-check/healthcheck (D-12, D-15)
-- [ ] 01-06-frontend-shell-PLAN.md — shadcn init (new-york + slate + custom navy OKLCH) + 21 components + ResponsiveDialog/StatusRow/Stepper/ThemeProvider + router shell + apiFetch (UX-02)
+- [x] 01-06-frontend-shell-PLAN.md — shadcn init (new-york + slate + custom navy OKLCH) + 21 components + ResponsiveDialog/StatusRow/Stepper/ThemeProvider + router shell + apiFetch (UX-02)
 - [ ] 01-07-argon2id-PLAN.md — Argon2id Hash/Verify (PHC encoding, OWASP m=19456 t=2 p=1) + password strength evaluator (AUTH-01)
 - [ ] 01-08-session-manager-PLAN.md — alexedwards/scs/v2 + pgxstore session manager with dev-mode Cookie.Secure toggle (AUTH-02, D-23)
 - [ ] 01-09-login-ratelimit-PLAN.md — Login + logout + change-password handlers + per-IP/per-username rate limit + create-admin body (AUTH-01, AUTH-03 reframed, AUTH-04, AUTH-05)

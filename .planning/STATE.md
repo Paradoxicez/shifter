@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T00:06:25.247Z"
+last_updated: "2026-04-28T00:18:51.243Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 4
-  percent: 17
+  completed_plans: 5
+  percent: 21
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-05 execution — out of order; Plan 04 still pending stub fill-in)
+**Last Updated:** 2026-04-28 (after Plan 01-06 execution — Plan 04 still pending stub fill-in)
 
 ## Project Reference
 
@@ -25,14 +25,14 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
+Plan: 5 of 24 complete (Plans 01, 02, 03, 05, 06 — Plan 04 still pending stub fill-in)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
 | **Plan** | 04 — config-secrets (next; replaces internal/config + internal/logging stubs created by Plan 05) |
-| **Status** | Plans 01–03 + 05 complete; Plan 04 must fill in viper / Validate / JSON handler bodies (signatures locked by Plan 05) |
-| **Progress (plans)** | `[██░░░░░░░░] 4/24 (17%)` |
+| **Status** | Plans 01–03 + 05 + 06 complete; Plan 04 must fill in viper / Validate / JSON handler bodies (signatures locked by Plan 05) |
+| **Progress (plans)** | `[██░░░░░░░░] 5/24 (21%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
 **Next action:** `/gsd-execute-plan 01 04` (or `/gsd-execute-phase 01` to continue the chain)
@@ -43,7 +43,7 @@ Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 4 / 24 (01, 02, 03, 05 — Plan 04 still pending) |
+| Plans complete | 5 / 24 (01, 02, 03, 05, 06 — Plan 04 still pending) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -54,6 +54,7 @@ Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 | 01-02 test-harness | 7 min | 2 | 44 |
 | 01-03 database-layer | 33 min | 1 | 29 |
 | 01-05 cobra-cli | 4 min | 2 | 13 |
+| 01-06 frontend-shell | 6 min | 3 | 38 |
 
 ## Accumulated Context
 
@@ -95,6 +96,14 @@ Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 - **Plan 01-05 — Plan 04 dependency stubs created early.** `internal/config/config.go`, `internal/logging/logging.go`, and `internal/version/version.go` were scaffolded by Plan 05 because Plan 05 was executed before Plan 04. Plan 04 MUST replace the function bodies (full viper / Validate / JSON handler implementations) WITHOUT changing the public function signatures: `config.Load() (*Config, error)`, `logging.New(level string) *slog.Logger`, `version.Info() BuildInfo`. The Config struct fields used today (Env, HTTPPort, LogLevel, DB, TLS) must stay; new fields can be added.
 - **Plan 01-05 — TODO marker convention: `TODO(plan-NN ...)` with the implementing plan number.** Multi-plan collaborations use `+`: `TODO(plan-09 + plan-13 + plan-18)`. `grep -rn 'TODO(plan-' internal/cli` locates every downstream insertion site.
 - **Plan 01-05 — BuildInfo sentinels:** Unstamped builds default to `{Version: "dev", Commit: "none", BuildTime: "unknown"}` so local `go build` is self-describing. Production injection via `-ldflags "-X github.com/shifter-io/shifter/internal/version.{Version,Commit,BuildTime}=..."` is documented in `internal/version/version.go`'s package comment; Plan 24 wires the Justfile recipe.
+- **Plan 01-06 — shadcn 4.5.0 init bypassed; components.json authored directly.** style=new-york / baseColor=slate / cssVariables=true / iconLibrary=lucide. End state matches the plan's intended init flow. Future plans use `pnpm dlx shadcn@latest add <name>` only — no re-init required (PITFALL #12).
+- **Plan 01-06 — Theme tokens locked in `web/src/theme.css`** (separate from shadcn's regenerable `index.css` per PITFALL #12). `@theme inline` mappings register the custom `--color-success` / `--color-warning` / `--color-info` tokens AND the standard core tokens (background / foreground / primary / etc.) with Tailwind v4 so utility classes like `bg-primary`, `text-success`, `border-warning` compile.
+- **Plan 01-06 — 20 shadcn components installed (plan inventory says "21" but lists 20).** button, input, label, form, card, dialog, alert, alert-dialog, dropdown-menu, avatar, select, checkbox, separator, skeleton, sonner, tabs, progress, badge, tooltip, sheet. Plan typo — concrete inventory is 20.
+- **Plan 01-06 — Foundational components ResponsiveDialog / StatusRow / Stepper / ThemeProvider are MANDATORY for Phase 1+ CRUD surfaces.** Plans 11/16/17/23 import these directly; never instantiate raw shadcn `<Dialog>` / `<Sheet>` for CRUD. Phase 2+ (Add device, Meter swap, Floor-plan upload) inherit too.
+- **Plan 01-06 — `apiFetch` contract: every `/api/*` request sends `X-Requested-With: shifter`** (CSRF mitigation per RESEARCH §Security Domain). Backend (Plan 11) will reject state-changing requests without it. SameSite=Lax cookies + custom header is the canonical pattern.
+- **Plan 01-06 — Theme persistence key locked to `localStorage['shifter-theme']`.** Plan 11+ MUST NOT change the key — operator-set theme survives across logins.
+- **Plan 01-06 — Self-hosted fonts via @fontsource (no Google Fonts CDN).** Inter Variable + JetBrains Mono 400/600 imported from `@fontsource-variable/inter` + `@fontsource/jetbrains-mono` per UI-SPEC §Design System; satisfies the self-hosted constraint.
+- **Plan 01-06 — App.tsx provider order: `<ThemeProvider><QueryClientProvider><RouterProvider/><Toaster/></QueryClientProvider></ThemeProvider>`.** RouterProvider MUST be inside QueryClientProvider; ThemeProvider is outermost so theme switches don't blow away query cache.
 
 ### Open Todos
 
@@ -106,6 +115,7 @@ Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 - **Plan-check enhancement — depends_on accuracy.** Plan 05's frontmatter declared `depends_on: [01, 02]` but the plan's task code requires Plan 04's outputs (config.Load, logging.New, version.Info). Future plan-check passes should grep for cross-package imports (`internal/config`, `internal/logging`, `internal/version`) and require the providing plan to be in `depends_on`.
 - **Plan 24 — Justfile build recipe.** Update `just build` to use the production -ldflags invocation documented in `internal/version/version.go`'s package comment so release artifacts ship with real Version / Commit / BuildTime.
 - **Plan 18 — Cobra completion subcommand visibility.** `shifter --help` lists `completion` (Cobra's auto-registered shell completion). Decide whether to keep visible (useful for ops), hide via `rootCmd.CompletionOptions.DisableDefaultCmd = true`, or move to a `tools` group.
+- **Plan 19 — Bundle size review.** Frontend bundle jumped from 193 KB to 463 KB after Plan 06 (react-router-dom v7 + @tanstack/react-query + radix primitives). Plan 19 (spa-embed) should consider route-level code splitting if the size becomes a concern at install time.
 
 ### Open Blockers
 
@@ -140,4 +150,4 @@ Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T00:06Z — Stopped at: Completed 01-05-cobra-cli-PLAN.md (Plan 04 still pending stub replacement)*
+*Last session: 2026-04-28T00:18Z — Stopped at: Completed 01-06-frontend-shell-PLAN.md (Plan 04 still pending stub replacement)*
