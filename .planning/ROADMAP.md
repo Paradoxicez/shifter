@@ -57,7 +57,7 @@ Plans:
 - [x] 01-16-install-wizard-ui-PLAN.md — 5-step wizard frontend; Thailand AS923-2 default; v3 destructive banner (INST-01..05, PITFALLS §8)
 - [x] 01-17-test-connection-PLAN.md — Test Connection two-channel probe + Settings page + Edit Connection dialog + config-check probes (CHIRP-03, SETT-01, SETT-03, D-07)
 - [x] 01-18-router-health-PLAN.md — chi router wiring all routes + middleware stack + /health[/detailed] + serve.go full body with INST-05 boot gate (D-18, D-19, INST-05/06)
-- [ ] 01-19-spa-embed-PLAN.md — //go:embed all:web/dist + history-mode SPA fallback handler (RESEARCH §Pattern 8)
+- [x] 01-19-spa-embed-PLAN.md — //go:embed all:web/dist + history-mode SPA fallback handler (RESEARCH §Pattern 8)
 - [ ] 01-20-compose-bundled-PLAN.md — Bundled compose flavor (Postgres+Mosquitto+ChirpStack+Caddy+Shifter) + Dockerfile + install.sh (OPS-01)
 - [ ] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
 - [ ] 01-22-caddyfile-PLAN.md — Caddyfile with env-driven TLS modes (acme/byo/internal) + security headers + SSE-aware proxy (D-20..D-22, PITFALL #7)

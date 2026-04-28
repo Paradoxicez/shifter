@@ -17,6 +17,7 @@ dev:
 # Build production binary + SPA bundle
 build:
     cd web && pnpm build
+    touch web/dist/.gitkeep
     go build -o bin/shifter ./cmd/shifter
 
 # Run all tests
