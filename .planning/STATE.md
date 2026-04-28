@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T01:54:09.577Z"
+last_updated: "2026-04-28T02:05:31.823Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 12
-  percent: 50
+  completed_plans: 13
+  percent: 54
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-12 execution — ChirpStack gRPC client shipped: `Dial(ctx, cfg)` with TLS-by-default + Bearer-token UnaryClientInterceptor; `Client` wraps the conn and exposes `PingDevices` for CHIRP-01 smoke / Plan 17 Test Connection; `ProbeVersion` calls `InternalService.GetVersion(Empty)` and returns `ErrChirpStackV3OrUnknown` for `Unimplemented`/`NotFound`/empty-version (INST-05 sentinel); `internal/testsupport/chirpstack_mock.go` replaced with bufconn-backed in-process mock supporting `v4`/`v3`/`down` modes — reused by Plans 14/15/17/18. Architectural seam preserved: only `internal/chirpstack/*` (production) and the sanctioned `testsupport` mock import `chirpstack/api/go/v4`.)
+**Last Updated:** 2026-04-28 (after Plan 01-14 execution — install_state Store + Regions catalog + FirstRunGate middleware shipped: `internal/install/state.go` exports `Store{pool}` with `GetOrCreate` (idempotent singleton via `INSERT .. ON CONFLICT (id) DO NOTHING` + `SELECT WHERE id=1`), `UpdateStep1..4` (whitelisted column-name interpolation + monotonic `current_step` via `GREATEST(current_step, $N)` — T-14-04 mitigation; ASVS V5), `Delete` (Plan 15 finish-cleanup hook); `internal/install/regions.go` ships the 8-entry hardcoded LoRaWAN region catalog (AS923-1, AS923-2 with `DefaultForCountry="TH"` for INST-04, AS923-3, AS923-4, EU868, US915 sub-band 1, AU915 sub-band 1, IN865) plus `RegionByName` whitelist lookup; `internal/install/middleware.go` exports `FirstRunGate(pool, log) func(http.Handler) http.Handler` — D-08 gate redirects HTML to `/install` (307) and returns `409 {"error":"install_required"}` for `/api/*` traffic when no admin user; one-way `atomic.Bool` cache (PITFALL #10) sets after first positive `adminExists` and never resets — soft-deleting all admins does NOT re-engage the gate; `adminExists` filters `disabled_at IS NOT NULL` (symmetric with auth.Store.GetUserByEmail); whitelist contract: prefix bucket (`/install`, `/api/install/`, `/login`, `/health`, `/assets/`) + suffix bucket (`.svg .ico .png .woff* .css .js .map`). 12 tests pass against testcontainer Postgres including `TestFirstRun_Gate_Cache` which asserts cache via `DROP TABLE "user" CASCADE` mid-test. INST-01 unblocked.)
 
 ## Project Reference
 
@@ -25,14 +25,14 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
+Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 14)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 13 — mqtt-subscriber (next) |
-| **Status** | Plans 01–12 complete; Plan 12 shipped the ChirpStack v4 gRPC surface: `internal/chirpstack/client.go` exports `Dial(ctx, cfg) (*grpc.ClientConn, error)` (TLS-by-default via `credentials.NewTLS{MinVersion: TLS 1.2}`, `cfg.Insecure=true` switches to `insecure.NewCredentials()`) plus a UnaryClientInterceptor that attaches `authorization: Bearer <token>` to every outgoing call (token captured via closure, never logged — T-12-02). `Client` wraps the conn (`NewClient(conn)`/`Conn()`/`Close()`) and exposes `PingDevices(ctx, applicationID)` via `DeviceService.List(limit=1)` for the CHIRP-01 smoke + Plan 17 Test Connection probe. `internal/chirpstack/version.go` exports `ProbeVersion(ctx, conn) (string, error)` calling `api.NewInternalServiceClient(conn).GetVersion(ctx, &emptypb.Empty{})` and returning `ErrChirpStackV3OrUnknown` for `codes.Unimplemented`/`codes.NotFound` AND for empty `resp.Version` (defensive belt against misimplemented mocks / non-ChirpStack same-named RPCs). `internal/testsupport/chirpstack_mock.go` replaces the Plan 02 stub with `NewChirpStackMockBuf(t, mode) (dialer, apiToken)` — bufconn-backed in-process gRPC server supporting `v4` (returns "v4.17.0" + DeviceService.List), `v3` (Unimplemented from GetVersion, no DeviceService), `down` (server stopped before serve so RPCs return Unavailable); `t.Cleanup` wires teardown; legacy `NewChirpStackMock` retained as `t.Fatalf`-trap with migration message. CHIRP-01 + INST-05 requirements satisfied; tests `TestProbeVersion_v4`, `TestProbeVersion_v3`, `TestClient_ListDevices_Mock` all pass. |
-| **Progress (plans)** | `[█████░░░░░] 12/24 (50%)` |
+| **Plan** | 13 — mqtt-subscriber (next; Plan 14 executed out-of-order ahead of 13 in this session) |
+| **Status** | Plans 01–12 + 14 complete; Plan 14 shipped install_state Store + Regions catalog + FirstRunGate middleware. `internal/install.Store` exposes singleton CRUD over `install_state` (`GetOrCreate` idempotent via `INSERT .. ON CONFLICT (id) DO NOTHING` + `SELECT WHERE id=1`; `UpdateStep1..4` share a private `updateStep(column, nextStep, payload)` with whitelisted column interpolation + `GREATEST(current_step, $N)` for monotonic step progression; `Delete` for Plan 15's finish-cleanup hook). `internal/install.Regions` returns 8 hardcoded LoRaWAN entries with `as923_2` carrying `DefaultForCountry="TH"` (INST-04 anchor); `RegionByName(name)` is the whitelist lookup Plan 15's step-3 handler MUST use to validate operator input (T-14-04 / ASVS V5). `internal/install.FirstRunGate(pool, log)` is the canonical D-08 middleware: HTML→307 `/install`, `/api/*`→409 `{"error":"install_required"}` when no admin user exists; one-way `atomic.Bool` cache after first positive `adminExists` (PITFALL #10) — never resets, even if every admin is later soft-deleted; `adminExists` query filters `disabled_at IS NOT NULL` symmetric with auth.Store.GetUserByEmail. Whitelist contract: prefix bucket (`/install`, `/api/install/`, `/login`, `/health`, `/assets/`) + suffix bucket (`.svg .ico .png .woff* .css .js .map`). 12 tests pass including `TestFirstRun_Gate_Cache` which asserts cache via `DROP TABLE "user" CASCADE` mid-test (strictly stronger than query-counting). INST-01 unblocked. |
+| **Progress (plans)** | `[██████░░░░] 13/24 (54%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
 **Next action:** `/gsd-execute-plan 01 13` (or `/gsd-execute-phase 01` to continue the chain)
@@ -43,7 +43,7 @@ Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 12 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12) |
+| Plans complete | 13 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 14) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -62,6 +62,7 @@ Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
 | 01-10 authz | 3 min | 1 | 3 |
 | 01-11 account-ui | 6 min | 2 | 9 |
 | 01-12 chirpstack-grpc | 5 min | 1 | 10 |
+| 01-14 install-middleware | 7 min | 2 | 6 |
 
 ## Accumulated Context
 
@@ -169,6 +170,12 @@ Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
 - **Plan 01-12 — bufconn over real TCP listeners for unit tests, locked.** `internal/testsupport/chirpstack_mock.go::NewChirpStackMockBuf` returns a dialer paired with `passthrough:///bufnet`; t.Cleanup wires teardown. Real listeners are reserved for integration / smoke tests that exercise OS-level networking (firewall, port collision). Plans 14/15/17/18 MUST use the bufconn helper; the legacy `NewChirpStackMock` (Plan 02 host:port stub) now `t.Fatalf`-traps with a migration message so any regression surfaces immediately.
 - **Plan 01-12 — Mock "down" mode = server.Stop() before serve.** Bufconn is in-process so dials always succeed (no real TCP refusal possible without a real listener); RPCs return `codes.Unavailable`. This is exactly what Plan 17 (Test Connection) needs to assert the "unreachable" branch of the gRPC probe. Plan 17 MUST NOT call `("down")` expecting a connection refusal — it gets RPC-level Unavailable, which is functionally identical for the wizard's reporting needs.
 - **Plan 01-12 — INST-05 sentinel detection via `errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown)`.** Plans 14/15/18 MUST use `errors.Is` — never string-match the error message. The wrapped sentinel survives `fmt.Errorf("%w", err)` chains so middleware can wrap it with operator-friendly context (e.g., wizard banner copy) without breaking detection. Bare `errors.New(...)` in error paths that pass through the v3 detection layer would silently break this contract — flagged for plan-check enhancement.
+- **Plan 01-14 — FirstRunGate one-way `atomic.Bool` cache (PITFALL #10).** Once `adminExists` returns true, all subsequent requests skip the DB query unconditionally; the cache NEVER resets — soft-deleting every admin row does not re-engage the gate (the install demonstrably completed). Plan 09 `shifter create-admin --reset` is the explicit recovery path. `adminExists` query filters `disabled_at IS NOT NULL`, symmetric with `auth.Store.GetUserByEmail`. Verified by `TestFirstRun_Gate_Cache` which asserts via `DROP TABLE "user" CASCADE` mid-test — a strictly stronger assertion than query-counting because it imposes a state in which a cache-bypass request CANNOT succeed.
+- **Plan 01-14 — `install.Store` singleton CRUD pattern locked.** `GetOrCreate` = `INSERT .. ON CONFLICT (id) DO NOTHING` + `SELECT WHERE id=1` (two queries first call, one re-entry). `UpdateStep1..4` share `updateStep(column, nextStep, payload)` with whitelisted column-name interpolation (T-14-04 / ASVS V5) — payload remains `$`-bound. Monotonic `current_step` via `GREATEST(current_step, $N)` — re-submitting an earlier step never regresses the wizard pointer. `RETURNING *` was considered but ON CONFLICT DO NOTHING returns zero rows on conflict, requiring a fall-back SELECT anyway, so the simpler two-statement form was chosen. Plan 15 handlers MUST validate payload structure before passing through; Store is intentionally schema-agnostic to avoid a churn point when Plan 15 evolves the wizard.
+- **Plan 01-14 — FirstRunGate whitelist contract: prefix bucket + suffix bucket.** Prefix bucket: `/install`, `/api/install/`, `/login`, `/health`, `/assets/`. Suffix bucket: `.svg .ico .png .woff* .css .js .map`. `/login` is reserved here (even though Plan 23 ships the screen) so post-install logout doesn't bounce against the gate, and a stale-cookie redirect chain cannot loop. Common static suffixes whitelisted globally (not just under `/assets/`) so root-level `/favicon.ico`, `/logo.svg` serve before authentication. The HTML branch returns 307 (not 302) — preserves request method, important for SPA fetch redirects. Plan 18 wires gate as the FIRST middleware after RequestID/Logger; Plan 16/23 frontend consumes the 409 install_required JSON for SPA routing.
+- **Plan 01-14 — Region catalog hardcoded for Phase 1 (RESEARCH §Pattern 13).** 8 entries: AS923-1, AS923-2 (TH default, NBTC), AS923-3, AS923-4, EU868, US915 sub-band 1, AU915 sub-band 1, IN865. `RegionByName(name)` is the whitelist lookup Plan 15 step-3 handler MUST use to validate the operator's pick before persistence (T-14-04 — never trust the JSONB payload's `name` field as-is). A regulator-versioned catalog file is deferred to Phase 7; INST-04 (Thailand AS923-2 default) is the only Phase-1 acceptance check. JSON-serialization tags on `Region` make `Regions()` directly consumable by Plan 15's `/api/install/regions` endpoint.
+- **Plan 01-14 — Test-file convention: `state_test.go` covers Store-only behavior; `handlers_test.go` covers HTTP handler behavior.** Plan-15 stubs (`TestStep2_RejectsV3`, `TestFinishSetup_Atomic`, `TestInstallState_Reentrant`) live in `handlers_test.go`; Plan 14 owns `state_test.go` (GetOrCreate + UpdateStep1..4 + Regions Thailand default — 7 tests) and `middleware_test.go` (RedirectsHTML, API_Returns409, Whitelist, PostFinish_NoWizardAccess, Gate_Cache — 5 tests). Wave-0 stub-then-fill convention preserved: relocating Plan-15 stubs to handlers_test.go before replacing state_test.go means no test was deleted.
+- **Plan 01-14 — `Store.Delete` exported pre-emptively for Plan 15 finish-cleanup.** After Plan 15's atomic `FinishSetup` transaction commits the drafts (admin user + chirpstack_connection + install_identity rows), it calls `Delete` to drop the `install_state` row — entering the post-install state where `FirstRunGate` is a pass-through. The export is dead-code today (no internal caller) but avoiding a Plan-15 surface drift is worth one unused method.
 
 ### Open Todos
 
@@ -216,4 +223,4 @@ Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T01:51Z — Stopped at: Completed 01-12-chirpstack-grpc-PLAN.md*
+*Last session: 2026-04-28T02:03Z — Stopped at: Completed 01-14-install-middleware-PLAN.md*

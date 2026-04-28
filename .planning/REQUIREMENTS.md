@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Install & Setup
 
-- [ ] **INST-01**: First-run install wizard guides operator through creating the initial admin account
+- [x] **INST-01**: First-run install wizard guides operator through creating the initial admin account
 - [ ] **INST-02**: Install wizard captures install identity (display name, logo, address, timezone, units) used in reports and UI chrome
 - [ ] **INST-03**: Install wizard lets operator pick ChirpStack mode (bundled or external) and supplies gRPC URL + API token + MQTT URL accordingly
 - [ ] **INST-04**: Install wizard shows a regulator-aware LoRaWAN region picker (AS923 sub-plans for Thailand, EU868, US915, etc.) and persists the chosen default
@@ -231,7 +231,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | AUTH-04 | Phase 1 | Complete |
 | AUTH-05 | Phase 1 | Complete |
 | AUTH-06 | Phase 1 | Complete |
-| INST-01 | Phase 1 | Pending |
+| INST-01 | Phase 1 | Complete |
 | INST-02 | Phase 1 | Pending |
 | INST-03 | Phase 1 | Pending |
 | INST-04 | Phase 1 | Pending |
