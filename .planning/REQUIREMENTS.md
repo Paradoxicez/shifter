@@ -9,7 +9,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can log in with email and password
+- [x] **AUTH-01**: User can log in with email and password
 - [ ] **AUTH-02**: User session persists across browser refresh and times out after configurable idle period
 - [ ] **AUTH-03**: User is forced to change the default admin password on first login
 - [ ] **AUTH-04**: Failed login attempts are rate-limited to prevent brute force
@@ -225,7 +225,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
+| AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Pending |
 | AUTH-03 | Phase 1 | Pending |
 | AUTH-04 | Phase 1 | Pending |

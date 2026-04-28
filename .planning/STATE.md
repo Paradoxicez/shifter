@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T00:35:31.802Z"
+last_updated: "2026-04-28T00:43:47.198Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 6
-  percent: 25
+  completed_plans: 7
+  percent: 29
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-04 execution — config + secrets + logging + ImageTag wired)
+**Last Updated:** 2026-04-28 (after Plan 01-07 execution — Argon2id Hash/Verify + PasswordStrength shipped; AUTH-01 unblocked)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
+Plan: 7 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 07 — argon2id (next) |
-| **Status** | Plans 01–06 complete; Plan 04 fully replaced Plan 05's interface stubs (viper YAML+env loader, ReadSecret(_FILE) idiom, slog one-line JSON to stdout, ImageTag pin). Public signatures preserved — internal/cli/* compiles unchanged. |
-| **Progress (plans)** | `[███░░░░░░░] 6/24 (25%)` |
+| **Plan** | 08 — session-manager (next) |
+| **Status** | Plans 01–07 complete; Plan 07 shipped Argon2id Hash/Verify with PHC encoding (OWASP-2025 params m=19456 / t=2 / p=1 / salt=16 / key=32) plus a stateless PasswordStrength tier evaluator. AUTH-01 unblocked for Plan 09 login handler and Plan 11 change-password. No bcrypt anywhere; subtle.ConstantTimeCompare grep-verified. |
+| **Progress (plans)** | `[███░░░░░░░] 7/24 (29%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 07` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 08` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 6 / 24 (01, 02, 03, 04, 05, 06) |
+| Plans complete | 7 / 24 (01, 02, 03, 04, 05, 06, 07) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -56,6 +56,7 @@ Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
 | 01-05 cobra-cli | 4 min | 2 | 13 |
 | 01-06 frontend-shell | 6 min | 3 | 38 |
 | 01-04 config-secrets | 10 min | 2 | 11 |
+| 01-07 argon2id | 3 min | 2 | 6 |
 
 ## Accumulated Context
 
@@ -114,6 +115,11 @@ Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
 - **Plan 01-04 — Log-level whitelist.** D-25 limits operator-configurable levels to `info|debug`; `debug` → LevelDebug, `info`/empty → LevelInfo, anything else (warn, error, trace, garbage) silently falls back to LevelInfo. Future logging changes MUST NOT add warn/error/trace as configurable levels without amending D-25.
 - **Plan 01-04 — `version.ImageTag = Version` single source of truth.** Top-level package var (not function) so the OPS-01 unit test (`TestImageTagPinned`) is `require.Equal(t, Version, ImageTag)` and the same `-ldflags -X version.Version=...` injection updates both at link time. Compose plans (20/21) MUST read this constant rather than hardcode a tag string.
 - **Plan 01-04 — Build sentinel defaults.** `Version = "dev" / Commit = "none" / BuildTime = "unknown"` so an unstamped local `go build` is self-describing rather than printing empty strings. Production builds inject via `-ldflags "-X github.com/shifter-io/shifter/internal/version.Version=$(git describe --always --dirty) -X .Commit=$(git rev-parse --short HEAD) -X .BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"`. Plan 24 wires the Justfile recipe.
+- **Plan 01-07 — Argon2id PHC encoding is the only password hash.** `argonMemKiB=19456 / argonTime=2 / argonThreads=1 / salt=16 / key=32` are pinned package-level constants per OWASP-2025; future hardening updates the constants and lazy-rehashes on login (Verify re-parses params from the encoded string, so old hashes keep working). No bcrypt anywhere; CLAUDE.md "do not mix" enforced by absence (`grep -rn 'golang.org/x/crypto/bcrypt' internal/` = 0 hits). `subtle.ConstantTimeCompare` is the only key comparison primitive (T-07-01). Plans 09 / 11 / 15 MUST call `auth.Hash` + `auth.Verify`; no raw `argon2.IDKey` calls outside this package.
+- **Plan 01-07 — Strength enum starts at iota 0 = StrengthWeak (defensive default).** `PasswordStrength` is stateless: length floor 12 + character-class diversity heuristic across upper/lower/digit/punct|symbol. Length dominates: 16+ chars with 3 classes is `StrengthStrong` even without a 4th class — matches NIST 800-63B § 5.1.1.2. UI consumes via API (Plans 11 / 16 will expose `/api/auth/strength`); the evaluator is never recomputed client-side. JSON-encoding the zero value defaults to "weak" — the safest UI default.
+- **Plan 01-07 — Verify wraps every error path with `argon2id:` prefix.** Deviation from plan-verbatim bare `errors.New` / unwrapped `err`. Production logging via slog needs a stable namespace to filter parse failures from unrelated subsystem errors; cost is one `fmt.Errorf` per branch. Plan 09 login handler will treat any non-nil `Verify` error as "invalid credentials" for the user but log the wrapped chain for triage.
+- **Plan 01-07 — Long-password DoS cap is Plan 09's responsibility, not Plan 07's.** T-07-05 mitigation note: Plan 09 (login) and Plan 11 (change password) MUST reject `len(password) > 256` BEFORE calling `Hash` / `Verify`. The crypto primitive itself does not enforce a length cap because the cost belongs at the API boundary.
+- **Plan 01-07 — `golang.org/x/crypto` promoted from indirect to direct.** Bumped v0.48.0 → v0.50.0; transitively bumped `x/sync` v0.20.0, `x/sys` v0.43.0, `x/text` v0.36.0, added `x/term` v0.42.0. All stdlib-extension packages with stable APIs; no other code changes.
 
 ### Open Todos
 
@@ -159,4 +165,4 @@ Plan: 6 of 24 complete (Plans 01, 02, 03, 04, 05, 06)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T00:32Z — Stopped at: Completed 01-04-config-secrets-PLAN.md*
+*Last session: 2026-04-28T00:42Z — Stopped at: Completed 01-07-argon2id-PLAN.md*
