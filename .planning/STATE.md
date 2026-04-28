@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T01:42:56.791Z"
+last_updated: "2026-04-28T01:54:09.577Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 11
-  percent: 46
+  completed_plans: 12
+  percent: 50
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-11 execution — Account UI shipped: typed auth client (`web/src/lib/auth.ts`), rootLoader gating protected routes on `/api/account/me`, ChangePasswordDialog with UI-SPEC verbatim copy, AccountInfoHandler at the API. AUTH-05 frontend complete; AUTH-06 frontend hiding scaffolding plumbed (userRole prop ready for Phase 2+ admin-only menu items).)
+**Last Updated:** 2026-04-28 (after Plan 01-12 execution — ChirpStack gRPC client shipped: `Dial(ctx, cfg)` with TLS-by-default + Bearer-token UnaryClientInterceptor; `Client` wraps the conn and exposes `PingDevices` for CHIRP-01 smoke / Plan 17 Test Connection; `ProbeVersion` calls `InternalService.GetVersion(Empty)` and returns `ErrChirpStackV3OrUnknown` for `Unimplemented`/`NotFound`/empty-version (INST-05 sentinel); `internal/testsupport/chirpstack_mock.go` replaced with bufconn-backed in-process mock supporting `v4`/`v3`/`down` modes — reused by Plans 14/15/17/18. Architectural seam preserved: only `internal/chirpstack/*` (production) and the sanctioned `testsupport` mock import `chirpstack/api/go/v4`.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
+Plan: 12 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 12 — chirpstack-grpc (next) |
-| **Status** | Plans 01–11 complete; Plan 11 shipped the account UI: backend `AccountInfoHandler` at GET /api/account/me (returns `{user: {id, email, role, must_change_password}}`, 401 for missing session AND for disabled-mid-session admins via `ErrUserNotFound` short-circuit); typed frontend auth client at `web/src/lib/auth.ts` (fetchSessionUser / login / logout / changePassword + SessionUser type, ApiError re-export) — every `/api/auth/*` and `/api/account/*` consumer now goes through this module; `rootLoader` in `web/src/routes/_root.tsx` calls fetchSessionUser before any protected route renders and `throw redirect('/login?next=...')` on 401; `ChangePasswordDialog` (ResponsiveDialog wrapper, UI-SPEC verbatim copy strings, 401/422 inline error mapping, Cancel-LEFT/primary-RIGHT footer) wired into RootLayout via the AccountMenu's "Change password" item; sonner success toast "Password changed" on commit + revalidator.revalidate(). AUTH-05 frontend complete; AUTH-06 frontend hiding scaffolding plumbed (userRole prop reaches AccountMenu; Phase 1 has no admin-only menu items but Phase 2+ adds will be one-line `userRole === 'admin' && …` guards). D-09 verified at the API: `TestAccountInfo_ReturnsUser` asserts `must_change_password=false` for the create-admin / wizard admin. |
-| **Progress (plans)** | `[█████░░░░░] 11/24 (46%)` |
+| **Plan** | 13 — mqtt-subscriber (next) |
+| **Status** | Plans 01–12 complete; Plan 12 shipped the ChirpStack v4 gRPC surface: `internal/chirpstack/client.go` exports `Dial(ctx, cfg) (*grpc.ClientConn, error)` (TLS-by-default via `credentials.NewTLS{MinVersion: TLS 1.2}`, `cfg.Insecure=true` switches to `insecure.NewCredentials()`) plus a UnaryClientInterceptor that attaches `authorization: Bearer <token>` to every outgoing call (token captured via closure, never logged — T-12-02). `Client` wraps the conn (`NewClient(conn)`/`Conn()`/`Close()`) and exposes `PingDevices(ctx, applicationID)` via `DeviceService.List(limit=1)` for the CHIRP-01 smoke + Plan 17 Test Connection probe. `internal/chirpstack/version.go` exports `ProbeVersion(ctx, conn) (string, error)` calling `api.NewInternalServiceClient(conn).GetVersion(ctx, &emptypb.Empty{})` and returning `ErrChirpStackV3OrUnknown` for `codes.Unimplemented`/`codes.NotFound` AND for empty `resp.Version` (defensive belt against misimplemented mocks / non-ChirpStack same-named RPCs). `internal/testsupport/chirpstack_mock.go` replaces the Plan 02 stub with `NewChirpStackMockBuf(t, mode) (dialer, apiToken)` — bufconn-backed in-process gRPC server supporting `v4` (returns "v4.17.0" + DeviceService.List), `v3` (Unimplemented from GetVersion, no DeviceService), `down` (server stopped before serve so RPCs return Unavailable); `t.Cleanup` wires teardown; legacy `NewChirpStackMock` retained as `t.Fatalf`-trap with migration message. CHIRP-01 + INST-05 requirements satisfied; tests `TestProbeVersion_v4`, `TestProbeVersion_v3`, `TestClient_ListDevices_Mock` all pass. |
+| **Progress (plans)** | `[█████░░░░░] 12/24 (50%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 12` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 13` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 11 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11) |
+| Plans complete | 12 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -61,6 +61,7 @@ Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 | 01-09 login-ratelimit | 11 min | 3 | 13 |
 | 01-10 authz | 3 min | 1 | 3 |
 | 01-11 account-ui | 6 min | 2 | 9 |
+| 01-12 chirpstack-grpc | 5 min | 1 | 10 |
 
 ## Accumulated Context
 
@@ -161,12 +162,19 @@ Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 - **Plan 01-11 — `Object.defineProperty(window, 'location', { configurable: true, writable: true, value: { ...window.location, assign: vi.fn() } })` is the canonical jsdom 29 location stub.** jsdom 29 sealed `window.location.assign` (non-configurable accessor); direct `window.location.assign = vi.fn()` throws in strict mode. The whole-object replacement keeps the spy interceptable. Reused in any future test that asserts apiFetch's 401 redirect path; lives in `web/src/lib/auth.test.ts`'s `stubLocationAssign()` helper.
 - **Plan 01-11 — Sonner success toast string is verbatim "Password changed".** UI-SPEC §"Phase 1 copy table" locks it. Resisting the upgrade to "Password changed successfully" / "Your password has been updated" — the shorter form is louder, and richColors styling already implies success via the green check. Same principle applies to all future operator-facing success toasts: terse + verbatim.
 - **Plan 01-11 — RootLayout success-side calls `revalidator.revalidate()` on password change even though the response payload doesn't change.** Pattern locks for mutations that DO produce new server state (e.g. Plan 16 region pick → revalidates capabilities; Plan 17 connection edit → revalidates /api/health). The cost on Plan 11 (one extra `/api/account/me` round-trip) is negligible; the consistency win is "every mutation dialog ends with a revalidator pulse."
+- **Plan 01-12 — Architectural seam: only `internal/chirpstack/*` and `internal/testsupport/chirpstack_mock.go` import `github.com/chirpstack/chirpstack/api/go/v4`.** The plan's verbatim acceptance grep was `grep -v internal/chirpstack`, which would have flagged the mock; the operative invariant is "production code uses Dial + Client + ProbeVersion only — testsupport's mock is the sole exception because it MUST register simulated InternalServiceServer / DeviceServiceServer instances." Phase 2/3 plans extending the ChirpStack surface (TenantService, ApplicationService, DeviceProfileService, GatewayService) MUST add methods to `internal/chirpstack/Client` rather than re-importing the proto package.
+- **Plan 01-12 — `ProbeVersion` rejects empty Version string in addition to Unimplemented/NotFound (Rule 2 deviation).** Real ChirpStack v4 builds always stamp a non-empty version at compile time; an empty Version response can only come from (a) a misimplemented mock or (b) a non-ChirpStack server happening to implement the same-named RPC. Both are "not v4" — fail safe. Plan-verbatim only mapped Unimplemented/NotFound to ErrChirpStackV3OrUnknown; defensive belt added.
+- **Plan 01-12 — Bearer token via UnaryClientInterceptor closure-capture, NOT per-call ctx.** A single `Dial(ctx, cfg)` serves many goroutines; the interceptor injects `authorization: Bearer <token>` (lowercase header per chirpstack-api/go-examples + gRPC-go canonical case) on every outgoing RPC without each caller having to thread the token. Token rotation requires a new Dial — acceptable for an install-time API key, would not be acceptable for a per-request bearer. Token is NEVER logged (T-12-02).
+- **Plan 01-12 — TLS-by-default, `cfg.Insecure=true` is explicit escape hatch.** `credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})` is the production path; `insecure.NewCredentials()` is reserved for in-cluster / localhost paths and explicitly toggled by config. Phase 6 may layer in `cfg.CACert` for self-signed customer environments; do NOT change this default in Phase 1+ without amending T-12-03/T-12-04.
+- **Plan 01-12 — bufconn over real TCP listeners for unit tests, locked.** `internal/testsupport/chirpstack_mock.go::NewChirpStackMockBuf` returns a dialer paired with `passthrough:///bufnet`; t.Cleanup wires teardown. Real listeners are reserved for integration / smoke tests that exercise OS-level networking (firewall, port collision). Plans 14/15/17/18 MUST use the bufconn helper; the legacy `NewChirpStackMock` (Plan 02 host:port stub) now `t.Fatalf`-traps with a migration message so any regression surfaces immediately.
+- **Plan 01-12 — Mock "down" mode = server.Stop() before serve.** Bufconn is in-process so dials always succeed (no real TCP refusal possible without a real listener); RPCs return `codes.Unavailable`. This is exactly what Plan 17 (Test Connection) needs to assert the "unreachable" branch of the gRPC probe. Plan 17 MUST NOT call `("down")` expecting a connection refusal — it gets RPC-level Unavailable, which is functionally identical for the wizard's reporting needs.
+- **Plan 01-12 — INST-05 sentinel detection via `errors.Is(err, chirpstack.ErrChirpStackV3OrUnknown)`.** Plans 14/15/18 MUST use `errors.Is` — never string-match the error message. The wrapped sentinel survives `fmt.Errorf("%w", err)` chains so middleware can wrap it with operator-friendly context (e.g., wizard banner copy) without breaking detection. Bare `errors.New(...)` in error paths that pass through the v3 detection layer would silently break this contract — flagged for plan-check enhancement.
 
 ### Open Todos
 
 - **Plan 02 — Biome OOM workaround.** `pnpm exec biome` is OOM'ing the linter daemon in this sandbox. Investigate `BIOME_LOG_PATH` / heap flags or fall back to `biome ci` mode if pre-commit hooks fail. *(Carried from Plan 01-01; Plan 02 did not need biome at runtime, deferring resolution to whichever plan first wires biome into pre-commit/CI.)*
 - **CI plan — Node version >=22.13.** jsdom 29 (vitest worker) requires Node 22.13+ even though the project floor is 22.12. Whichever plan lands the GitHub Actions / CI config must pin the runner image accordingly.
-- **Plan 12 — `mockgen` on PATH.** `just bootstrap` should add `$(go env GOPATH)/bin` to PATH or document the requirement so contributors don't get "mockgen not found" after `go install`.
+- **~~Plan 12 — `mockgen` on PATH.~~ Resolved 2026-04-28: Plan 12 used hand-written `UnimplementedXxxServer` stubs over bufconn instead of mockgen-generated mocks; the chirpstack mock no longer requires `mockgen` to be on PATH. Future plans needing generated mocks (e.g., interface-mock-heavy paths in Phase 6) can revisit the bootstrap requirement.
 - **Plan-check enhancement — verify command wording.** Plans whose `<verify>` uses `grep -q 'PASS'` against `go test ./...` (non-verbose) silently fail; either use `-v` mode or change the assertion to `grep -E 'PASS|ok\s'`. Flag during plan-check.
 - **Plan-check enhancement — depends_on accuracy.** Plan 05's frontmatter declared `depends_on: [01, 02]` but the plan's task code requires Plan 04's outputs (config.Load, logging.New, version.Info). Future plan-check passes should grep for cross-package imports (`internal/config`, `internal/logging`, `internal/version`) and require the providing plan to be in `depends_on`.
 - **Plan 24 — Justfile build recipe.** Update `just build` to use the production -ldflags invocation documented in `internal/version/version.go`'s package comment so release artifacts ship with real Version / Commit / BuildTime.
@@ -208,4 +216,4 @@ Plan: 11 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11)
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T01:42Z — Stopped at: Completed 01-11-account-ui-PLAN.md*
+*Last session: 2026-04-28T01:51Z — Stopped at: Completed 01-12-chirpstack-grpc-PLAN.md*

@@ -22,12 +22,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **INST-02**: Install wizard captures install identity (display name, logo, address, timezone, units) used in reports and UI chrome
 - [ ] **INST-03**: Install wizard lets operator pick ChirpStack mode (bundled or external) and supplies gRPC URL + API token + MQTT URL accordingly
 - [ ] **INST-04**: Install wizard shows a regulator-aware LoRaWAN region picker (AS923 sub-plans for Thailand, EU868, US915, etc.) and persists the chosen default
-- [ ] **INST-05**: System refuses to connect to ChirpStack v3 — only ChirpStack v4 is supported, validated on first connect
+- [x] **INST-05**: System refuses to connect to ChirpStack v3 — only ChirpStack v4 is supported, validated on first connect
 - [ ] **INST-06**: System exposes a `/health` endpoint reporting database, ChirpStack, MQTT, disk, last-uplink-age, and the running Shifter version
 
 ### ChirpStack Integration
 
-- [ ] **CHIRP-01**: Backend connects to ChirpStack over gRPC for the control plane (devices, gateways, profiles, applications)
+- [x] **CHIRP-01**: Backend connects to ChirpStack over gRPC for the control plane (devices, gateways, profiles, applications)
 - [ ] **CHIRP-02**: Backend subscribes to ChirpStack's MQTT integration topic for real-time device uplinks
 - [ ] **CHIRP-03**: A "Test connection" action verifies gRPC + MQTT reachability and surfaces a clear error path if either fails
 - [ ] **CHIRP-04**: Adding a device is a single user action — Shifter creates / reuses the underlying ChirpStack tenant, application, profile, and device binding behind the scenes
@@ -235,9 +235,9 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | INST-02 | Phase 1 | Pending |
 | INST-03 | Phase 1 | Pending |
 | INST-04 | Phase 1 | Pending |
-| INST-05 | Phase 1 | Pending |
+| INST-05 | Phase 1 | Complete |
 | INST-06 | Phase 1 | Pending |
-| CHIRP-01 | Phase 1 | Pending |
+| CHIRP-01 | Phase 1 | Complete |
 | CHIRP-02 | Phase 1 | Pending |
 | CHIRP-03 | Phase 1 | Pending |
 | CHIRP-04 | Phase 2 | Pending |
