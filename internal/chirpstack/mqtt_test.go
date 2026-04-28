@@ -2,7 +2,10 @@ package chirpstack
 
 import (
 	"context"
+	"io"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"sync"
 	"testing"
@@ -17,7 +20,7 @@ func newLogger() *slog.Logger { return slog.New(slog.NewTextHandler(os.Stderr, n
 
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
@@ -25,6 +28,81 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timeout waiting for %s", msg)
+}
+
+// tcpBreaker is a minimal in-process TCP proxy used by the reconnect test.
+// It forwards every accepted connection to the upstream broker and tracks
+// active conns so the test can `Break()` them to simulate a transport-level
+// drop (which is what triggers paho's auto-reconnect — `client.Disconnect`
+// is treated as user-initiated and does NOT auto-reconnect).
+type tcpBreaker struct {
+	listener net.Listener
+	upstream string
+
+	mu    sync.Mutex
+	conns []net.Conn
+}
+
+// startBreaker accepts on 127.0.0.1:0 and forwards to upstreamURL
+// (`tcp://host:port`). Cleanup is wired via t.Cleanup.
+func startBreaker(t *testing.T, upstreamURL string) *tcpBreaker {
+	t.Helper()
+	u, err := url.Parse(upstreamURL)
+	require.NoError(t, err)
+	require.Equal(t, "tcp", u.Scheme)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	b := &tcpBreaker{listener: ln, upstream: u.Host}
+	go b.serve()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		b.Break()
+	})
+	return b
+}
+
+func (b *tcpBreaker) URL() string {
+	return "tcp://" + b.listener.Addr().String()
+}
+
+func (b *tcpBreaker) serve() {
+	for {
+		c, err := b.listener.Accept()
+		if err != nil {
+			return
+		}
+		go b.proxy(c)
+	}
+}
+
+func (b *tcpBreaker) proxy(client net.Conn) {
+	upstream, err := net.Dial("tcp", b.upstream)
+	if err != nil {
+		_ = client.Close()
+		return
+	}
+	b.mu.Lock()
+	b.conns = append(b.conns, client, upstream)
+	b.mu.Unlock()
+
+	go func() { _, _ = io.Copy(upstream, client); _ = upstream.Close() }()
+	_, _ = io.Copy(client, upstream)
+	_ = client.Close()
+}
+
+// Break forcibly closes every tracked conn. paho observes the broken pipe
+// and triggers auto-reconnect (which then re-runs OnConnect through the
+// breaker — newly accepted conns will be proxied normally).
+func (b *tcpBreaker) Break() {
+	b.mu.Lock()
+	conns := b.conns
+	b.conns = nil
+	b.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
+	}
 }
 
 // TestMQTT_UplinkLogged — A message published to
@@ -60,21 +138,29 @@ func TestMQTT_UplinkLogged(t *testing.T) {
 	}, "uplink delivered")
 }
 
-// TestMQTT_ReconnectResubscribe — After the broker connection is dropped, the
-// subscriber re-establishes the connection and re-subscribes via OnConnect
-// without manual intervention.
+// TestMQTT_ReconnectResubscribe — After the underlying TCP connection is
+// dropped at the transport layer (network partition / broker restart /
+// keepalive timeout), paho's auto-reconnect path fires OnConnect again and
+// re-subscribes to the uplink topic without manual intervention.
+//
+// Note: paho treats `client.Disconnect(...)` as user-initiated and does NOT
+// auto-reconnect after it. The realistic reconnect path is a transport-level
+// loss, which we simulate via an in-process TCP proxy whose `Break()` closes
+// every conn in flight.
 func TestMQTT_ReconnectResubscribe(t *testing.T) {
-	broker := testsupport.StartMosquitto(t)
-	sub, err := NewMQTTSubscriber(broker, "", "", "shifter-test-2", newLogger(), nil)
+	upstream := testsupport.StartMosquitto(t)
+	breaker := startBreaker(t, upstream)
+
+	sub, err := NewMQTTSubscriber(breaker.URL(), "", "", "shifter-test-2", newLogger(), nil)
 	require.NoError(t, err)
 	defer sub.Shutdown(2 * time.Second)
 	waitFor(t, sub.IsSubscribed, "first subscribe")
 	initial := sub.ResubscribeCount()
 	require.GreaterOrEqual(t, initial, int64(1))
 
-	// Force a reconnect by disconnecting the underlying client manually.
-	// paho's auto-reconnect kicks in.
-	sub.client.Disconnect(0)
+	// Force a transport-level drop. paho's auto-reconnect kicks in and the
+	// next OnConnect must increment ResubscribeCount.
+	breaker.Break()
 	waitFor(t, func() bool {
 		return sub.ResubscribeCount() > initial
 	}, "re-subscribe after reconnect")
