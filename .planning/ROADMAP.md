@@ -51,7 +51,7 @@ Plans:
 - [x] 01-10-authz-PLAN.md — Can(user, action, resource) + RequireAction middleware (PITFALLS §14, AUTH-06 server-side)
 - [x] 01-11-account-ui-PLAN.md — RootLayout loader + AccountMenu + ChangePasswordDialog (AUTH-05 frontend, AUTH-06 frontend hiding)
 - [x] 01-12-chirpstack-grpc-PLAN.md — ChirpStack gRPC Dial + ProbeVersion + bufconn mock (CHIRP-01, INST-05 sentinel)
-- [ ] 01-13-mqtt-subscriber-PLAN.md — paho.mqtt.golang subscriber with OnConnect re-subscribe + PingMQTT (CHIRP-02, supports CHIRP-03)
+- [x] 01-13-mqtt-subscriber-PLAN.md — paho.mqtt.golang subscriber with OnConnect re-subscribe + PingMQTT (CHIRP-02, supports CHIRP-03)
 - [x] 01-14-install-middleware-PLAN.md — install_state Store (singleton CHECK id=1) + Regions catalog + FirstRunGate with cache (INST-01, D-08, PITFALL #10)
 - [ ] 01-15-install-handlers-PLAN.md — 5 wizard step handlers + atomic Serializable FinishSetup transaction (INST-01..05, D-10, D-11)
 - [ ] 01-16-install-wizard-ui-PLAN.md — 5-step wizard frontend; Thailand AS923-2 default; v3 destructive banner (INST-01..05, PITFALLS §8)

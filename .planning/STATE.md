@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T02:05:31.823Z"
+last_updated: "2026-04-28T02:17:22.060Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 13
-  percent: 54
+  completed_plans: 14
+  percent: 58
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-28 (after Plan 01-14 execution — install_state Store + Regions catalog + FirstRunGate middleware shipped: `internal/install/state.go` exports `Store{pool}` with `GetOrCreate` (idempotent singleton via `INSERT .. ON CONFLICT (id) DO NOTHING` + `SELECT WHERE id=1`), `UpdateStep1..4` (whitelisted column-name interpolation + monotonic `current_step` via `GREATEST(current_step, $N)` — T-14-04 mitigation; ASVS V5), `Delete` (Plan 15 finish-cleanup hook); `internal/install/regions.go` ships the 8-entry hardcoded LoRaWAN region catalog (AS923-1, AS923-2 with `DefaultForCountry="TH"` for INST-04, AS923-3, AS923-4, EU868, US915 sub-band 1, AU915 sub-band 1, IN865) plus `RegionByName` whitelist lookup; `internal/install/middleware.go` exports `FirstRunGate(pool, log) func(http.Handler) http.Handler` — D-08 gate redirects HTML to `/install` (307) and returns `409 {"error":"install_required"}` for `/api/*` traffic when no admin user; one-way `atomic.Bool` cache (PITFALL #10) sets after first positive `adminExists` and never resets — soft-deleting all admins does NOT re-engage the gate; `adminExists` filters `disabled_at IS NOT NULL` (symmetric with auth.Store.GetUserByEmail); whitelist contract: prefix bucket (`/install`, `/api/install/`, `/login`, `/health`, `/assets/`) + suffix bucket (`.svg .ico .png .woff* .css .js .map`). 12 tests pass against testcontainer Postgres including `TestFirstRun_Gate_Cache` which asserts cache via `DROP TABLE "user" CASCADE` mid-test. INST-01 unblocked.)
+**Last Updated:** 2026-04-28 (after Plan 01-13 execution — MQTT subscriber + PingMQTT shipped: `internal/chirpstack/mqtt.go` exports `NewMQTTSubscriber(brokerURL, user, pass, clientID, log, handler) (*MQTTSubscriber, error)` with the canonical RESEARCH §Pattern 10 opt set (`SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`); subscription to `application/+/device/+/event/up` at QoS 1 is registered inside `OnConnect` so reconnect events re-subscribe automatically. The mandatory `SetDefaultPublishHandler` is installed (logs `topic` + `len(payload)` only — never payload content; T-13-01). `IsSubscribed()` / `ResubscribeCount()` use `atomic.Bool` / `atomic.Int64` for race-free state observation; `Shutdown(timeout)` calls `client.Disconnect(uint(timeout.Milliseconds()))`. `UplinkHandler` is the public Phase-2 hook point — Phase 1 default logs topic+bytes via slog (CHIRP-02 minimum); Phase 2 swaps in normalize+persist by passing a non-nil callback at the Plan 18 call site. `PingMQTT(ctx, url, user, pass)` is the Plan 17 / Plan 05 Test Connection probe with auto-reconnect disabled (fail-fast on misconfigured URL), `SetCleanSession(true)` (zero broker-side state), `SetConnectTimeout(5s)`, and a millisecond-suffix ClientID to avoid duplicate-ID rejection on rapid probes. 4 tests pass against Mosquitto 2.0.18 testcontainer. Plan-verbatim reconnect test rewritten (Rule 1 deviation): replaces broken `client.Disconnect(0)` simulation with an in-process `tcpBreaker` TCP proxy whose `Break()` closes every conn — exercises paho's actual transport-level auto-reconnect path. CHIRP-02 + CHIRP-03 unblocked.)
 
 ## Project Reference
 
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 14)
+Plan: 14 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 13 — mqtt-subscriber (next; Plan 14 executed out-of-order ahead of 13 in this session) |
-| **Status** | Plans 01–12 + 14 complete; Plan 14 shipped install_state Store + Regions catalog + FirstRunGate middleware. `internal/install.Store` exposes singleton CRUD over `install_state` (`GetOrCreate` idempotent via `INSERT .. ON CONFLICT (id) DO NOTHING` + `SELECT WHERE id=1`; `UpdateStep1..4` share a private `updateStep(column, nextStep, payload)` with whitelisted column interpolation + `GREATEST(current_step, $N)` for monotonic step progression; `Delete` for Plan 15's finish-cleanup hook). `internal/install.Regions` returns 8 hardcoded LoRaWAN entries with `as923_2` carrying `DefaultForCountry="TH"` (INST-04 anchor); `RegionByName(name)` is the whitelist lookup Plan 15's step-3 handler MUST use to validate operator input (T-14-04 / ASVS V5). `internal/install.FirstRunGate(pool, log)` is the canonical D-08 middleware: HTML→307 `/install`, `/api/*`→409 `{"error":"install_required"}` when no admin user exists; one-way `atomic.Bool` cache after first positive `adminExists` (PITFALL #10) — never resets, even if every admin is later soft-deleted; `adminExists` query filters `disabled_at IS NOT NULL` symmetric with auth.Store.GetUserByEmail. Whitelist contract: prefix bucket (`/install`, `/api/install/`, `/login`, `/health`, `/assets/`) + suffix bucket (`.svg .ico .png .woff* .css .js .map`). 12 tests pass including `TestFirstRun_Gate_Cache` which asserts cache via `DROP TABLE "user" CASCADE` mid-test (strictly stronger than query-counting). INST-01 unblocked. |
-| **Progress (plans)** | `[██████░░░░] 13/24 (54%)` |
+| **Plan** | 15 — install-handlers (next) |
+| **Status** | Plans 01–14 complete. Plan 13 shipped the MQTT subscriber + PingMQTT probe (CHIRP-02 + CHIRP-03). `internal/chirpstack/mqtt.go` exports `NewMQTTSubscriber(brokerURL, user, pass, clientID, log, handler) (*MQTTSubscriber, error)` with paho v1.5.1 wired per RESEARCH §Pattern 10: `SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`. Subscription to `UplinkTopicFilter = "application/+/device/+/event/up"` at QoS 1 is registered inside `OnConnect` so reconnects re-subscribe automatically (paho does NOT replay top-level subscribes). Mandatory `SetDefaultPublishHandler` installed (T-13-01: logs `topic` + `len(payload)` only — never payload content). `IsSubscribed()` / `ResubscribeCount()` use `atomic.Bool` / `atomic.Int64` for race-free state observation. `Shutdown(timeout)` calls `client.Disconnect(uint(timeout.Milliseconds()))` for graceful drain. `UplinkHandler` is the Phase-2 hook point: Phase 1 default logs topic+bytes via slog; Phase 2 swaps in normalize+persist by passing a non-nil callback at the Plan 18 call site (mqtt.go itself does not change). `PingMQTT(ctx, url, user, pass)` is the canonical Test Connection MQTT probe — `SetAutoReconnect(false)` + `SetCleanSession(true)` + `SetConnectTimeout(5s)`, ClientID = `"shifter-ping-" + time.Now().Format("150405.000")` (millisecond suffix avoids duplicate-ID rejection); returns three distinguishable error categories (`ctx.Err()`, `mqtt ping: connect timeout`, wrapped paho error). 7 chirpstack tests pass against Mosquitto 2.0.18 testcontainer with `-race`; full short suite 110 passed across 12 packages. CHIRP-02 + CHIRP-03 unblocked. |
+| **Progress (plans)** | `[██████░░░░] 14/24 (58%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 13` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 15` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 13 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 14) |
+| Plans complete | 14 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -63,6 +63,7 @@ Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-11 account-ui | 6 min | 2 | 9 |
 | 01-12 chirpstack-grpc | 5 min | 1 | 10 |
 | 01-14 install-middleware | 7 min | 2 | 6 |
+| 01-13 mqtt-subscriber | 5 min | 1 | 4 |
 
 ## Accumulated Context
 
@@ -176,6 +177,10 @@ Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-14 — Region catalog hardcoded for Phase 1 (RESEARCH §Pattern 13).** 8 entries: AS923-1, AS923-2 (TH default, NBTC), AS923-3, AS923-4, EU868, US915 sub-band 1, AU915 sub-band 1, IN865. `RegionByName(name)` is the whitelist lookup Plan 15 step-3 handler MUST use to validate the operator's pick before persistence (T-14-04 — never trust the JSONB payload's `name` field as-is). A regulator-versioned catalog file is deferred to Phase 7; INST-04 (Thailand AS923-2 default) is the only Phase-1 acceptance check. JSON-serialization tags on `Region` make `Regions()` directly consumable by Plan 15's `/api/install/regions` endpoint.
 - **Plan 01-14 — Test-file convention: `state_test.go` covers Store-only behavior; `handlers_test.go` covers HTTP handler behavior.** Plan-15 stubs (`TestStep2_RejectsV3`, `TestFinishSetup_Atomic`, `TestInstallState_Reentrant`) live in `handlers_test.go`; Plan 14 owns `state_test.go` (GetOrCreate + UpdateStep1..4 + Regions Thailand default — 7 tests) and `middleware_test.go` (RedirectsHTML, API_Returns409, Whitelist, PostFinish_NoWizardAccess, Gate_Cache — 5 tests). Wave-0 stub-then-fill convention preserved: relocating Plan-15 stubs to handlers_test.go before replacing state_test.go means no test was deleted.
 - **Plan 01-14 — `Store.Delete` exported pre-emptively for Plan 15 finish-cleanup.** After Plan 15's atomic `FinishSetup` transaction commits the drafts (admin user + chirpstack_connection + install_identity rows), it calls `Delete` to drop the `install_state` row — entering the post-install state where `FirstRunGate` is a pass-through. The export is dead-code today (no internal caller) but avoiding a Plan-15 surface drift is worth one unused method.
+- **Plan 01-13 — Reconnect test uses in-process TCP proxy (`tcpBreaker`), not `client.Disconnect(0)`.** paho treats explicit `Disconnect(...)` as user-initiated and intentionally does NOT auto-reconnect; only transport-level loss (broken pipe / network partition / broker restart) triggers reconnect. The plan's verbatim test hung at the 10s deadline; replaced with a ~50-line `tcpBreaker` that forwards through `127.0.0.1:0` to the Mosquitto testcontainer and force-closes every conn on `Break()`. paho observes the broken pipe, reconnects through the same proxy, and OnConnect re-runs — strictly stronger assertion than `Disconnect`-based testing because it exercises the actual production reconnect path. Pattern locked: any future TCP-client reconnect test (gRPC streaming, pgx LISTEN/NOTIFY, any other auto-reconnect client) MUST simulate transport-level loss the same way.
+- **Plan 01-13 — `UplinkHandler` is the Phase-2 hook point, exposed as the 6th param of `NewMQTTSubscriber`.** Phase 1 default (nil → stdout-log `topic` + `bytes`) satisfies CHIRP-02 minimum; Phase 2 swaps in the normalize+persist pipeline by passing a non-nil callback at the Plan 18 call site. `internal/chirpstack/mqtt.go` itself does NOT change at the Phase 1 → Phase 2 boundary. T-13-01 mitigation: default handler logs `len(payload)` only — never payload content (vendor-specific PII / customer-meter data may appear in payloads). The mandatory `DefaultPublishHandler` follows the same discipline.
+- **Plan 01-13 — Subscribe inside `OnConnect` is the ONLY sanctioned place to register MQTT topic handlers.** paho does NOT replay top-level `Subscribe` calls after auto-reconnect, so registering anywhere outside the `OnConnect` callback silently breaks on the first transport loss. Canonical opt set per RESEARCH §Pattern 10 + paho-mqtt-golang/issues/22: `SetCleanSession(false)` + `SetAutoReconnect(true)` + `SetConnectRetry(true)` + `SetMaxReconnectInterval(30s)` + `SetKeepAlive(30s)` + `SetPingTimeout(10s)` + `SetOrderMatters(false)`. `SetOrderMatters(false)` because Phase 2's normalize+persist will fan out by `metering_point_id` at the SQL layer — per-topic ordering at the MQTT layer is unnecessary overhead. `SetDefaultPublishHandler` is mandatory (prevents inflight-message-limit deadlocks); logs `topic` + `len(payload)` at Warn.
+- **Plan 01-13 — `PingMQTT(ctx, url, user, pass)` is the canonical MQTT-half probe shared by Plan 17 (Test Connection) and Plan 05 (config-check).** `SetAutoReconnect(false)` + `SetConnectRetry(false)` so a misconfigured URL fails fast (no spin under retry policy). `SetCleanSession(true)` so the probe leaves zero broker-side state. ClientID = `"shifter-ping-" + time.Now().Format("150405.000")` — millisecond suffix prevents paho's "duplicate ClientID" rejection on rapid successive probes. Returns three distinguishable error categories: `ctx.Err()` (caller cancel), `mqtt ping: connect timeout` (paho-token timeout), `mqtt ping: %w` (wrapped paho error) — Plan 17's UI can render specific copy per category. Symmetric with Plan 12's `Client.PingDevices` for the gRPC half — both are `func(ctx, ...) error` so the Test Connection handler renders reachable/unreachable uniformly across protocols.
 
 ### Open Todos
 
@@ -223,4 +228,4 @@ Plan: 13 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T02:03Z — Stopped at: Completed 01-14-install-middleware-PLAN.md*
+*Last session: 2026-04-28T02:14Z — Stopped at: Completed 01-13-mqtt-subscriber-PLAN.md*

@@ -28,8 +28,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### ChirpStack Integration
 
 - [x] **CHIRP-01**: Backend connects to ChirpStack over gRPC for the control plane (devices, gateways, profiles, applications)
-- [ ] **CHIRP-02**: Backend subscribes to ChirpStack's MQTT integration topic for real-time device uplinks
-- [ ] **CHIRP-03**: A "Test connection" action verifies gRPC + MQTT reachability and surfaces a clear error path if either fails
+- [x] **CHIRP-02**: Backend subscribes to ChirpStack's MQTT integration topic for real-time device uplinks
+- [x] **CHIRP-03**: A "Test connection" action verifies gRPC + MQTT reachability and surfaces a clear error path if either fails
 - [ ] **CHIRP-04**: Adding a device is a single user action — Shifter creates / reuses the underlying ChirpStack tenant, application, profile, and device binding behind the scenes
 - [ ] **CHIRP-05**: Any other multi-step ChirpStack flow (e.g. activation, key rotation) is collapsed to one user action; if multiple steps are unavoidable, they live inside one stepped dialog
 - [ ] **CHIRP-06**: Operator never needs to log into ChirpStack to do day-to-day work
@@ -238,8 +238,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | INST-05 | Phase 1 | Complete |
 | INST-06 | Phase 1 | Pending |
 | CHIRP-01 | Phase 1 | Complete |
-| CHIRP-02 | Phase 1 | Pending |
-| CHIRP-03 | Phase 1 | Pending |
+| CHIRP-02 | Phase 1 | Complete |
+| CHIRP-03 | Phase 1 | Complete |
 | CHIRP-04 | Phase 2 | Pending |
 | CHIRP-05 | Phase 3 | Pending |
 | CHIRP-06 | Phase 3 | Pending |
