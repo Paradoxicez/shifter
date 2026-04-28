@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-27T23:56:29.413Z"
+last_updated: "2026-04-28T00:06:25.247Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 3
-  percent: 13
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State: Shifter
 
-**Last Updated:** 2026-04-27 (after Plan 01-03 execution)
+**Last Updated:** 2026-04-28 (after Plan 01-05 execution — out of order; Plan 04 still pending stub fill-in)
 
 ## Project Reference
 
@@ -25,14 +25,14 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 4 of 24
+Plan: 4 of 24 (next — Plan 05 was executed early; Plan 04 must replace stubs)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 04 — config-secrets (next) |
-| **Status** | Plans 01–03 complete; Plan 04 ready to execute |
-| **Progress (plans)** | `[█░░░░░░░░░] 3/24 (13%)` |
+| **Plan** | 04 — config-secrets (next; replaces internal/config + internal/logging stubs created by Plan 05) |
+| **Status** | Plans 01–03 + 05 complete; Plan 04 must fill in viper / Validate / JSON handler bodies (signatures locked by Plan 05) |
+| **Progress (plans)** | `[██░░░░░░░░] 4/24 (17%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
 **Next action:** `/gsd-execute-plan 01 04` (or `/gsd-execute-phase 01` to continue the chain)
@@ -43,7 +43,7 @@ Plan: 4 of 24
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 3 / 24 |
+| Plans complete | 4 / 24 (01, 02, 03, 05 — Plan 04 still pending) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -53,6 +53,7 @@ Plan: 4 of 24
 | 01-01 repo-scaffold | 23 min | 2 | 21 |
 | 01-02 test-harness | 7 min | 2 | 44 |
 | 01-03 database-layer | 33 min | 1 | 29 |
+| 01-05 cobra-cli | 4 min | 2 | 13 |
 
 ## Accumulated Context
 
@@ -88,6 +89,12 @@ Plan: 4 of 24
 - **Plan 01-03 — Singleton tables use `id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1)` + INSERT .. ON CONFLICT (id) DO UPDATE pattern.** `install_state`, `install_identity`, `chirpstack_connection` all use this. Future singletons MUST use this pattern; do not invent alternatives.
 - **Plan 01-03 — sqlc generates to `internal/db/sqlc` (Go import: `github.com/shifter-io/shifter/internal/db/sqlc`).** Path is locked. Plans 09/11/14/15/17 import directly — no aliasing.
 - **Plan 01-03 — Secrets stored by reference.** `*_ref` columns hold a path under `/run/secrets/`, never the raw value. Applies to `chirpstack_connection.api_token_ref` and `chirpstack_connection.mqtt_password_ref`. Plan 04 wires the read side.
+- **Plan 01-05 — Subcommand layout: one *.go file per leaf subcommand under `internal/cli/`.** `serve.go`, `migrate.go`, `version.go`, `healthcheck.go`, `createadmin.go`, `configcheck.go` each own their `*cobra.Command` and any flag-binding init(). `root.go` is the only place `AddCommand` is called. New subcommands MUST follow this layout — no monolithic command files.
+- **Plan 01-05 — `migrate force` is a verbose subcommand, not a flag.** `shifter migrate force <N>` instead of `shifter migrate up --force <N>`. Recovery operations should be hard to invoke accidentally (T-05-03 mitigation).
+- **Plan 01-05 — Healthcheck is the binary itself.** `shifter healthcheck` is a localhost GET /health probe. Docker `HEALTHCHECK` directives MUST use this — never add curl/wget to the image (PITFALL #11).
+- **Plan 01-05 — Plan 04 dependency stubs created early.** `internal/config/config.go`, `internal/logging/logging.go`, and `internal/version/version.go` were scaffolded by Plan 05 because Plan 05 was executed before Plan 04. Plan 04 MUST replace the function bodies (full viper / Validate / JSON handler implementations) WITHOUT changing the public function signatures: `config.Load() (*Config, error)`, `logging.New(level string) *slog.Logger`, `version.Info() BuildInfo`. The Config struct fields used today (Env, HTTPPort, LogLevel, DB, TLS) must stay; new fields can be added.
+- **Plan 01-05 — TODO marker convention: `TODO(plan-NN ...)` with the implementing plan number.** Multi-plan collaborations use `+`: `TODO(plan-09 + plan-13 + plan-18)`. `grep -rn 'TODO(plan-' internal/cli` locates every downstream insertion site.
+- **Plan 01-05 — BuildInfo sentinels:** Unstamped builds default to `{Version: "dev", Commit: "none", BuildTime: "unknown"}` so local `go build` is self-describing. Production injection via `-ldflags "-X github.com/shifter-io/shifter/internal/version.{Version,Commit,BuildTime}=..."` is documented in `internal/version/version.go`'s package comment; Plan 24 wires the Justfile recipe.
 
 ### Open Todos
 
@@ -95,6 +102,10 @@ Plan: 4 of 24
 - **CI plan — Node version >=22.13.** jsdom 29 (vitest worker) requires Node 22.13+ even though the project floor is 22.12. Whichever plan lands the GitHub Actions / CI config must pin the runner image accordingly.
 - **Plan 12 — `mockgen` on PATH.** `just bootstrap` should add `$(go env GOPATH)/bin` to PATH or document the requirement so contributors don't get "mockgen not found" after `go install`.
 - **Plan-check enhancement — verify command wording.** Plans whose `<verify>` uses `grep -q 'PASS'` against `go test ./...` (non-verbose) silently fail; either use `-v` mode or change the assertion to `grep -E 'PASS|ok\s'`. Flag during plan-check.
+- **Plan 04 — replace Plan 05's interface stubs.** Plan 05 created `internal/config/config.go` (env-only loader), `internal/logging/logging.go` (minimal slog wrapper), and `internal/version/version.go` (BuildInfo + ldflags vars). Plan 04 must replace the bodies of `config.go` and `logging.go` with the full viper-driven layered loader, secrets file reader, Validate(), and the canonical D-24/D-25 one-line JSON handler. Public signatures (`config.Load()`, `logging.New(level)`) are LOCKED — changing them breaks `internal/cli/{migrate,serve,configcheck}.go`. Config struct field names (Env, HTTPPort, LogLevel, DB, TLS) are also locked; new fields can be added freely.
+- **Plan-check enhancement — depends_on accuracy.** Plan 05's frontmatter declared `depends_on: [01, 02]` but the plan's task code requires Plan 04's outputs (config.Load, logging.New, version.Info). Future plan-check passes should grep for cross-package imports (`internal/config`, `internal/logging`, `internal/version`) and require the providing plan to be in `depends_on`.
+- **Plan 24 — Justfile build recipe.** Update `just build` to use the production -ldflags invocation documented in `internal/version/version.go`'s package comment so release artifacts ship with real Version / Commit / BuildTime.
+- **Plan 18 — Cobra completion subcommand visibility.** `shifter --help` lists `completion` (Cobra's auto-registered shell completion). Decide whether to keep visible (useful for ops), hide via `rootCmd.CompletionOptions.DisableDefaultCmd = true`, or move to a `tools` group.
 
 ### Open Blockers
 
@@ -129,4 +140,4 @@ Plan: 4 of 24
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-27T23:53:45Z — Stopped at: Completed 01-03-database-layer-PLAN.md*
+*Last session: 2026-04-28T00:06Z — Stopped at: Completed 01-05-cobra-cli-PLAN.md (Plan 04 still pending stub replacement)*
