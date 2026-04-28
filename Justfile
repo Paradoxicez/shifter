@@ -79,7 +79,58 @@ compose-smoke-bundled:
     echo "PASS bundled smoke"
     (cd compose && docker compose -f bundled.yml down -v)
 
-# Smoke-test external compose flavor (Wave 0 stub — Plan 21 implements).
+# Smoke-test external compose flavor (OPS-01).
+#
+# Strategy: stand up the 3-service external stack (postgres + shifter + caddy)
+# pointing at INTENTIONALLY UNREACHABLE ChirpStack + MQTT URLs. Shifter
+# tolerates unreachable external services on boot (`probeChirpStackOrRefuse`
+# logs a warning and returns nil; the MQTT subscriber logs a warning and
+# leaves mqttSub=nil) — so /health returns 200 in degraded mode.
+#
+# What this verifies:
+#   • compose/external.yml parses + brings up 3 services
+#   • Shifter boots cleanly when SHIFTER_CHIRPSTACK_GRPC_URL +
+#     SHIFTER_MQTT_URL are populated (REQUIRED-via-:?required check)
+#   • Shifter /health returns 200 even with unreachable external services
+#     (matches "ChirpStack unreachable on boot — degraded mode" path)
+#
+# What this does NOT verify (out of scope for unit smoke):
+#   • Real gRPC handshake against ChirpStack v4
+#   • MQTT subscribe + uplink event flow
+#   These belong in integration tests against a live bundled-stack pairing,
+#   tracked separately for Phase 2.
 compose-smoke-external:
-    @echo "TODO: implemented in Plan 21"
-    @exit 1
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _compose-prep-secrets
+    just _compose-build-image
+
+    # Stub external endpoints — TCP-RST quickly so degraded-mode logs are clean.
+    # 127.0.0.1:1 is the canonical "guaranteed unreachable" address; from inside
+    # the container it loopbacks to the container itself (nothing listens there).
+    export SHIFTER_DOMAIN=localhost
+    export SHIFTER_TLS_MODE=internal
+    export CADDY_TLS_BLOCK="tls internal"
+    export SHIFTER_CHIRPSTACK_GRPC_URL=127.0.0.1:1
+    export SHIFTER_CHIRPSTACK_INSECURE=true
+    export SHIFTER_MQTT_URL=tcp://127.0.0.1:1
+    export SHIFTER_MQTT_USER=""
+
+    echo "==> Bringing up external stack (project=shifter-external)"
+    (cd compose && docker compose -f external.yml --project-name shifter-external up -d)
+    trap '(cd compose && docker compose -f external.yml --project-name shifter-external down -v) || true' EXIT
+
+    echo "==> Waiting for shifter /health (90s deadline)"
+    deadline=$((SECONDS + 90))
+    until curl -fs http://localhost:8080/health > /dev/null 2>&1; do
+      if [ $SECONDS -gt $deadline ]; then
+        echo "TIMEOUT waiting for /health"
+        (cd compose && docker compose -f external.yml --project-name shifter-external logs shifter)
+        exit 1
+      fi
+      sleep 2
+    done
+    echo "PASS external smoke"
+
+    (cd compose && docker compose -f external.yml --project-name shifter-external down -v)
+    trap - EXIT

@@ -1,0 +1,142 @@
+# Shifter — external compose flavor (OPS-01).
+#
+# Brings up Postgres+TimescaleDB, Caddy, and Shifter only — for customers
+# who already operate a ChirpStack v4 server and an MQTT broker.
+#
+#   postgres   — Postgres 16 + TimescaleDB 2.26 (D-04, time-series store)
+#   shifter    — same shifter:0.1.0 image as bundled (OPS-01: same backend image)
+#   caddy      — same Caddy 2.8 image (Plan 22 ships the production Caddyfile)
+#
+# The customer's ChirpStack + MQTT broker are accessed via env vars:
+#
+#   SHIFTER_CHIRPSTACK_GRPC_URL  — REQUIRED (e.g., chirpstack.acme.local:8080)
+#   SHIFTER_MQTT_URL             — REQUIRED (e.g., tcp://mqtt.acme.local:1883)
+#   SHIFTER_CHIRPSTACK_INSECURE  — optional (default false)
+#   SHIFTER_MQTT_USER            — optional
+#   SHIFTER_DOMAIN               — optional (default localhost; used by Caddy)
+#
+# Non-secret env vars come from `install/external/.env` (gitignored). The
+# `:?required` suffix on the two REQUIRED vars makes Compose abort early
+# with a readable error if either is unset (vs. shifter booting and
+# crashing on dial). Token + password remain Compose secrets per D-06.
+#
+# Conventions inherited from compose/bundled.yml:
+#
+#   • All image tags PINNED — no `:latest` (OPS-07, T-21-04)
+#   • Compose `secrets:` for every credential — no `.env` for secrets (D-06, T-21-01)
+#   • Postgres NOT exposed externally; only Caddy (80/443) binds host ports
+#   • json-file logging driver with size + file caps on EVERY service (OPS-05, T-20-04)
+#   • Shifter HEALTHCHECK runs `shifter healthcheck` (D-15, PITFALL #11) — built into the image
+#
+# To run: `just compose-smoke-external` from the repo root, or
+#         `cd compose && docker compose -f external.yml up -d` after
+#         `install/external/install.sh` (which validates .env + secrets).
+
+secrets:
+  postgres_password:
+    file: ../secrets/postgres_password.txt
+  chirpstack_api_token:
+    file: ../secrets/chirpstack_api_token.txt
+  session_signing_key:
+    file: ../secrets/session_signing_key.txt
+  mqtt_password:
+    file: ../secrets/mqtt_password.txt
+
+x-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  postgres:
+    image: timescale/timescaledb:2.26.0-pg16
+    restart: unless-stopped
+    secrets: [postgres_password]
+    environment:
+      POSTGRES_USER: shifter
+      POSTGRES_DB: shifter
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shifter -d shifter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *json-logging
+    networks: [shifter]
+
+  shifter:
+    image: shifter:0.1.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    secrets:
+      - postgres_password
+      - chirpstack_api_token
+      - session_signing_key
+      - mqtt_password
+    environment:
+      SHIFTER_ENV: production
+      SHIFTER_HTTP_PORT: "8080"
+      SHIFTER_LOG_LEVEL: info
+      SHIFTER_DB_HOST: postgres
+      SHIFTER_DB_PORT: "5432"
+      SHIFTER_DB_USER: shifter
+      SHIFTER_DB_DATABASE: shifter
+      SHIFTER_DB_PASSWORD_FILE: /run/secrets/postgres_password
+      SHIFTER_DB_SSL_MODE: disable
+      # External ChirpStack + MQTT — operator-provided, REQUIRED.
+      # The `:?required` suffix aborts `compose up` with a readable error
+      # if the var is unset (better than booting Shifter + crashing on dial).
+      SHIFTER_CHIRPSTACK_GRPC_URL: ${SHIFTER_CHIRPSTACK_GRPC_URL:?required}
+      SHIFTER_CHIRPSTACK_INSECURE: ${SHIFTER_CHIRPSTACK_INSECURE:-false}
+      SHIFTER_CHIRPSTACK_API_TOKEN_FILE: /run/secrets/chirpstack_api_token
+      SHIFTER_MQTT_URL: ${SHIFTER_MQTT_URL:?required}
+      SHIFTER_MQTT_USER: ${SHIFTER_MQTT_USER:-}
+      SHIFTER_MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+      SHIFTER_SESSION_KEY_FILE: /run/secrets/session_signing_key
+      SHIFTER_TLS_MODE: ${SHIFTER_TLS_MODE:-internal}
+      SHIFTER_TLS_DOMAIN: ${SHIFTER_DOMAIN:-localhost}
+      SHIFTER_LOGO_STORAGE_DIR: /var/lib/shifter/logos
+    ports:
+      # Exposed for the external smoke test (`just compose-smoke-external`
+      # polls /health on the host). In production deploys behind Caddy
+      # this can be removed; Caddy reaches Shifter on the internal network.
+      - "8080:8080"
+    volumes:
+      - shifter_logos:/var/lib/shifter/logos
+    logging: *json-logging
+    networks: [shifter]
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on: [shifter]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SHIFTER_DOMAIN: ${SHIFTER_DOMAIN:-localhost}
+      SHIFTER_TLS_EMAIL: ${SHIFTER_TLS_EMAIL:-}
+      CADDY_TLS_BLOCK: ${CADDY_TLS_BLOCK:-tls internal}
+      CADDY_GLOBAL_TLS_BLOCK: ${CADDY_GLOBAL_TLS_BLOCK:-}
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging: *json-logging
+    networks: [shifter]
+
+volumes:
+  postgres_data:
+  shifter_logos:
+  caddy_data:
+  caddy_config:
+
+networks:
+  shifter:
+    driver: bridge
