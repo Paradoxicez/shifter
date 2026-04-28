@@ -45,6 +45,7 @@ func setupLogin(t *testing.T) *loginFixture {
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/auth/login", LoginHandler(deps))
 	mux.Handle("POST /api/auth/logout", LogoutHandler(sm))
+	mux.Handle("GET /api/account/me", AccountInfoHandler(deps))
 	mux.Handle("GET /me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := GetUser(r.Context(), sm)
 		if !ok {
@@ -167,6 +168,49 @@ func TestLogout_Idempotent(t *testing.T) {
 	require.NoError(t, err)
 	res3.Body.Close()
 	require.Equal(t, http.StatusUnauthorized, res3.StatusCode, "session destroyed")
+}
+
+// TestAccountInfo_ReturnsUser — GET /api/account/me returns the authenticated
+// user's id, email, role, must_change_password. Verifies D-09 (wizard /
+// create-admin admins have must_change_password=false).
+func TestAccountInfo_ReturnsUser(t *testing.T) {
+	f := setupLogin(t)
+	res := loginPost(t, f, f.email, f.passwd)
+	res.Body.Close()
+
+	req, _ := http.NewRequest("GET", f.server.URL+"/api/account/me", nil)
+	req.Header.Set("X-Requested-With", "shifter")
+	res2, err := f.client.Do(req)
+	require.NoError(t, err)
+	defer res2.Body.Close()
+	require.Equal(t, http.StatusOK, res2.StatusCode)
+
+	var body struct {
+		User struct {
+			ID                 string `json:"id"`
+			Email              string `json:"email"`
+			Role               string `json:"role"`
+			MustChangePassword bool   `json:"must_change_password"`
+		} `json:"user"`
+	}
+	require.NoError(t, json.NewDecoder(res2.Body).Decode(&body))
+	require.Equal(t, f.email, body.User.Email)
+	require.Equal(t, "admin", body.User.Role)
+	require.NotEmpty(t, body.User.ID)
+	require.False(t, body.User.MustChangePassword,
+		"D-09: wizard / create-admin admins have must_change_password=false")
+}
+
+// TestAccountInfo_NoSession — GET /api/account/me without a session returns 401.
+func TestAccountInfo_NoSession(t *testing.T) {
+	f := setupLogin(t)
+	// Fresh client, no cookie jar entry.
+	cli := &http.Client{Jar: mustJar(t)}
+	req, _ := http.NewRequest("GET", f.server.URL+"/api/account/me", nil)
+	res, err := cli.Do(req)
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode)
 }
 
 // TestLogin_RequiresXRequestedWith — POST without X-Requested-With header is

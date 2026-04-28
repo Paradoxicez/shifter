@@ -136,6 +136,47 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 	}
 }
 
+// AccountInfoHandler returns GET /api/account/me — the post-login user info
+// consumed by the frontend RootLayout loader (Plan 11). Returns 401 when no
+// session is present so the SPA can redirect to /login.
+//
+// The body shape is:
+//
+//	{ "user": { "id": "...", "email": "...", "role": "admin"|"viewer",
+//	            "must_change_password": false } }
+//
+// The session payload only carries (id, role) — email and must_change_password
+// are hydrated from the user table on every call so a disabled-mid-session
+// account surfaces 401 here too.
+func AccountInfoHandler(deps LoginDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, ok := GetUser(r.Context(), deps.SessionMgr)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, errorResp{Error: "unauthorized"})
+			return
+		}
+		rec, err := deps.Store.GetUserByID(r.Context(), u.ID)
+		if err != nil {
+			if errors.Is(err, ErrUserNotFound) {
+				// User was disabled / deleted between login and this call.
+				writeJSON(w, http.StatusUnauthorized, errorResp{Error: "unauthorized"})
+				return
+			}
+			deps.Log.Error("account-me: load user", "err", err, "user_id", u.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"user": map[string]any{
+				"id":                   rec.ID,
+				"email":                rec.Email,
+				"role":                 rec.Role,
+				"must_change_password": rec.MustChangePassword,
+			},
+		})
+	}
+}
+
 // LogoutHandler returns POST /api/auth/logout. Idempotent: destroying an
 // already-empty session is a no-op that still returns 204.
 func LogoutHandler(sm *scs.SessionManager) http.HandlerFunc {
