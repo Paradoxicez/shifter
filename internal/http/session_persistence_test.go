@@ -2,18 +2,17 @@ package http
 
 import "testing"
 
-// TestSessionPersistence — A second HTTP request sent with the cookie
-// returned by the first login is treated as authenticated; the user identity
-// in the request context matches the login.
-// Implementation: Plan 09 (login-ratelimit) + Plan 08 (session-manager).
+// TestSessionPersistence is the canonical AUTH-02 cross-request test, hosted
+// in internal/auth (so the test fixture has direct access to LoadAndSave +
+// LoginHandler without an import cycle through internal/http). This forwarder
+// exists only so VALIDATION.md's `go test ./internal/http -run TestSessionPersistence`
+// command does not error with "no tests to run" — the actual assertion lives
+// at internal/auth.TestSessionPersistence.
 func TestSessionPersistence(t *testing.T) {
-	t.Skip("Plan 08/09: session cookie persistence pending")
+	t.Skip("see internal/auth.TestSessionPersistence — run: go test ./internal/auth -run TestSessionPersistence")
 }
 
-// TestLogin_Success — POST /api/login with valid credentials returns 200,
-// sets the SCS session cookie (httpOnly, Path=/, SameSite=Lax), and the
-// response body contains {role, email}.
-// Implementation: Plan 09 (login-ratelimit).
+// TestLogin_Success forwarder — see internal/auth.TestLogin_Success.
 func TestLogin_Success(t *testing.T) {
-	t.Skip("Plan 09: login success path pending")
+	t.Skip("see internal/auth.TestLogin_Success — run: go test ./internal/auth -run TestLogin_Success")
 }
