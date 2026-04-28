@@ -1,7 +1,9 @@
 # Build artifacts
 /bin/
 /shifter
-/web/dist/
+# Build artifacts — allow .gitkeep so go:embed all:web/dist compiles before pnpm build runs
+/web/dist/*
+!/web/dist/.gitkeep
 /web/node_modules/
 /tmp/
 /coverage/
