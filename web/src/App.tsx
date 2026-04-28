@@ -9,6 +9,7 @@ import RootLayout, { rootLoader } from '@/routes/_root'
 import IndexRedirect from '@/routes/index-redirect'
 
 const InstallWizard = lazy(() => import('@/routes/install'))
+const SettingsPage = lazy(() => import('@/routes/settings'))
 
 /**
  * Phase 1 router skeleton.
@@ -44,7 +45,14 @@ const router = createBrowserRouter([
     loader: rootLoader,
     children: [
       { index: true, element: <IndexRedirect /> },
-      { path: 'settings', element: <div>Settings — Plan 17</div> },
+      {
+        path: 'settings',
+        element: (
+          <Suspense fallback={null}>
+            <SettingsPage />
+          </Suspense>
+        ),
+      },
     ],
   },
 ])
