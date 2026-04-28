@@ -8,8 +8,8 @@ progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 18
-  percent: 75
+  completed_plans: 19
+  percent: 79
 ---
 
 # Project State: Shifter
@@ -25,14 +25,14 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 18 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18)
+Plan: 19 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 23)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
 | **Plan** | 19 — spa-embed (next) |
-| **Status** | Plans 01–18 complete. Plan 18 shipped chi router + /health + /health/detailed + serve.go full wiring. `internal/http/router.go` exports `NewRouter(deps Deps) http.Handler` mounting all 13 Phase 1 routes with the canonical PITFALL #4 middleware order (RequestID -> RealIP -> SlogLogger -> Recoverer -> SessionMgr.LoadAndSave -> install.FirstRunGate -> routes -> SPA last). `internal/http/health.go` exports `Health()` (public; status/version/uptime_seconds; NO checks per D-18) and `HealthDetailed(pool)` (admin via RequireAction(ActionHealthDetailed); DB ping + status='ok'\|'degraded'). `internal/http/middleware.go` SlogLogger emits one structured line per request (D-24); never logs request headers/body (T-18-06). `internal/cli/serve.go` replaces the Plan 05 stub: config.Load + DB pool + auto-migrate (D-13) + `probeChirpStackOrRefuse` (INST-05 boot gate — extracted as a testable top-level function; on `ErrChirpStackV3OrUnknown` returns an error containing both 'INST-05' and 'ChirpStack v3' [case-insensitive] for operator log clarity) + MQTT subscriber start (CHIRP-02) + chi router + graceful SIGTERM (mqttSub.Shutdown precedes srv.Shutdown). `csConnWrapper` bridges `install.CSConn` (new exported type alias for the previously package-private csConn) and the boot-probe `csBootConn` interface from one concrete value with `{Conn() *grpc.ClientConn; Close() error}` — Warning #6 tightening preserved. `internal/http/spa.go` `SPAHandler()` is a 503 placeholder Plan 19 will replace. 6 net-new tests pass (TestHealth_Public, TestHealthDetailed_RequiresAdmin via testcontainer, TestServe_RefusesV3/AcceptsV4/DegradedOnUnreachable/NoConfigSkipsProbe via Plan 12 bufconn mock — fast-feedback INST-05 coverage with no compose dependency). `chi v5.2.5` added to go.mod. Full short-suite: 140 passed across 12 packages, zero regressions. INST-06 + AUTH-06 complete; INST-05 enforced at boot with unit-level coverage. Plan 19 will fill `SPAHandler()` body with the go:embed-backed Vite dist surface; the chi router's `/*` catch-all already targets it. |
-| **Progress (plans)** | `[████████░░] 18/24 (75%)` |
+| **Status** | Plans 01–18 + 23 complete. Plan 23 shipped login screen at /login with verbatim UI-SPEC copy, 401/429 error mapping, ?next= round-trip; 30 frontend tests pass; AUTH-04/UX-02 frontend complete. Plan 18 shipped chi router + /health + /health/detailed + serve.go full wiring. `internal/http/router.go` exports `NewRouter(deps Deps) http.Handler` mounting all 13 Phase 1 routes with the canonical PITFALL #4 middleware order (RequestID -> RealIP -> SlogLogger -> Recoverer -> SessionMgr.LoadAndSave -> install.FirstRunGate -> routes -> SPA last). `internal/http/health.go` exports `Health()` (public; status/version/uptime_seconds; NO checks per D-18) and `HealthDetailed(pool)` (admin via RequireAction(ActionHealthDetailed); DB ping + status='ok'\|'degraded'). `internal/http/middleware.go` SlogLogger emits one structured line per request (D-24); never logs request headers/body (T-18-06). `internal/cli/serve.go` replaces the Plan 05 stub: config.Load + DB pool + auto-migrate (D-13) + `probeChirpStackOrRefuse` (INST-05 boot gate — extracted as a testable top-level function; on `ErrChirpStackV3OrUnknown` returns an error containing both 'INST-05' and 'ChirpStack v3' [case-insensitive] for operator log clarity) + MQTT subscriber start (CHIRP-02) + chi router + graceful SIGTERM (mqttSub.Shutdown precedes srv.Shutdown). `csConnWrapper` bridges `install.CSConn` (new exported type alias for the previously package-private csConn) and the boot-probe `csBootConn` interface from one concrete value with `{Conn() *grpc.ClientConn; Close() error}` — Warning #6 tightening preserved. `internal/http/spa.go` `SPAHandler()` is a 503 placeholder Plan 19 will replace. 6 net-new tests pass (TestHealth_Public, TestHealthDetailed_RequiresAdmin via testcontainer, TestServe_RefusesV3/AcceptsV4/DegradedOnUnreachable/NoConfigSkipsProbe via Plan 12 bufconn mock — fast-feedback INST-05 coverage with no compose dependency). `chi v5.2.5` added to go.mod. Full short-suite: 140 passed across 12 packages, zero regressions. INST-06 + AUTH-06 complete; INST-05 enforced at boot with unit-level coverage. Plan 19 will fill `SPAHandler()` body with the go:embed-backed Vite dist surface; the chi router's `/*` catch-all already targets it. |
+| **Progress (plans)** | `[████████░░] 19/24 (79%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
 **Next action:** `/gsd-execute-plan 01 19` (or `/gsd-execute-phase 01` to continue the chain)
@@ -43,7 +43,7 @@ Plan: 18 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 18 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18) |
+| Plans complete | 19 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 23) |
 | Open blockers | 0 |
 
 ### Per-plan execution log
@@ -68,6 +68,7 @@ Plan: 18 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-16 install-wizard-ui | 5 min | 2 | 10 |
 | 01-17 test-connection | 9 min | 2 | 9 |
 | 01-18 router-health | 9 min | 3 | 10 |
+| 01-23 login-ui | 7 min | 1 | 5 |
 
 ## Accumulated Context
 

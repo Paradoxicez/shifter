@@ -61,7 +61,7 @@ Plans:
 - [ ] 01-20-compose-bundled-PLAN.md — Bundled compose flavor (Postgres+Mosquitto+ChirpStack+Caddy+Shifter) + Dockerfile + install.sh (OPS-01)
 - [ ] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
 - [ ] 01-22-caddyfile-PLAN.md — Caddyfile with env-driven TLS modes (acme/byo/internal) + security headers + SSE-aware proxy (D-20..D-22, PITFALL #7)
-- [ ] 01-23-login-ui-PLAN.md — Login screen with verbatim UI-SPEC copy + 401/429 error mapping (AUTH-01, AUTH-04, UX-02)
+- [x] 01-23-login-ui-PLAN.md — Login screen with verbatim UI-SPEC copy + 401/429 error mapping (AUTH-01, AUTH-04, UX-02)
 - [ ] 01-24-readme-docs-PLAN.md — README + docs/install.md + docs/operator-runbook.md + REQUIREMENTS.md INST-06 wording update (D-19)
 
 **UI hint**: yes
