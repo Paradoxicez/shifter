@@ -66,6 +66,12 @@ type csConn interface {
 	Close() error
 }
 
+// CSConn is an exported alias for the package-private csConn interface so
+// Plan 18's serve.go can construct a single wrapper that satisfies both this
+// interface AND the boot-probe csBootConn shape — see internal/cli/serve.go's
+// csConnWrapper for the production wiring.
+type CSConn = csConn
+
 func writeJSON(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
