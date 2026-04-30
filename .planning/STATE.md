@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-04-28T07:01:04.085Z"
+last_updated: "2026-04-30T15:42:14.531Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 24
-  completed_plans: 22
-  percent: 92
+  completed_plans: 23
+  percent: 96
 ---
 
 # Project State: Shifter
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 22 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23)
+Plan: 23 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 1 — Foundation |
-| **Plan** | 21 — compose-external (next) |
-| **Status** | Plans 01–20 + 23 complete. Plan 20 shipped OPS-01 bundled compose flavor: 3-stage Dockerfile (`node:22-alpine` → `golang:1.24-alpine` → `gcr.io/distroless/static-debian12:nonroot`) with `-trimpath -ldflags -X internal/version.{Version,Commit,BuildTime}=...` injection and `HEALTHCHECK CMD ["/usr/local/bin/shifter", "healthcheck"]` (PITFALL #11 — distroless has no curl/wget, the binary itself probes /health via Plan 05's subcommand). `compose/bundled.yml` declares 8 services with all image tags PINNED (timescale/timescaledb:2.26.0-pg16, eclipse-mosquitto:2.0.20, redis:7-alpine, chirpstack/chirpstack:4.10, chirpstack-gateway-bridge:4.0, chirpstack-rest-api:4.10, shifter:0.1.0, caddy:2.8) — `grep 'image:.*:latest\b'` returns empty (OPS-07 / T-20-02). Top-level `secrets:` block has 4 entries (postgres_password, chirpstack_api_token, session_signing_key, mqtt_password) referencing `../secrets/<name>.txt`; shifter service mounts all 4 via `SHIFTER_<NAME>_FILE` env vars (D-06 / T-20-01). YAML anchor `x-logging: &json-logging` applies `json-file` + `max-size: 10m` + `max-file: 3` to every service (OPS-05 forward-look / T-20-04). Mosquitto + ChirpStack core + Postgres + Redis + chirpstack-rest-api have NO host port mappings (T-20-03 / CONTEXT.md `<specifics>`); only Caddy (80/443), gateway-bridge (1700/udp), and shifter (8080 — for smoke-test poll) bind. `compose/mosquitto.conf` is the anonymous internal-listener config. `secrets/.gitkeep` + `secrets/README.md` (operator setup guide, generation snippets, CRLF caveat). `install/bundled/install.sh` (0755, idempotent) is the one-shot operator bootstrapper. Justfile gained `compose-smoke-bundled` + `_compose-build-image` + `_compose-prep-secrets` recipes (replacing Wave-0 stub). **Deviations:** (1) Caddyfile placeholder shipped at repo root with `auto_https off` + `:80 reverse_proxy shifter:8080` so Caddy container starts cleanly until Plan 22 replaces the body — Rule 3 blocking-issue fix (without it the bundled smoke test cannot run; bind mount fails with "no such file"). (2) shifter service exposes `8080:8080` to host so the smoke recipe can poll `localhost:8080/health` (Rule 3); production deploys behind Caddy MAY drop. (3) `secrets/README.md` required `!/secrets/README.md` exception in `.gitignore` (was masked by `/secrets/*` rule). (4) Dockerfile go-builder runs `rm -rf ./web/dist` before `COPY --from=web-builder /web/dist ./web/dist` to defuse the .gitkeep placeholder (Plan 19) shadowing the real Vite output (Rule 1 plan-bug fix, defensive). (5) `.dockerignore` tightened beyond plan: added `/shifter` (33MB dev binary), `*.out`. **Live verification deferred:** Docker daemon was unresponsive in this session (same condition Plan 19 flagged); `docker compose config` parses cleanly, all static + grep acceptance criteria pass, `go build ./...` exit 0. The next operator with a working Docker daemon should run `just compose-smoke-bundled` to confirm green-path behavior. Plan 19 shipped go:embed-backed SPA handler; binary self-contained at 33.6M. Plan 23 shipped /login UI. Plans 18 + 19 wire chi router, /health, /health/detailed, full serve.go, INST-05 boot enforcement, INST-06, AUTH-06. |
-| **Progress (plans)** | `[█████████░] 21/24 (88%)` |
+| **Plan** | 24 — readme-docs (next, last plan in Phase 1) |
+| **Status** | Plans 01–23 complete. Plan 22 shipped OPS-01 hardening at the Caddy edge: `Caddyfile` at repo root with env-driven TLS modes (D-21 acme/byo/internal via `{$CADDY_TLS_BLOCK}` interpolation point — install.sh's `case "${SHIFTER_TLS_MODE:-internal}"` block renders the Caddy `tls` directive before `docker compose up`), 5 OWASP-grade security headers + server-banner strip (Strict-Transport-Security max-age=31536000+includeSubDomains, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, X-Frame-Options DENY, Content-Security-Policy `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'`, `-Server` strip), `@sse path /sse /sse/*` SSE-aware handler with `flush_interval -1` + `read_buffer 0` + `response_header_timeout 0` (PITFALL #7 prophylaxis — Phase 1 has no /sse endpoint but the handler ships now to defuse Phase 4 retrofit risk), explicit `/health` fast-path handle (immune to future root-level header rewrites), root `reverse_proxy shifter:8080` with `header_up X-Forwarded-For {remote_host}` + `header_up X-Real-IP {remote_host}` (consumed by Plan 09 rate-limiter's `clientIP(r)` first-hop XFF helper), reserved `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam for future ZeroSSL-fallback (D-21). Both install scripts (`install/bundled/install.sh`, `install/external/install.sh`) gained the `case` block mapping SHIFTER_TLS_MODE → CADDY_TLS_BLOCK (acme="" / byo="tls /etc/caddy/cert.pem /etc/caddy/key.pem" / internal="tls internal") with explicit error-and-exit-2 on invalid value; both health polls switched from `http://localhost:8080/health` to `https://localhost/health` via `curl -fsk` (tolerating internal CA in default mode). Justfile `compose-smoke-bundled` + `compose-smoke-external` recipes export TLS env (SHIFTER_DOMAIN=localhost, SHIFTER_TLS_MODE=internal, CADDY_TLS_BLOCK="tls internal") then poll Caddy over HTTPS — smoke now validates the FULL edge → backend chain, not just shifter:8080 directly. **Deviations:** (1) X-Forwarded-For + X-Real-IP propagation declared explicitly in root reverse_proxy (Rule 2 — plan must_haves implied but plan-verbatim Caddyfile elided; making the Plan 09 trust-boundary contract visible at the Caddy edge prevents accidental drop in future Caddy upgrades). (2) `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam added in global block (Rule 2 — plan must_haves listed it explicitly but verbatim body elided; future ZeroSSL fallback is now an env var change, not a Caddyfile structural edit). **Resume context:** This plan was originally executed 2026-04-28T07:01:04Z; first-pass executor finished all four file edits but disk-full before commit/SUMMARY. Disk freed (74G), this resume executor verified all edits via grep against acceptance criteria, committed Task 1 (76304d8), and wrote SUMMARY.md. **Live verification deferred:** Docker daemon was unresponsive in this session (continuing the Plan 19/20/21 pattern Phase 1 sign-off accepts as Open Todo); `docker compose -f compose/bundled.yml config -q` and `docker compose -f compose/external.yml --env-file install/external/.env.example config -q` BOTH parse cleanly. D-20 + D-21 + D-22 enforced; PITFALL #7 prevented at Phase 1 boundary. |
+| **Progress (plans)** | `[██████████] 23/24 (96%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 21` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 01 24` (or `/gsd-execute-phase 01` to continue the chain)
 
 ## Performance Metrics
 
@@ -43,9 +43,10 @@ Plan: 22 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 |--------|-------|
 | Phases complete | 0 / 7 |
 | v1 requirements mapped | 99 / 99 (100%) |
-| Plans complete | 21 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23) |
+| Plans complete | 23 / 24 (01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) |
 | Open blockers | 0 |
 | Phase 01-foundation P21 | 4min24s | 1 tasks | 4 files |
+| Phase 01-foundation P22 | 6min | 1 tasks | 4 files |
 
 ### Per-plan execution log
 
@@ -72,6 +73,8 @@ Plan: 22 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 | 01-23 login-ui | 7 min | 1 | 5 |
 | 01-19 spa-embed | 19 min | 1 | 6 |
 | 01-20 compose-bundled | 4 min | 1 | 10 |
+| 01-21 compose-external | 4 min | 1 | 4 |
+| 01-22 caddyfile | 6 min | 1 | 4 |
 
 ## Accumulated Context
 
@@ -236,10 +239,16 @@ Plan: 22 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 - **Plan 01-20 — install.sh idempotency pattern LOCKED.** `[ -s file ] || generate` for every secret — re-running `install/bundled/install.sh` preserves any existing secret value. The same idiom applies to the Justfile's `_compose-prep-secrets` private recipe. Future install scripts (Plan 21 external-mode + Phase 7 update tooling) MUST follow this pattern; destructive `>` redirections that overwrite existing secrets are forbidden without an explicit `--reset` flag.
 - **Plan 01-20 — `_compose-build-image` and `_compose-prep-secrets` are private Justfile recipes (leading underscore = `just --list` hides them).** `compose-smoke-bundled` chains them so a single `just compose-smoke-bundled` invocation does the full bring-up + smoke. Same private-recipe convention will apply when Plan 21 adds `compose-smoke-external`. Future helper recipes that aren't intended for direct operator use MUST adopt the underscore prefix.
 - **Plan 01-20 — Live `docker build` + `just compose-smoke-bundled` deferred (environment limitation).** Docker daemon was unresponsive throughout this session (same condition Plan 19 documented). Static verification via `docker compose config` and grep-based acceptance checks all pass; `go build ./...` exit 0 confirms no Go regressions. The next operator with a working Docker daemon should run the live smoke before Phase 1 sign-off — once daemon is back, the recipe is expected to succeed (all static invariants check out, image build sequence is straightforward, /health endpoint is shipped by Plan 18 + Plan 19's SPA embed makes the binary self-contained).
-
-### Open Todos
+- **Plan 01-22 — TLS mode selection lives in install.sh, not in the Caddyfile.** The Caddyfile contains a single `{$CADDY_TLS_BLOCK}` interpolation point; `install/{bundled,external}/install.sh`'s `case "${SHIFTER_TLS_MODE:-internal}"` block reads the env var and exports the rendered Caddy `tls` directive (acme="" / byo="tls /etc/caddy/cert.pem /etc/caddy/key.pem" / internal="tls internal"). Future TLS modes (e.g., DNS-01 challenge for wildcard certs, alternate ACME issuers) are pure case-arm additions — no Caddyfile fork. `case "${SHIFTER_TLS_MODE:-internal}"` literal MUST appear in any future install.sh variant; the Caddyfile MUST NOT add mode-conditional logic.
+- **Plan 01-22 — `{$SHIFTER_DOMAIN:localhost}` env-default syntax LOCKED.** Site block uses Caddy's built-in `{$VAR:default}` interpolation — no shell-side fallback needed. Smoke tests + LAN-only "internal" deploys work without operator domain setup; production overrides via `SHIFTER_DOMAIN` env. Future plans MUST NOT introduce a separate `caddyfile.template` + envsubst step — the Caddyfile env-interpolation feature is sufficient.
+- **Plan 01-22 — `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam reserved (currently empty).** Future ZeroSSL fallback per D-21 will populate the global block via env, NOT via a Caddyfile structural edit. The seam exists in Plan 22's Caddyfile body so the change is one env var, not a multi-line structural addition. Plans wanting per-environment global directives MUST extend this single seam — do not add additional seams (one env var, one block).
+- **Plan 01-22 — `/sse` handler ships in Phase 1 even though no `/sse` endpoint exists yet.** PITFALL #7 forbids retrofitting `flush_interval -1` after a Phase 4 SSE endpoint goes live with default proxy buffering. The 8 lines of preemptive Caddyfile config (`@sse path /sse /sse/*` + `handle @sse { reverse_proxy shifter:8080 { flush_interval -1 transport http { read_buffer 0 response_header_timeout 0 } } }`) defuse a known retrofit hazard. Phase 4 plans MUST NOT add SSE handlers anywhere else in the Caddyfile — extend this single matcher with additional path patterns if a second SSE endpoint emerges.
+- **Plan 01-22 — `/health` is a dedicated `handle` block, not a fall-through to root.** Future header rewrites at the root level (Phase 6 may add tighter CSP per environment) cannot accidentally affect the canonical liveness probe — `/health` always uses the minimal upstream config. Plan 24 (operator runbook) MUST document `https://localhost/health` as the canonical liveness URL; future health-related URLs (e.g., `/health/detailed` from Plan 18) intentionally go through the root reverse_proxy because they exercise the full chain.
+- **Plan 01-22 — HTTPS-only smoke path LOCKED.** Every health probe in `install/{bundled,external}/install.sh` and Justfile's `compose-smoke-{bundled,external}` recipes goes through Caddy with `curl -fsk https://localhost/health` (-k tolerates internal CA in default mode). `shifter:8080` is no longer polled directly — the smoke validates the FULL edge → backend chain. Future install/smoke recipes MUST follow this convention; bypassing Caddy hides edge configuration regressions (e.g., header drops, TLS misconfig, SSE buffering misconfig).
+- **Plan 01-22 — X-Forwarded-For + X-Real-IP propagation declared explicitly in root reverse_proxy (Rule 2 deviation).** Plan 09's `clientIP(r)` helper consumes XFF first-hop; making the contract visible at the trust boundary (`header_up X-Forwarded-For {remote_host}` + `header_up X-Real-IP {remote_host}`) prevents accidental drop in future Caddy upgrades. Plan 09's per-IP rate limiter relies on this — without it every request would be bucketed against the Caddy container's internal IP, defeating AUTH-04. Future reverse_proxy modifications MUST preserve these `header_up` directives.
 
 - **Plan 20 — Live `just compose-smoke-bundled` deferred.** Docker daemon was unresponsive in the executing session (same condition Plan 19 flagged). Static verification via `docker compose config` and grep acceptance checks all passed; `go build ./...` exit 0. Run `just compose-smoke-bundled` against a working daemon before Phase 1 sign-off to confirm green-path bring-up. Recommended operator action if smoke fails: restart Docker Desktop, then re-run.
+- **Plan 22 — Live `just compose-smoke-{bundled,external}` deferred (continuing Plan 19/20/21 pattern).** Docker daemon was unresponsive on the resume session as well. `docker compose -f compose/bundled.yml config -q` and `docker compose -f compose/external.yml --env-file install/external/.env.example config -q` BOTH parse cleanly (exit 0). All grep + static acceptance criteria pass. First operator with a working Docker daemon: run `just compose-smoke-bundled` + `just compose-smoke-external` to confirm green-path HTTPS-through-Caddy `/health` polling. Expected: bundled stack `https://localhost/health` returns 200 within ~30s of `docker compose up -d` (Caddy local CA via `tls internal`); external stack same behavior with `127.0.0.1:1`-stubbed ChirpStack/MQTT URLs (degraded-mode warning logs but healthy/health endpoint).
 - **Plan 02 — Biome OOM workaround.** `pnpm exec biome` is OOM'ing the linter daemon in this sandbox. Investigate `BIOME_LOG_PATH` / heap flags or fall back to `biome ci` mode if pre-commit hooks fail. *(Carried from Plan 01-01; Plan 02 did not need biome at runtime, deferring resolution to whichever plan first wires biome into pre-commit/CI.)*
 - **CI plan — Node version >=22.13.** jsdom 29 (vitest worker) requires Node 22.13+ even though the project floor is 22.12. Whichever plan lands the GitHub Actions / CI config must pin the runner image accordingly.
 - **~~Plan 12 — `mockgen` on PATH.~~ Resolved 2026-04-28: Plan 12 used hand-written `UnimplementedXxxServer` stubs over bufconn instead of mockgen-generated mocks; the chirpstack mock no longer requires `mockgen` to be on PATH. Future plans needing generated mocks (e.g., interface-mock-heavy paths in Phase 6) can revisit the bootstrap requirement.
@@ -284,4 +293,4 @@ Plan: 22 of 24 complete (Plans 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12, 1
 
 ---
 *State initialized: 2026-04-27 after roadmap creation*
-*Last session: 2026-04-28T06:45Z — Stopped at: Completed 01-20-compose-bundled-PLAN.md*
+*Last session: 2026-04-30T15:40Z — Stopped at: Completed 01-22-caddyfile-PLAN.md (resumed after disk-full block on the original 2026-04-28T07:01Z executor pass; all four file edits were intact and uncommitted — resume committed Task 1 76304d8, wrote SUMMARY.md, updated STATE/ROADMAP/REQUIREMENTS).*
