@@ -23,7 +23,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **INST-03**: Install wizard lets operator pick ChirpStack mode (bundled or external) and supplies gRPC URL + API token + MQTT URL accordingly
 - [x] **INST-04**: Install wizard shows a regulator-aware LoRaWAN region picker (AS923 sub-plans for Thailand, EU868, US915, etc.) and persists the chosen default
 - [x] **INST-05**: System refuses to connect to ChirpStack v3 — only ChirpStack v4 is supported, validated on first connect
-- [x] **INST-06**: System exposes a `/health` endpoint reporting database, ChirpStack, MQTT, disk, last-uplink-age, and the running Shifter version
+- [x] **INST-06**: System exposes `/health` (public, no auth — `{status, version, uptime_seconds}` minimum) and `/health/detailed` (admin-required — DB connection state in Phase 1; Phase 6 expands with ChirpStack, MQTT, disk, and last-uplink-age). Reframed by Phase 1 D-18/D-19; the original single-endpoint-with-everything wording is replaced by this split.
 
 ### ChirpStack Integration
 
