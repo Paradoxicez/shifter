@@ -58,19 +58,24 @@ _compose-prep-secrets:
     [ -s secrets/mqtt_password.txt ]        || echo ""                  > secrets/mqtt_password.txt
     chmod 0600 secrets/*.txt
 
-# Smoke-test bundled compose flavor (OPS-01): bring up stack, poll /health, tear down.
+# Smoke-test bundled compose flavor (OPS-01): bring up stack, poll /health
+# THROUGH Caddy (Plan 22 — HTTPS with -k for internal CA), tear down.
 compose-smoke-bundled:
     #!/usr/bin/env bash
     set -euo pipefail
     just _compose-prep-secrets
     just _compose-build-image
+    # Plan 22: TLS=internal so Caddy uses its self-signed local CA.
+    export SHIFTER_DOMAIN=localhost
+    export SHIFTER_TLS_MODE=internal
+    export CADDY_TLS_BLOCK="tls internal"
     (cd compose && docker compose -f bundled.yml up -d)
-    echo "Waiting for shifter /health ..."
+    echo "Waiting for shifter /health via Caddy (HTTPS) ..."
     deadline=$((SECONDS + 90))
-    until curl -fs http://localhost:8080/health > /dev/null 2>&1; do
+    until curl -fsk https://localhost/health > /dev/null 2>&1; do
       if [ $SECONDS -gt $deadline ]; then
         echo "TIMEOUT waiting for /health"
-        (cd compose && docker compose -f bundled.yml logs shifter)
+        (cd compose && docker compose -f bundled.yml logs shifter caddy)
         (cd compose && docker compose -f bundled.yml down -v)
         exit 1
       fi
@@ -120,12 +125,12 @@ compose-smoke-external:
     (cd compose && docker compose -f external.yml --project-name shifter-external up -d)
     trap '(cd compose && docker compose -f external.yml --project-name shifter-external down -v) || true' EXIT
 
-    echo "==> Waiting for shifter /health (90s deadline)"
+    echo "==> Waiting for shifter /health via Caddy (HTTPS, 90s deadline)"
     deadline=$((SECONDS + 90))
-    until curl -fs http://localhost:8080/health > /dev/null 2>&1; do
+    until curl -fsk https://localhost/health > /dev/null 2>&1; do
       if [ $SECONDS -gt $deadline ]; then
         echo "TIMEOUT waiting for /health"
-        (cd compose && docker compose -f external.yml --project-name shifter-external logs shifter)
+        (cd compose && docker compose -f external.yml --project-name shifter-external logs shifter caddy)
         exit 1
       fi
       sleep 2

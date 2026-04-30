@@ -1,32 +1,65 @@
-# Shifter — Caddyfile (Plan 22 placeholder)
+# Shifter — Caddy 2 reverse proxy (D-20).
 #
-# This file exists today only so that `compose/bundled.yml`'s Caddy service
-# can mount it without failing at container start. Plan 22 (caddyfile) will
-# replace the body with the production reverse-proxy + automatic-TLS
-# configuration (acme/byo/internal modes per D-21/D-22, XFF for Plan 09's
-# trust boundary, /assets/* + /index.html cache headers honored from the
-# Shifter binary, etc.).
+# TLS modes (D-21): acme | byo | internal
+#   acme    — Let's Encrypt for SHIFTER_DOMAIN; ZeroSSL fallback when LE rate-limits.
+#   byo     — operator mounts /etc/caddy/cert.pem + /etc/caddy/key.pem
+#   internal— Caddy local CA (self-signed); LAN-only deployments
 #
-# Until Plan 22 ships, this minimal config:
+# The CADDY_TLS_BLOCK env var is templated by the install script before `caddy run`:
+#   acme:     CADDY_TLS_BLOCK=""
+#   byo:      CADDY_TLS_BLOCK="tls /etc/caddy/cert.pem /etc/caddy/key.pem"
+#   internal: CADDY_TLS_BLOCK="tls internal"
 #
-#   • Listens on :80 only (no automatic TLS attempt → no ACME calls / no
-#     network egress required for `just compose-smoke-bundled`)
-#   • Proxies every request to the shifter service on the compose network
-#   • Forwards X-Forwarded-For so Plan 09's `clientIP()` helper sees the
-#     real remote address
+# CADDY_GLOBAL_TLS_BLOCK is reserved for future ACME-issuer overrides
+# (e.g., ZeroSSL fallback when LE rate-limits per D-21). Empty by default.
 #
-# Operators MUST NOT deploy this placeholder — Plan 22's production
-# Caddyfile is a hard prerequisite for INST-* / OPS-* sign-off. The
-# bundled smoke test polls Shifter directly on :8080, so Caddy's
-# placeholder behavior here is not exercised by automated verification.
+# PITFALL #7 prevention: /sse paths are forwarded with flush_interval -1
+# so SSE responses stream to the browser without buffering.
+# (Phase 1 has no /sse endpoint — block included now for Phase 4 readiness.)
+#
+# Production deploy enforced by D-22: plain HTTP (no TLS) is not an option;
+# Caddy redirects :80 → :443 by default when TLS is configured.
 
 {
-	# Disable automatic HTTPS — Plan 22 will enable it conditionally
-	# based on SHIFTER_TLS_MODE. Smoke test only needs :80 to bind.
-	auto_https off
+	email {$SHIFTER_TLS_EMAIL}
+	{$CADDY_GLOBAL_TLS_BLOCK}
 }
 
-:80 {
+{$SHIFTER_DOMAIN:localhost} {
+	encode zstd gzip
+
+	# Security headers (D-22 + ASVS V9/V14)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		# CSP: SPA assets only; no inline scripts (Vite production build emits none).
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'"
+		# Disable referrer leak from server side
+		-Server
+	}
+
+	{$CADDY_TLS_BLOCK}
+
+	# SSE — must NOT be buffered (PITFALL #7).
+	@sse path /sse /sse/*
+	handle @sse {
+		reverse_proxy shifter:8080 {
+			flush_interval -1
+			transport http {
+				read_buffer 0
+				response_header_timeout 0
+			}
+		}
+	}
+
+	# Health endpoint (public, no auth) — explicit handler to keep it fast.
+	handle /health {
+		reverse_proxy shifter:8080
+	}
+
+	# /api/*, /assets/*, /, etc.
 	reverse_proxy shifter:8080 {
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Real-IP {remote_host}

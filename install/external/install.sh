@@ -107,9 +107,11 @@ echo "==> Starting external stack (domain=${SHIFTER_DOMAIN:-localhost}, mode=${S
 echo "    chirpstack=${SHIFTER_CHIRPSTACK_GRPC_URL}  mqtt=${SHIFTER_MQTT_URL}"
 (cd compose && docker compose -f external.yml up -d)
 
-echo "==> Waiting for Shifter /health (90s deadline)"
+# Plan 22: poll /health THROUGH Caddy (HTTPS, -k tolerates internal CA).
+# This validates the full path: Caddy → shifter:8080.
+echo "==> Waiting for Shifter /health via Caddy (90s deadline)"
 deadline=$((SECONDS + 90))
-until curl -fs http://localhost:8080/health > /dev/null 2>&1; do
+until curl -fsk "https://localhost/health" > /dev/null 2>&1; do
   if [ $SECONDS -gt $deadline ]; then
     echo "TIMEOUT — see: docker compose -f compose/external.yml logs"
     exit 1
