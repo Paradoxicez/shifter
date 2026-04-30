@@ -62,7 +62,7 @@ Plans:
 - [x] 01-21-compose-external-PLAN.md — External compose flavor (Postgres+Caddy+Shifter only; CS+MQTT URLs via env) + install.sh (OPS-01)
 - [x] 01-22-caddyfile-PLAN.md — Caddyfile with env-driven TLS modes (acme/byo/internal) + security headers + SSE-aware proxy (D-20..D-22, PITFALL #7)
 - [x] 01-23-login-ui-PLAN.md — Login screen with verbatim UI-SPEC copy + 401/429 error mapping (AUTH-01, AUTH-04, UX-02)
-- [ ] 01-24-readme-docs-PLAN.md — README + docs/install.md + docs/operator-runbook.md + REQUIREMENTS.md INST-06 wording update (D-19)
+- [x] 01-24-readme-docs-PLAN.md — README + docs/install.md + docs/operator-runbook.md + REQUIREMENTS.md INST-06 wording update (D-19)
 
 **UI hint**: yes
 
@@ -204,7 +204,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 23/24 | In Progress |  |
+| 1. Foundation | 24/24 | Complete | 2026-04-30 |
 | 2. Domain Model & Canonical Schema | 0/0 | Not started | - |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 0/0 | Not started | - |
 | 4. Realtime & Dashboard | 0/0 | Not started | - |
