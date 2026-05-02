@@ -14,20 +14,23 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 
 <!-- Shipped and confirmed valuable. -->
 
-(None yet — ship to validate)
+**Foundation (Phase 1, 2026-05-02 — runtime UAT pending in 01-HUMAN-UAT.md)**
+- [x] Local-only authentication (email + password) — Argon2id, SCS+pgxstore sessions, per-IP+username rate limit
+- [x] Two roles: admin and viewer — `Can(action, resource)` fail-closed authz
+- [x] Connect to ChirpStack via gRPC (v4 only — refuses v3 at boot, wizard, and settings)
+- [x] Support both deployment modes — `compose/bundled.yml` (8 services) + `compose/external.yml` (3 services), shared `shifter:0.1.0` image
+- [x] All create / edit / delete flows in dialogs — ResponsiveDialog, ChangePasswordDialog, EditConnectionDialog
+- [x] Modern minimal aesthetic in blue family on shadcn/ui — custom navy OKLCH theme, 21+ components, self-hosted Inter+JetBrains Mono
+- [x] UI in English only
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-**Identity & access**
-- [ ] Local-only authentication (email + password)
-- [ ] Two roles: admin (full control) and viewer (read-only)
+**Identity & access (Phase 6 finishes admin-managed users)**
 - [ ] Admin can create / edit / disable users from inside the app
 
 **ChirpStack integration**
-- [ ] Connect to ChirpStack via gRPC (per ChirpStack's recommendation)
-- [ ] Support both deployment modes: bundled ChirpStack (Docker Compose) and external ChirpStack (gRPC URL + API key configured at install)
 - [ ] Manage gateways from Shifter (no need to log into ChirpStack)
 - [ ] Manage devices from Shifter (no need to log into ChirpStack)
 - [ ] Collapse multi-step ChirpStack flows (e.g. device activation) into a single app action — or, if absolutely needed, into a stepped dialog — so the user never context-switches
@@ -135,4 +138,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-27 after initialization*
+*Last updated: 2026-05-02 — Phase 1 (foundation) complete. Runtime UAT pending in 01-HUMAN-UAT.md.*
