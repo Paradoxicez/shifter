@@ -229,7 +229,12 @@ func (s *SQLCMappingStore) GetMappingsByProfile(ctx context.Context, profileID u
 	}
 	out := make([]profile.Mapping, 0, len(rows))
 	for _, r := range rows {
-		scale := bigFloatFromNumeric(r.Scale)
+		// Mapping rows default to identity scale (1) when the column is
+		// SQL NULL — distinct from BigFloatFromNumeric's generic 0 default.
+		scale := big.NewFloat(1)
+		if r.Scale.Valid {
+			scale = BigFloatFromNumeric(r.Scale)
+		}
 		out = append(out, profile.Mapping{
 			JSONPointer: r.JsonPointer,
 			Target:      r.Target,
@@ -239,31 +244,6 @@ func (s *SQLCMappingStore) GetMappingsByProfile(ctx context.Context, profileID u
 		})
 	}
 	return out, nil
-}
-
-// bigFloatFromNumeric decodes a pgtype.Numeric to *big.Float at the package
-// numeric precision used in normalize.go (matches swap.numericPrecision so
-// scale arithmetic doesn't lose digits across packages).
-func bigFloatFromNumeric(n pgtype.Numeric) *big.Float {
-	if !n.Valid {
-		return big.NewFloat(1) // missing scale → identity
-	}
-	// Use the JSON form for round-trip; pgtype.Numeric MarshalJSON renders
-	// the decimal text losslessly.
-	b, err := n.MarshalJSON()
-	if err != nil {
-		return big.NewFloat(1)
-	}
-	// MarshalJSON returns a string like `"123.45"` — strip quotes.
-	s := string(b)
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		s = s[1 : len(s)-1]
-	}
-	f, _, err := big.ParseFloat(s, 10, normalizePrecision, big.ToNearestEven)
-	if err != nil {
-		return big.NewFloat(1)
-	}
-	return f
 }
 
 // numericFromBigFloat encodes a *big.Float as pgtype.Numeric via the lossless
