@@ -27,7 +27,7 @@ func TestRunMigrations_Clean(t *testing.T) {
 	for _, table := range []string{
 		"user", "sessions", "install_state", "install_identity", "chirpstack_connection",
 		"site", "metering_point", "device_profile",
-		"device",
+		"device", "device_profile_mapping",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -67,12 +67,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 11 to 12 in plan 02-03 Task 1 (added 0012_device).
+	// Bumped from 12 to 13 in plan 02-03 Task 2 (added 0013_device_profile_mapping).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 12, version, "expected schema_migrations.version = 12 (latest after plan 02-03 Task 1)")
+	require.Equal(t, 13, version, "expected schema_migrations.version = 13 (latest after plan 02-03 Task 2)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 }
 
@@ -93,7 +93,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 12, version)
+	require.Equal(t, 13, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
