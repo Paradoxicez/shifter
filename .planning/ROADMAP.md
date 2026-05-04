@@ -12,7 +12,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 ## Phases
 
 - [ ] **Phase 1: Foundation** - Single Go binary, dual-channel ChirpStack integration, local auth, install wizard, two-flavor compose deploy
-- [ ] **Phase 2: Domain Model & Canonical Schema** - Metering point + reading-offset + canonical measurement schema with end-to-end ingest path and meter-swap UI
+- [x] **Phase 2: Domain Model & Canonical Schema** - Metering point + reading-offset + canonical measurement schema with end-to-end ingest path and meter-swap UI
 - [ ] **Phase 3: Provisioning (Gateways, Devices, Bulk Import)** - Daily-driver provisioning surface so the binary runs at realistic fleet size
 - [ ] **Phase 4: Realtime & Dashboard** - SSE-driven live updates, adaptive dashboard, per-meter detail
 - [ ] **Phase 5: Aggregates, Reports, Map & Floor Plans** - Continuous aggregates, branded exports, OSM map, normalized fractional floor-plan placement
@@ -83,6 +83,8 @@ Plans:
 
 **Plans**: 15 plans (10 original + 5 gap-closure)
 
+> Note: gap-closure plans 02-11..15 occupy waves 7-10. Original phase template covered waves 1-6. The 3→7 jump preserves the original wave assignment for plans 02-01..10 and avoids confusing future Phase 3 wave numbering.
+
 Plans:
 - [x] 02-01-PLAN.md — Wave 0 test scaffolding + tanstack table install
 - [x] 02-02-PLAN.md — site / metering_point / device_profile / device migrations + sqlc baseline
@@ -98,7 +100,7 @@ Plans:
 - [x] 02-12-PLAN.md — gap closure: cmd/serve full Phase 2 boot wiring (formerly missing as Plan 02-15)
 - [x] 02-13-PLAN.md — gap closure: DATA-06 synthetic test harness + `shifter test-harness` CLI
 - [x] 02-14-PLAN.md — gap closure: frontend dialogs + list pages + App.tsx routing
-- [ ] 02-15-PLAN.md — gap closure: REQUIREMENTS.md + VALIDATION.md status reconciliation
+- [x] 02-15-PLAN.md — gap closure: REQUIREMENTS.md + VALIDATION.md status reconciliation
 
 **UI hint**: yes
 
@@ -223,7 +225,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 24/24 | Complete | 2026-04-30 |
-| 2. Domain Model & Canonical Schema | 6/10 | In Progress | - |
+| 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 0/0 | Not started | - |
 | 4. Realtime & Dashboard | 0/0 | Not started | - |
 | 5. Aggregates, Reports, Map & Floor Plans | 0/0 | Not started | - |

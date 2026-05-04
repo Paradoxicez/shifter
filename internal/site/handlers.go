@@ -41,7 +41,7 @@ import (
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 )
 
-// Deps bundles the shared infra a Site handler call needs. Plan 02-15
+// Deps bundles the shared infra a Site handler call needs. Plan 02-12
 // (cmd/serve wiring) constructs a single Deps and passes it to RegisterRoutes.
 type Deps struct {
 	Pool       *pgxpool.Pool

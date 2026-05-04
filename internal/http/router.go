@@ -66,7 +66,7 @@ type Deps struct {
 
 	// DeviceDeps wires Plan 02-10's CHIRP-04 atomic Add Device handler. nil
 	// when CS is not bootstrapped (Phase 1 router unit tests + early-boot
-	// pre-install paths). Plan 02-15 (cmd/serve wiring) constructs the full
+	// pre-install paths). Plan 02-12 (cmd/serve wiring) constructs the full
 	// shape: CS gRPC client + bootstrapper + gRPC ping + MQTT ping.
 	DeviceDeps *device.Deps
 

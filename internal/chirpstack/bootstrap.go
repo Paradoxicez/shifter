@@ -40,7 +40,7 @@ type ConnectionStore interface {
 //  4. If only the application is missing → call EnsureApplication(t, "shifter").
 //  5. Persist the (now both non-empty) UUIDs back via SetCSTenantApp.
 //
-// On Pitfall #9: callers (cmd/shifter serve in Plan 02-15 wiring) should NOT
+// On Pitfall #9: callers (cmd/shifter serve in Plan 02-12 wiring) should NOT
 // fail boot on a transient CS-unreachable error here. The resolver +
 // already-bound device ingest path do not depend on the global tenant +
 // application UUIDs at runtime — only the FIRST add-device flow does. So a

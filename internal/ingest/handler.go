@@ -81,7 +81,7 @@ type Deps struct {
 //     (with audit row in same tx), commit.
 //
 // The closure is bound to the chirpstack.MQTTSubscriber via SetUplinkHandler
-// at cmd/serve boot wiring (Plan 02-15).
+// at cmd/serve boot wiring (Plan 02-12).
 func UplinkHandler(deps Deps) chirpstack.UplinkHandler {
 	if deps.Log == nil {
 		deps.Log = slog.Default()

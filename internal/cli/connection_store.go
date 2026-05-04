@@ -8,7 +8,8 @@
 // at call sites would force every consuming package to import sqlc.
 //
 // Plan 02-12 W5 fix: this file IS the missing wiring referenced as "future
-// Plan 02-15 cmd/serve wiring" by Plans 02-05 + 02-06 + 02-08.
+// cmd/serve wiring" by Plans 02-05 + 02-06 + 02-08 (placeholder originally
+// labeled Plan 02-15; gap-closure renamed it to Plan 02-12).
 package cli
 
 import (

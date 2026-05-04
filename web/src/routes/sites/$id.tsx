@@ -21,7 +21,7 @@ import { getSite } from '@/lib/sites'
  *   - Devices section (read-only).
  *
  * Phase 2 ships the shells for MP / Devices sections; the full nested
- * tables hook into Plan 02-15's wiring (and Phase 3+ owns Devices
+ * tables hook into Plan 02-12's wiring (and Phase 3+ owns Devices
  * promotion). For now, we render empty-state copy from UI-SPEC.
  */
 export default function SiteDetailPage() {
