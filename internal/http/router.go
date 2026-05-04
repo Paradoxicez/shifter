@@ -29,7 +29,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shifter-io/shifter/internal/auth"
+	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/install"
+	"github.com/shifter-io/shifter/internal/meteringpoint"
+	"github.com/shifter-io/shifter/internal/site"
 )
 
 // Deps groups every dependency the router needs. Plan 18 (serve.go) constructs
@@ -58,6 +61,12 @@ type Deps struct {
 	// stored (mode 0600). Plan 18 sources this from cfg.SecretsDir; the PUT
 	// chirpstack handler writes to {SecretsDir}/chirpstack_api_token etc.
 	SecretsDir string
+
+	// DeviceDeps wires Plan 02-10's CHIRP-04 atomic Add Device handler. nil
+	// when CS is not bootstrapped (Phase 1 router unit tests + early-boot
+	// pre-install paths). Plan 02-15 (cmd/serve wiring) constructs the full
+	// shape: CS gRPC client + bootstrapper + gRPC ping + MQTT ping.
+	DeviceDeps *device.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -161,6 +170,29 @@ func NewRouter(deps Deps) http.Handler {
 		rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionConnectionEdit))
 		rt.Put("/api/settings/chirpstack", PutChirpStackHandler(deps.TestConnDeps, deps.SecretsDir))
 	})
+
+	// Phase 2 (Plan 02-10) — Site / Metering Point / Device CRUD + atomic
+	// Add Device flow. Each package's RegisterRoutes mounts its routes under
+	// /api/sites, /api/metering-points, /api/devices respectively, with
+	// per-route RequireAction wrappers (defense in depth on the in-handler
+	// auth.Can checks).
+	site.RegisterRoutes(r, site.Deps{
+		Pool:       deps.Pool,
+		SessionMgr: deps.SessionMgr,
+		Log:        deps.Log,
+	})
+	meteringpoint.RegisterRoutes(r, meteringpoint.Deps{
+		Pool:       deps.Pool,
+		SessionMgr: deps.SessionMgr,
+		Log:        deps.Log,
+	})
+	if deps.DeviceDeps != nil {
+		// DeviceDeps requires a CS gRPC client + bootstrap + ping wiring that
+		// only cmd/serve constructs (chirpstack.Client + ConnectionStore
+		// adapter). Routes mount only when DeviceDeps is non-nil so unit
+		// tests of the http router don't need full CS wiring.
+		device.RegisterRoutes(r, *deps.DeviceDeps)
+	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
 	// this guard, an unknown /api/foo would resolve to the SPA's index.html
