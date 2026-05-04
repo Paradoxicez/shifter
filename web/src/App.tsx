@@ -11,6 +11,8 @@ import IndexRedirect from '@/routes/index-redirect'
 const InstallWizard = lazy(() => import('@/routes/install'))
 const SettingsPage = lazy(() => import('@/routes/settings'))
 const LoginScreen = lazy(() => import('@/routes/login'))
+const SitesPage = lazy(() => import('@/routes/sites'))
+const SiteDetailPage = lazy(() => import('@/routes/sites/$id'))
 
 /**
  * Phase 1 router skeleton.
@@ -54,6 +56,22 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <SettingsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'sites',
+        element: (
+          <Suspense fallback={null}>
+            <SitesPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'sites/:id',
+        element: (
+          <Suspense fallback={null}>
+            <SiteDetailPage />
           </Suspense>
         ),
       },

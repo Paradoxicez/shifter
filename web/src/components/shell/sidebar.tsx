@@ -1,12 +1,24 @@
-import { Settings as SettingsIcon } from 'lucide-react'
+import { Cpu, Layers, MapPin, Settings as SettingsIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
-const NAV = [{ to: '/settings', label: 'Settings', icon: SettingsIcon }]
+/**
+ * Phase 2 §Layout sidebar order (UI-SPEC):
+ *   Sites → Devices → Profiles → Settings.
+ *
+ * Phase 3+ inserts Gateways and Dashboard; Phase 4 inserts Dashboard above
+ * all. Don't pre-reserve those slots.
+ */
+const NAV = [
+  { to: '/sites', label: 'Sites', icon: MapPin },
+  { to: '/devices', label: 'Devices', icon: Cpu },
+  { to: '/profiles', label: 'Profiles', icon: Layers },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon },
+]
 
 /**
  * UI-SPEC §App shell §Sidebar — w-56 on md+, hidden on <md (mobile uses
- * a Sheet drawer triggered from Topbar). Phase 1 ships only the Settings
- * nav item; Phase 2+ adds Sites/Devices/Gateways/Dashboard/Reports/etc.
+ * a Sheet drawer triggered from Topbar). Phase 2 adds Sites/Devices/Profiles
+ * ahead of Settings.
  * Active state uses bg-primary; hover uses bg-secondary.
  */
 export function Sidebar() {

@@ -28,6 +28,8 @@ function useIsMobile(breakpoint = 768) {
   return isMobile
 }
 
+export type ResponsiveDialogSize = 'md' | 'lg'
+
 export interface ResponsiveDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -35,6 +37,13 @@ export interface ResponsiveDialogProps {
   description?: string
   children: React.ReactNode
   footer?: React.ReactNode
+  /**
+   * UI-SPEC §Dialog Conventions:
+   *   - "md" (default) → `sm:max-w-lg` — used by simple CRUD modals.
+   *   - "lg"           → `sm:max-w-2xl` — used by Phase 2 stepped dialogs
+   *     (Add Device, Meter Swap) which carry a Stepper and step body.
+   */
+  size?: ResponsiveDialogSize
 }
 
 /**
@@ -49,6 +58,7 @@ export function ResponsiveDialog({
   description,
   children,
   footer,
+  size = 'md',
 }: ResponsiveDialogProps) {
   const isMobile = useIsMobile()
   if (isMobile) {
@@ -65,9 +75,10 @@ export function ResponsiveDialog({
       </Sheet>
     )
   }
+  const widthClass = size === 'lg' ? 'sm:max-w-2xl' : 'sm:max-w-lg'
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg px-6 py-5">
+      <DialogContent className={`${widthClass} px-6 py-5`}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description ? <DialogDescription>{description}</DialogDescription> : null}
