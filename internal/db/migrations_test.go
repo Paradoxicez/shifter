@@ -28,7 +28,7 @@ func TestRunMigrations_Clean(t *testing.T) {
 		"user", "sessions", "install_state", "install_identity", "chirpstack_connection",
 		"site", "metering_point", "device_profile",
 		"device", "device_profile_mapping", "binding",
-		"measurement",
+		"measurement", "audit_log",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -68,12 +68,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 14 to 15 in plan 02-04 Task 1 (added 0015_measurement).
+	// Bumped from 15 to 16 in plan 02-04 Task 2 (added 0016_audit_log).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 15, version, "expected schema_migrations.version = 15 (latest after plan 02-04 Task 1)")
+	require.Equal(t, 16, version, "expected schema_migrations.version = 16 (latest after plan 02-04 Task 2)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
@@ -104,6 +104,14 @@ func TestRunMigrations_Clean(t *testing.T) {
 	).Scan(&chunkDays)
 	require.NoError(t, err)
 	require.InDelta(t, 1.0, chunkDays, 0.0001, "0015 chunk_time_interval must be 1 day")
+
+	// 0016 must create audit_log as a REGULAR table (NOT a hypertable per D-06).
+	var auditIsHypertable bool
+	err = pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'audit_log')`,
+	).Scan(&auditIsHypertable)
+	require.NoError(t, err)
+	require.False(t, auditIsHypertable, "audit_log must be a regular table per D-06, not a hypertable")
 }
 
 // TestRunMigrations_Idempotent — Running RunMigrations twice in a row is a
@@ -123,7 +131,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 15, version)
+	require.Equal(t, 16, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -313,3 +321,144 @@ func TestBinding_HalfOpenInterval(t *testing.T) {
 	)
 	require.NoError(t, err, "adjacent binding starting at exact valid_to must be allowed (half-open)")
 }
+
+// TestAuditLog_RejectsUpdate — 0016 trigger `audit_log_no_update` must raise
+// an exception on any UPDATE attempt. Mitigates T-02-04-02 (audit trail
+// tampering): even a privileged actor cannot retroactively edit audit rows
+// through the application path; tampering requires DBA-level direct DB access.
+func TestAuditLog_RejectsUpdate(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Seed a user (FK target) and an audit row.
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('admin@example.com', 'Admin', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	var rowID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id, after)
+		 VALUES ($1, 'create', 'site', gen_random_uuid(), '{"name":"new-site"}'::jsonb)
+		 RETURNING id`,
+		userID,
+	).Scan(&rowID))
+
+	// Attempt UPDATE — must be rejected by trigger with the INSERT-ONLY message.
+	_, err := pool.Exec(ctx, `UPDATE audit_log SET notes = 'tampered' WHERE id = $1`, rowID)
+	require.Error(t, err, "UPDATE on audit_log must be rejected")
+	require.Contains(t, err.Error(), "INSERT-ONLY",
+		"error must mention INSERT-ONLY: got %q", err.Error())
+
+	// The original row must still be intact (notes still NULL).
+	var notes *string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT notes FROM audit_log WHERE id = $1`, rowID,
+	).Scan(&notes))
+	require.Nil(t, notes, "original notes must remain NULL after rejected UPDATE")
+}
+
+// TestAuditLog_RejectsDelete — 0016 trigger `audit_log_no_delete` must raise
+// on any DELETE attempt. The audit trail is append-only by DB enforcement.
+func TestAuditLog_RejectsDelete(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('admin2@example.com', 'Admin Two', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	var rowID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'archive', 'metering_point', gen_random_uuid())
+		 RETURNING id`,
+		userID,
+	).Scan(&rowID))
+
+	// Attempt DELETE — must be rejected.
+	_, err := pool.Exec(ctx, `DELETE FROM audit_log WHERE id = $1`, rowID)
+	require.Error(t, err, "DELETE on audit_log must be rejected")
+	require.Contains(t, err.Error(), "INSERT-ONLY",
+		"error must mention INSERT-ONLY: got %q", err.Error())
+
+	// Row must still be present.
+	var stillThere bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM audit_log WHERE id = $1)`, rowID,
+	).Scan(&stillThere))
+	require.True(t, stillThere, "row must still exist after rejected DELETE")
+}
+
+// TestAuditLog_AcceptsInsertAndPersistsDiff — sanity test for the happy path:
+// INSERT works, before/after JSONB persists round-trip, and FK to "user"
+// is enforced. This is the AUDIT-01 schema-layer assertion (the same-txn
+// behavior is tested at the audit package layer in Plan 02-08).
+func TestAuditLog_AcceptsInsertAndPersistsDiff(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('admin3@example.com', 'Admin Three', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	// Insert a diff row covering D-24 (changed-fields-only diff).
+	var rowID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id, before, after, request_id)
+		 VALUES ($1, 'update', 'site', gen_random_uuid(),
+		         '{"name":"old-name"}'::jsonb,
+		         '{"name":"new-name"}'::jsonb,
+		         'req-abc123')
+		 RETURNING id`,
+		userID,
+	).Scan(&rowID))
+
+	// Round-trip the diff JSONB.
+	var before, after string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT before::text, after::text FROM audit_log WHERE id = $1`, rowID,
+	).Scan(&before, &after))
+	require.Contains(t, before, "old-name")
+	require.Contains(t, after, "new-name")
+
+	// CHECK rejects unknown action vocabulary (T-02-04-01-style mitigation for
+	// audit_log specifically — D-22's controlled action set).
+	_, err := pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'frobnicate', 'site', gen_random_uuid())`,
+		userID,
+	)
+	require.Error(t, err, "unknown action must be rejected by audit_log_action_valid CHECK")
+	require.Contains(t, err.Error(), "audit_log_action_valid")
+
+	// CHECK rejects unknown entity_type.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'create', 'gizmo', gen_random_uuid())`,
+		userID,
+	)
+	require.Error(t, err, "unknown entity_type must be rejected")
+	require.Contains(t, err.Error(), "audit_log_entity_type_valid")
+}
+
