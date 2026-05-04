@@ -67,8 +67,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **DATA-01**: Telemetry is keyed on a stable `metering_point_id`, never on `dev_eui` directly — this is the schema invariant
 - [x] **DATA-02**: Each device-to-metering-point binding has a `valid_from` / `valid_to` window and a `reading_offset`
 - [x] **DATA-03**: The hypertable's authoritative `time` column is server-side ingest time (with `gateway_rx_time` and device-side time persisted as diagnostics)
-- [ ] **DATA-04**: Admin can perform a meter swap via dialog: dialog captures the outgoing reading R, closes the active assignment, opens a new assignment, and proposes a `reading_offset` such that the displayed cumulative is continuous; admin confirms before commit
-- [ ] **DATA-05**: System detects counter rollovers (raw reading decreases between consecutive uplinks), advances the offset by the counter modulus, and logs the rollover event
+- [x] **DATA-04**: Admin can perform a meter swap via dialog: dialog captures the outgoing reading R, closes the active assignment, opens a new assignment, and proposes a `reading_offset` such that the displayed cumulative is continuous; admin confirms before commit
+- [x] **DATA-05**: System detects counter rollovers (raw reading decreases between consecutive uplinks), advances the offset by the counter modulus, and logs the rollover event
 - [ ] **DATA-06**: Synthetic-data tests cover clean swap, swap with concurrent in-flight uplink, rollover, swap+rollover, and overlapping uplinks during swap
 - [x] **DATA-07**: System persists each device's raw payload, decoded `object`, and the canonical normalized fields — none of the three is lost on the way to the hypertable
 
@@ -265,8 +265,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DATA-01 | Phase 2 | Complete |
 | DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 2 | Complete |
-| DATA-04 | Phase 2 | Pending |
-| DATA-05 | Phase 2 | Pending |
+| DATA-04 | Phase 2 | Complete |
+| DATA-05 | Phase 2 | Complete |
 | DATA-06 | Phase 2 | Pending |
 | DATA-07 | Phase 2 | Complete |
 | DATA-08 | Phase 2 | Complete |
