@@ -60,3 +60,42 @@ func TestCan_UnknownRole(t *testing.T) {
 	u := &User{ID: "u3", Role: "ghost"}
 	require.False(t, Can(u, ActionAccountSelfEdit, nil))
 }
+
+// TestCan_Phase2_AdminAllowsEveryAction — admin can perform every Phase 2
+// mutation AND read action declared by Plan 02-10.
+func TestCan_Phase2_AdminAllowsEveryAction(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	for _, a := range []Action{
+		ActionSiteCreate, ActionSiteUpdate, ActionSiteArchive, ActionSiteRestore, ActionSiteRead,
+		ActionMeteringPointCreate, ActionMeteringPointUpdate, ActionMeteringPointArchive, ActionMeteringPointRestore, ActionMeteringPointRead,
+		ActionDeviceAdd, ActionDeviceDecommission, ActionDeviceRead,
+		ActionDeviceProfileCreate, ActionDeviceProfileUpdate, ActionDeviceProfileArchive, ActionDeviceProfileRead,
+		ActionMeterSwap, ActionAuditRead,
+	} {
+		require.True(t, Can(admin, a, nil), "admin must be able to %s", a)
+	}
+}
+
+// TestCan_Phase2_ViewerMutationsDenied — viewer can READ Phase 2 entities
+// but every mutating action is rejected (defense-in-depth on top of
+// RequireAction middleware).
+func TestCan_Phase2_ViewerMutationsDenied(t *testing.T) {
+	viewer := &User{ID: "u2", Role: "viewer"}
+	// Reads allowed.
+	for _, a := range []Action{
+		ActionSiteRead, ActionMeteringPointRead, ActionDeviceRead,
+		ActionDeviceProfileRead, ActionAuditRead,
+	} {
+		require.True(t, Can(viewer, a, nil), "viewer must be able to %s", a)
+	}
+	// Mutations denied — every Phase 2 mutation must 403 a viewer.
+	for _, a := range []Action{
+		ActionSiteCreate, ActionSiteUpdate, ActionSiteArchive, ActionSiteRestore,
+		ActionMeteringPointCreate, ActionMeteringPointUpdate, ActionMeteringPointArchive, ActionMeteringPointRestore,
+		ActionDeviceAdd, ActionDeviceDecommission,
+		ActionDeviceProfileCreate, ActionDeviceProfileUpdate, ActionDeviceProfileArchive,
+		ActionMeterSwap,
+	} {
+		require.False(t, Can(viewer, a, nil), "viewer must NOT be able to %s", a)
+	}
+}

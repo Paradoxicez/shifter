@@ -71,6 +71,51 @@ const (
 	ActionAuditView Action = "audit.view"
 )
 
+// Phase 2 — Plan 02-10: Site / Metering Point / Device / Profile mutation
+// + read actions wired by the Phase 2 HTTP handlers (internal/site,
+// internal/meteringpoint, internal/device).
+//
+// Mutating actions are admin-only; read actions are open to admin AND viewer
+// per AUTH-06. Every Phase 2 handler calls Can(user, <action>, nil) at entry
+// as defense-in-depth; the chi router additionally wraps mutating route
+// groups with RequireAction so a missing handler-level check still 403s.
+const (
+	// Site CRUD (D-17 + D-20) — admin only.
+	ActionSiteCreate  Action = "site.create"
+	ActionSiteUpdate  Action = "site.update"
+	ActionSiteArchive Action = "site.archive"
+	ActionSiteRestore Action = "site.restore"
+	// Site read — admin AND viewer.
+	ActionSiteRead Action = "site.read"
+
+	// Metering Point CRUD (D-19 + D-20) — admin only.
+	ActionMeteringPointCreate  Action = "metering_point.create"
+	ActionMeteringPointUpdate  Action = "metering_point.update"
+	ActionMeteringPointArchive Action = "metering_point.archive"
+	ActionMeteringPointRestore Action = "metering_point.restore"
+	// Metering Point read — admin AND viewer.
+	ActionMeteringPointRead Action = "metering_point.read"
+
+	// Device add (CHIRP-04 atomic) + decommission (D-15) — admin only.
+	ActionDeviceAdd          Action = "device.add"
+	ActionDeviceDecommission Action = "device.decommission"
+	// Device read — admin AND viewer.
+	ActionDeviceRead Action = "device.read"
+
+	// Device profile editor (Plan 02-08) — admin only.
+	ActionDeviceProfileCreate  Action = "device_profile.create"
+	ActionDeviceProfileUpdate  Action = "device_profile.update"
+	ActionDeviceProfileArchive Action = "device_profile.archive"
+	// Device profile read — admin AND viewer.
+	ActionDeviceProfileRead Action = "device_profile.read"
+
+	// Meter swap (D-13 + D-14) — admin only.
+	ActionMeterSwap Action = "meter.swap"
+
+	// Audit read — admin AND viewer (read-only access to the audit trail).
+	ActionAuditRead Action = "audit.read"
+)
+
 // Role is the typed role identifier mirroring the Postgres user_role enum.
 type Role string
 
@@ -103,6 +148,27 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionDeviceUpdate:    true,
 		ActionDeviceDelete:    true,
 		ActionAuditView:       true,
+
+		// Phase 2 — Plan 02-10: admin can perform every Phase 2 mutation.
+		ActionSiteCreate:           true,
+		ActionSiteUpdate:           true,
+		ActionSiteArchive:          true,
+		ActionSiteRestore:          true,
+		ActionSiteRead:             true,
+		ActionMeteringPointCreate:  true,
+		ActionMeteringPointUpdate:  true,
+		ActionMeteringPointArchive: true,
+		ActionMeteringPointRestore: true,
+		ActionMeteringPointRead:    true,
+		ActionDeviceAdd:            true,
+		ActionDeviceDecommission:   true,
+		ActionDeviceRead:           true,
+		ActionDeviceProfileCreate:  true,
+		ActionDeviceProfileUpdate:  true,
+		ActionDeviceProfileArchive: true,
+		ActionDeviceProfileRead:    true,
+		ActionMeterSwap:            true,
+		ActionAuditRead:            true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -111,6 +177,15 @@ var roleBundles = map[Role]map[Action]bool{
 		// (it's a probe, not a state change). The mutating action
 		// ActionConnectionEdit stays admin-only.
 		ActionConnectionTest: true,
+
+		// Phase 2 — Plan 02-10: viewer can READ every Phase 2 entity but
+		// CANNOT mutate. Every mutation action is intentionally absent —
+		// fail-closed default in Can() means viewer mutation attempts 403.
+		ActionSiteRead:          true,
+		ActionMeteringPointRead: true,
+		ActionDeviceRead:        true,
+		ActionDeviceProfileRead: true,
+		ActionAuditRead:         true,
 	},
 }
 
