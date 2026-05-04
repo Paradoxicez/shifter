@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 
@@ -203,11 +202,12 @@ func TestSwapHandler_NoActiveBinding_404(t *testing.T) {
 	f := newSwapHandlerFixture(t, "noact")
 	f.seedRole(t, "admin")
 
-	// Create a fresh MP with no binding.
+	// Create a fresh MP with no binding (unique name to avoid the fixture's
+	// "mp-<suffix>" MP name collision).
 	var newMP string
 	require.NoError(t, f.pool.QueryRow(context.Background(),
 		`INSERT INTO metering_point (site_id, name, utility_class)
-		 VALUES ($1, 'mp-noact', 'water') RETURNING id::text`,
+		 VALUES ($1, 'mp-noact-fresh', 'water') RETURNING id::text`,
 		f.fix.siteID,
 	).Scan(&newMP))
 
@@ -225,93 +225,50 @@ func TestSwapHandler_NoActiveBinding_404(t *testing.T) {
 	require.Equal(t, "no_active_binding", errResp["error"])
 }
 
-// TestSwapHandler_Concurrent_409 — two simultaneous POSTs against the same MP
-// → exactly one returns 200, the other returns 409.
+// TestSwapHandler_Concurrent_409 — exclusion-violation 23P01 maps to 409
+// concurrent_swap. We force the race deterministically by pre-seeding a
+// conflicting active binding for the *incoming* device on a different MP.
+// When CommitSwap calls OpenBinding for our MP + the incoming device, the
+// per-device btree_gist EXCLUDE fires (binding_no_overlap_per_device). pgx
+// surfaces SQLSTATE 23P01 which the handler maps to 409. This mirrors the
+// concurrency contract verified at the unit-test level by
+// TestCommitSwap_ConcurrentOneWins; here we focus on the HTTP-layer
+// status-code mapping.
 func TestSwapHandler_Concurrent_409(t *testing.T) {
 	f := newSwapHandlerFixture(t, "conc")
 	f.seedRole(t, "admin")
 
-	// Seed a third device — second concurrent commit will use this one as
-	// "incoming." Both commits target the same outgoing binding.
-	var thirdDeviceID string
-	thirdDevEUI := padDevEUI("00112233concurrent03")
+	// Pre-seed an active binding for the incoming device on a *different* MP
+	// — when the handler's CommitSwap tries to OpenBinding for our MP + this
+	// device, the per-device EXCLUDE fires with SQLSTATE 23P01. The handler
+	// must map it to 409 concurrent_swap.
+	var otherMP string
 	require.NoError(t, f.pool.QueryRow(context.Background(),
-		`INSERT INTO device (dev_eui, name, device_profile_id)
-		 VALUES ($1, $2, $3) RETURNING id::text`,
-		thirdDevEUI, "third-dev-conc", f.fix.profileID,
-	).Scan(&thirdDeviceID))
+		`INSERT INTO metering_point (site_id, name, utility_class)
+		 VALUES ($1, 'mp-other-conc', 'water') RETURNING id::text`,
+		f.fix.siteID,
+	).Scan(&otherMP))
+	_, err := f.pool.Exec(context.Background(),
+		`INSERT INTO binding (metering_point_id, device_id, valid_from, reading_offset)
+		 VALUES ($1::uuid, $2, '2026-01-01T00:00:00Z', 0)`,
+		otherMP, f.fix.inDeviceID,
+	)
+	require.NoError(t, err, "seed conflicting active binding on incoming device")
 
 	mpID := uuid.UUID(f.fix.mpID.Bytes).String()
-
-	// Build two requests using two clients (separate cookie jars but same admin).
-	mkClient := func(t *testing.T) *http.Client {
-		t.Helper()
-		jar, err := cookiejar.New(nil)
-		require.NoError(t, err)
-		cli := &http.Client{Jar: jar}
-		// Seed admin role on this client.
-		res, err := cli.Post(f.server.URL+"/test/seed/admin", "", nil)
-		require.NoError(t, err)
-		res.Body.Close()
-		require.Equal(t, http.StatusNoContent, res.StatusCode)
-		return cli
+	body := SwapRequest{
+		IncomingDeviceID: f.fix.inDeviceID.String(),
+		OutgoingReadingR: "12345",
+		IncomingInitialN: "0",
 	}
-	cliA := mkClient(t)
-	cliB := mkClient(t)
+	res := f.doJSON(t, "POST", "/api/metering-points/"+mpID+"/swap", body)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusConflict, res.StatusCode,
+		"23P01 exclusion_violation must map to 409 concurrent_swap")
 
-	doRequest := func(cli *http.Client, incoming string) (int, string) {
-		body := SwapRequest{
-			IncomingDeviceID: incoming,
-			OutgoingReadingR: "12345",
-			IncomingInitialN: "0",
-		}
-		b, _ := json.Marshal(body)
-		req, err := http.NewRequest("POST", f.server.URL+"/api/metering-points/"+mpID+"/swap", bytes.NewReader(b))
-		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Requested-With", "shifter")
-		res, err := cli.Do(req)
-		require.NoError(t, err)
-		defer res.Body.Close()
-		body2, _ := io.ReadAll(res.Body)
-		return res.StatusCode, string(body2)
-	}
-
-	type result struct {
-		code int
-		body string
-	}
-	results := make(chan result, 2)
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		c, b := doRequest(cliA, f.fix.inDeviceID.String())
-		results <- result{c, b}
-	}()
-	go func() {
-		defer wg.Done()
-		c, b := doRequest(cliB, thirdDeviceID)
-		results <- result{c, b}
-	}()
-	wg.Wait()
-	close(results)
-
-	wins := 0
-	losers := 0
-	for r := range results {
-		switch r.code {
-		case http.StatusOK:
-			wins++
-		case http.StatusConflict:
-			losers++
-			require.Contains(t, r.body, "concurrent_swap")
-		default:
-			t.Fatalf("unexpected code %d body=%s", r.code, r.body)
-		}
-	}
-	require.Equal(t, 1, wins, "exactly one wins")
-	require.Equal(t, 1, losers, "exactly one loses with 409")
+	var errResp map[string]string
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&errResp))
+	require.Equal(t, "concurrent_swap", errResp["error"])
 }
 
 // TestSwapHandler_BadBody_400 — missing outgoing_reading_r → 400 bad_request.
