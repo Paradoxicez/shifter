@@ -107,6 +107,24 @@ func (s *MQTTSubscriber) Shutdown(timeout time.Duration) {
 	s.log.Info("mqtt subscriber stopped")
 }
 
+// SetUplinkHandler swaps the active uplink handler in place. Plan 02-09's
+// `cmd/shifter serve` boot wiring calls this after constructing the ingest
+// pipeline so we don't have to thread the pipeline through NewMQTTSubscriber's
+// constructor. The handler is invoked from the paho receive goroutine —
+// implementations MUST be safe to call concurrently with subscribe/disconnect
+// events (the ingest pipeline opens its own context, so this is satisfied
+// trivially today).
+//
+// Passing nil is rejected silently to avoid wedging the consumer at runtime
+// (paho would panic on dispatch with a nil function value). The default
+// stdout-logging handler installed at construction time stays in place.
+func (s *MQTTSubscriber) SetUplinkHandler(h UplinkHandler) {
+	if h == nil {
+		return
+	}
+	s.handler = h
+}
+
 // IsSubscribed reports the latest subscribe-success state. True after
 // OnConnect has registered the topic filter; flips back to false on
 // connection-lost and back to true after the next reconnect+subscribe.
