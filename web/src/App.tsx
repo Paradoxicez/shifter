@@ -15,6 +15,8 @@ const SitesPage = lazy(() => import('@/routes/sites'))
 const SiteDetailPage = lazy(() => import('@/routes/sites/$id'))
 const DevicesPage = lazy(() => import('@/routes/devices'))
 const MeteringPointDetailPage = lazy(() => import('@/routes/metering-points/$id'))
+const ProfilesPage = lazy(() => import('@/routes/profiles'))
+const ProfileEditorRoute = lazy(() => import('@/routes/profiles/$id'))
 
 /**
  * Phase 1 router skeleton.
@@ -90,6 +92,30 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <MeteringPointDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'profiles',
+        element: (
+          <Suspense fallback={null}>
+            <ProfilesPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'profiles/new',
+        element: (
+          <Suspense fallback={null}>
+            <ProfileEditorRoute />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'profiles/:id',
+        element: (
+          <Suspense fallback={null}>
+            <ProfileEditorRoute />
           </Suspense>
         ),
       },
