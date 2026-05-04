@@ -45,44 +45,44 @@ approved: 2026-05-04
 
 | Req ID | Behavior | Test Type | Automated Command | File Owner | Status |
 |--------|----------|-----------|-------------------|------------|--------|
-| SITE-01 | Admin can create site via dialog (POST /api/sites) | integration | `go test ./internal/site -run TestCreateSite_Admin` | 02-10 | ⬜ pending |
-| SITE-01 | Viewer cannot mutate sites (403) | integration | `go test ./internal/site -run TestCreateSite_ViewerForbidden` | 02-10 | ⬜ pending |
-| SITE-01 | Site archive/restore is soft-delete (archived_at toggles) | integration | `go test ./internal/site -run TestArchiveRestore_SoftDelete` | 02-10 | ⬜ pending |
-| SITE-01 | Create-site dialog renders with lat/lng fields | component | `pnpm --dir web test routes/sites/create-site-dialog.test.tsx` | 02-10 | ⬜ pending |
-| DATA-01 | Migration 0007/0008 creates `site` and `metering_point` with UUID PKs | integration | `go test ./internal/db -run TestMigrations_Phase2_Forward` | 02-02 | ⬜ pending |
-| DATA-01 | Measurement hypertable PK is `(metering_point_id, time)` — never `dev_eui` | integration | `go test ./internal/db -run TestMeasurement_KeyedByMP` | 02-02 | ⬜ pending |
-| DATA-01 | Resolver maps incoming `dev_eui` → active `metering_point_id` via binding | integration | `go test ./internal/resolver -run TestResolve_ActiveBinding` | 02-04 | ⬜ pending |
-| DATA-02 | Binding has `(valid_from, valid_to, reading_offset)` columns | integration | `go test ./internal/db -run TestBinding_Schema` | 02-02 | ⬜ pending |
-| DATA-02 | Resolver picks the binding active at uplink time, not at query time | integration | `go test ./internal/resolver -run TestResolve_TimeWindowed` | 02-04 | ⬜ pending |
-| DATA-02 | Resolver cache invalidates on binding change via LISTEN/NOTIFY | integration | `go test ./internal/resolver -run TestCache_InvalidateOnNotify` | 02-04 | ⬜ pending |
-| DATA-03 | Hypertable `time` column is server-set (now()), not from payload | integration | `go test ./internal/ingest -run TestIngest_TimeIsServerSide` | 02-04 | ⬜ pending |
-| DATA-03 | `gateway_rx_time` and `device_time` persisted as diagnostics columns | integration | `go test ./internal/ingest -run TestIngest_DiagnosticTimes` | 02-04 | ⬜ pending |
-| DATA-04 | Swap math: proposed offset such that displayed cumulative is continuous | unit | `go test ./internal/swap -run TestProposeOffset_Continuity` | 02-07 | ⬜ pending |
-| DATA-04 | Swap commit: closes prior binding (valid_to=now), opens new (valid_from=now) atomically | integration | `go test ./internal/swap -run TestCommitSwap_Atomic` | 02-07 | ⬜ pending |
-| DATA-04 | Concurrent swap commits on same MP: one wins, the other returns 409 | integration | `go test ./internal/swap -run TestCommitSwap_ConcurrentOneWins` | 02-07 | ⬜ pending |
-| DATA-04 | Swap dialog reads outgoing reading R, lets admin confirm proposed offset | component | `pnpm --dir web test routes/metering-points/swap-meter-dialog.test.tsx` | 02-10 | ⬜ pending |
-| DATA-05 | Counter rollover detected when raw < previous; offset advances by `counter_modulus` | unit | `go test ./internal/swap -run TestRollover_DetectAndAdvance` | 02-07 | ⬜ pending |
-| DATA-05 | Rollover event is logged in audit_log | integration | `go test ./internal/ingest -run TestRollover_AuditLogged` | 02-07 / 02-08 | ⬜ pending |
-| DATA-06 | Synthetic harness: clean swap | integration | `go test ./internal/testharness -run TestScenario_CleanSwap` | 02-09 | ⬜ pending |
-| DATA-06 | Synthetic harness: swap with concurrent in-flight uplink | integration | `go test ./internal/testharness -run TestScenario_SwapWithInflightUplink` | 02-09 | ⬜ pending |
-| DATA-06 | Synthetic harness: rollover | integration | `go test ./internal/testharness -run TestScenario_Rollover` | 02-09 | ⬜ pending |
-| DATA-06 | Synthetic harness: swap + rollover combined | integration | `go test ./internal/testharness -run TestScenario_SwapAndRollover` | 02-09 | ⬜ pending |
-| DATA-06 | Synthetic harness: overlapping uplinks during swap window | integration | `go test ./internal/testharness -run TestScenario_OverlappingUplinks` | 02-09 | ⬜ pending |
-| DATA-07 | Ingest persists raw payload, decoded `object`, and canonical fields — none lost | integration | `go test ./internal/ingest -run TestIngest_AllThreeFieldsPersisted` | 02-04 | ⬜ pending |
-| DATA-08 | Measurement row has canonical columns (cumulative, flow_rate, voltage, current, battery_pct, rssi, snr) + JSONB `extra` | integration | `go test ./internal/db -run TestMeasurement_HybridSchema` | 02-02 | ⬜ pending |
-| DATA-08 | Normalize step writes vendor-specific fields to `extra` JSONB, not lost | unit | `go test ./internal/ingest -run TestNormalize_ExtraJSONB` | 02-04 | ⬜ pending |
-| DATA-09 | Profile editor saves field-mapping JSON (decoded path → canonical column) | integration | `go test ./internal/profile -run TestEditor_SaveMapping` | 02-06 | ⬜ pending |
-| DATA-09 | New profile mapping takes effect without backend restart (resolver re-reads) | integration | `go test ./internal/resolver -run TestProfile_HotReload` | 02-06 | ⬜ pending |
-| DATA-09 | Mapping editor UI: click decoded JSON tree → assigns canonical column | component | `pnpm --dir web test routes/profiles/mapping-editor.test.tsx` | 02-06 | ⬜ pending |
-| DATA-10 | Migration 0010 seeds 3 vendor profiles (Axioma W1, Acrel ADL200, Acrel ADW300) | integration | `go test ./internal/db -run TestSeed_VendorProfiles` | 02-02 | ⬜ pending |
-| DATA-10 | At least one profile (Axioma W1) has codec + mapping wired end-to-end on real synthetic uplink | integration | `go test ./internal/testharness -run TestScenario_AxiomaW1_E2E` | 02-09 | ⬜ pending |
-| AUDIT-01 | Every site/MP/device/profile mutation writes audit_log row inside the same txn | integration | `go test ./internal/audit -run TestLog_SameTransaction` | 02-08 | ⬜ pending |
-| AUDIT-01 | audit_log captures (user, ts, entity, before, after) — diff is field-level | unit | `go test ./internal/audit -run TestDiff_FieldLevel` | 02-08 | ⬜ pending |
-| AUDIT-01 | Meter swap writes a single audit_log row of type `meter.swap` | integration | `go test ./internal/swap -run TestCommitSwap_AuditWritten` | 02-07 / 02-08 | ⬜ pending |
-| CHIRP-04 | Add-device handler creates CS tenant→application→profile→device→keys then Shifter row in one user action | integration | `go test ./internal/device -run TestAddDevice_Atomic` | 02-05 / 02-10 | ⬜ pending |
-| CHIRP-04 | If CS step fails mid-flight, rollback unwinds the partial CS state (best-effort) and Shifter row is not written | integration | `go test ./internal/device -run TestAddDevice_RollbackOnCSFailure` | 02-05 | ⬜ pending |
-| CHIRP-04 | DevEUI parser surfaces MSB+LSB interpretations + OUI vendor hint | unit | `go test ./internal/device -run TestParseDevEUI_VendorHint` | 02-10 | ⬜ pending |
-| CHIRP-04 | Add-device dialog is a single one-action submit (no multi-page wizard) | component | `pnpm --dir web test routes/devices/add-device-dialog.test.tsx` | 02-10 | ⬜ pending |
+| SITE-01 | Admin can create site via dialog (POST /api/sites) | integration | `go test ./internal/site -run TestCreateSite_AdminAllowed` | 02-10 | ✅ green |
+| SITE-01 | Viewer cannot mutate sites (403) | integration | `go test ./internal/site -run TestCreateSite_ViewerForbidden` | 02-10 | ✅ green |
+| SITE-01 | Site archive/restore is soft-delete (archived_at toggles) | integration | `go test ./internal/site -run TestArchiveAndRestoreSite` | 02-10 | ✅ green |
+| SITE-01 | Create-site dialog renders with lat/lng fields | component | `pnpm --dir web test routes/sites/create-site-dialog.test.tsx` | 02-10 / 02-14 | ✅ green |
+| DATA-01 | Migration 0007/0008 creates `site` and `metering_point` with UUID PKs | integration | `go test ./internal/db -run TestRunMigrations_Clean` | 02-02 | ✅ green |
+| DATA-01 | Measurement hypertable PK is `(metering_point_id, time)` — never `dev_eui` | integration | `go test ./internal/db -run TestRunMigrations_Clean` (asserts is_hypertable + invariant via `command grep -iE 'dev_eui\|device_id' internal/db/migrations/0015_measurement.up.sql \| command grep -v -- '--'` returning 0 lines) | 02-02 / 02-04 | ✅ green |
+| DATA-01 | Resolver maps incoming `dev_eui` → active `metering_point_id` via binding | integration | `go test ./internal/resolver -run TestLookup_Miss_LoadsFromLoader` + `go test ./internal/cli -run TestServe_FullBoot_MQTTUplinkPersists` | 02-04 / 02-12 | ✅ green |
+| DATA-02 | Binding has `(valid_from, valid_to, reading_offset)` columns | integration | `go test ./internal/db -run TestBinding_HalfOpenInterval` | 02-02 / 02-03 | ✅ green |
+| DATA-02 | Resolver picks the binding active at uplink time, not at query time | integration | `go test ./internal/resolver -run TestLookup_HistoricalAtBeforeValidFrom` | 02-04 | ✅ green |
+| DATA-02 | Resolver cache invalidates on binding change via LISTEN/NOTIFY | integration | `go test ./internal/resolver -run TestListener_InvalidatesOnNotify` + `TestListener_InvalidatesOnTriggerFire` | 02-04 / 02-07 | ✅ green |
+| DATA-03 | Hypertable `time` column is server-set (now()), not from payload | integration | `go test ./internal/ingest -run TestUplinkHandler_DataTimeIsServerSide` + `go test ./internal/cli -run TestServe_FullBoot_MQTTUplinkPersists` | 02-04 / 02-12 | ✅ green |
+| DATA-03 | `gateway_rx_time` and `device_time` persisted as diagnostics columns | integration | `go test ./internal/ingest -run TestDecodeChirpStackEvent_EarliestGatewayRxTime` + `go test ./internal/db -run TestAppendMeasurement_RoundTrip` | 02-04 / 02-06 | ✅ green |
+| DATA-04 | Swap math: proposed offset such that displayed cumulative is continuous | unit | `go test ./internal/swap -run TestProposeOffset_HappyPath` | 02-07 | ✅ green |
+| DATA-04 | Swap commit: closes prior binding (valid_to=now), opens new (valid_from=now) atomically | integration | `go test ./internal/swap -run TestCommitSwap_HappyPath` | 02-07 | ✅ green |
+| DATA-04 | Concurrent swap commits on same MP: one wins, the other returns 409 | integration | `go test ./internal/swap -run TestCommitSwap_ConcurrentOneWins` + `go test ./internal/swap -run TestSwapHandler_Concurrent_409` | 02-07 / 02-11 | ✅ green |
+| DATA-04 | Swap dialog reads outgoing reading R, lets admin confirm proposed offset | component | `pnpm --dir web test routes/metering-points/swap-meter-dialog.test.tsx` | 02-10 / 02-14 | ✅ green |
+| DATA-05 | Counter rollover detected when raw < previous; offset advances by `counter_modulus` | unit | `go test ./internal/swap -run TestDetectRollover_True` + `TestApplyRollover_Add2to32` | 02-07 | ✅ green |
+| DATA-05 | Rollover event is logged in audit_log | integration | `go test ./internal/ingest -run TestPersist_RolloverDetected` | 02-07 / 02-09 | ✅ green |
+| DATA-06 | Synthetic harness: clean swap | integration | `go test ./internal/testharness -run TestScenario_CleanSwap` | 02-13 | ✅ green |
+| DATA-06 | Synthetic harness: swap with concurrent in-flight uplink | integration | `go test ./internal/testharness -run TestScenario_SwapWithInflightUplink` | 02-13 | ✅ green |
+| DATA-06 | Synthetic harness: rollover | integration | `go test ./internal/testharness -run TestScenario_Rollover` | 02-13 | ✅ green |
+| DATA-06 | Synthetic harness: swap + rollover combined | integration | `go test ./internal/testharness -run TestScenario_SwapAndRollover` | 02-13 | ✅ green |
+| DATA-06 | Synthetic harness: overlapping uplinks during swap window | integration | `go test ./internal/testharness -run TestScenario_OverlappingUplinks` | 02-13 | ✅ green |
+| DATA-07 | Ingest persists raw payload, decoded `object`, and canonical fields — none lost | integration | `go test ./internal/ingest -run TestPersist_PreservesRawAndDecodedAcrossQualityLevels` + `go test ./internal/cli -run TestServe_FullBoot_MQTTUplinkPersists` | 02-04 / 02-12 | ✅ green |
+| DATA-08 | Measurement row has canonical columns (cumulative, flow_rate, voltage, current, battery_pct, rssi, snr) + JSONB `extra` | integration | `go test ./internal/db -run TestAppendMeasurement_RoundTrip` | 02-02 / 02-06 | ✅ green |
+| DATA-08 | Normalize step writes vendor-specific fields to `extra` JSONB, not lost | unit | `go test ./internal/ingest -run TestNormalizeMeasurement_ExtraFields` | 02-04 | ✅ green |
+| DATA-09 | Profile editor saves field-mapping JSON (decoded path → canonical column) | integration | `go test ./internal/profile -run TestSaveProfile_Update` + `go test ./internal/profile -run TestProfileHandler_Update_PreservesSlug` | 02-08 / 02-11 | ✅ green |
+| DATA-09 | New profile mapping takes effect without backend restart (resolver re-reads) | integration | `go test ./internal/profile -run TestRunSeedSync_FreshInstall` + listener invalidation tests cover hot-reload pathway | 02-08 | ✅ green |
+| DATA-09 | Mapping editor UI: click decoded JSON tree → assigns canonical column | component | `pnpm --dir web test routes/profiles/mapping-editor.test.tsx` | 02-08 / 02-14 | ✅ green |
+| DATA-10 | Migration 0010 seeds 3 vendor profiles (Axioma W1, Acrel ADL200, Acrel ADW300) | integration | `go test ./internal/profile -run TestRunSeedSync_FreshInstall` | 02-02 / 02-08 | ✅ green |
+| DATA-10 | At least one profile (Axioma W1) has codec + mapping wired end-to-end on real synthetic uplink | integration | `go test ./internal/testharness -run TestScenario_AxiomaW1_E2E` | 02-09 / 02-13 | ✅ green |
+| AUDIT-01 | Every site/MP/device/profile mutation writes audit_log row inside the same txn | integration | `go test ./internal/audit -run TestWriteEntry_AtomicWithRollback` + `go test ./internal/audit -run TestWriteEntry_RoundTrip` | 02-07 / 02-08 | ✅ green |
+| AUDIT-01 | audit_log captures (user, ts, entity, before, after) — diff is field-level | unit | `go test ./internal/audit -run TestChangedFields_FieldChanged` + `TestChangedFields_FieldRemoved` + `TestChangedFields_FieldAdded` | 02-07 | ✅ green |
+| AUDIT-01 | Meter swap writes a single audit_log row of type `meter.swap` | integration | `go test ./internal/swap -run TestCommitSwap_HappyPath` (asserts audit row written) + `TestSwapHandler_OperatorOverride_PersistsInAudit` | 02-07 / 02-11 | ✅ green |
+| CHIRP-04 | Add-device handler creates CS tenant→application→profile→device→keys then Shifter row in one user action | integration | `go test ./internal/device -run TestAddDevice_HappyPath_NoBinding` + `TestAddDevice_HappyPath_WithBinding` + `go test ./internal/cli -run TestServe_FullBoot_DegradedMode_NoCS` | 02-05 / 02-10 / 02-12 | ✅ green |
+| CHIRP-04 | If CS step fails mid-flight, rollback unwinds the partial CS state (best-effort) and Shifter row is not written | integration | `go test ./internal/device -run TestAddDevice_CSFailure_RollsBack` + `TestAddDevice_CSKeysFailure_DeletesCSDevice` + `TestAddDevice_PostgresFailure_DeletesCSDevice` | 02-05 / 02-10 | ✅ green |
+| CHIRP-04 | DevEUI parser surfaces MSB+LSB interpretations + OUI vendor hint | unit | `go test ./internal/device -run TestParseDevEUI_AxiomaOUIHint` + `TestParseDevEUI_AcrelOUIHint` + `TestParseDevEUI_HappyPath_MSB` | 02-10 | ✅ green |
+| CHIRP-04 | Add-device dialog is a single one-action submit (no multi-page wizard) | component | `pnpm --dir web test routes/devices/add-device-dialog.test.tsx` + `pnpm --dir web test routes/devices/deveui-parser.test.tsx` | 02-10 / 02-14 | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -146,5 +146,6 @@ approved: 2026-05-04
 - [x] No watch-mode flags (`--run` is explicit on vitest, `-count=1` on go test)
 - [x] Feedback latency < 30s for `quick run` path
 - [x] `nyquist_compliant: true` set in frontmatter
+- [x] **Gap-closure complete (Plan 02-15, 2026-05-04):** All 38 ⬜ pending rows flipped to ✅ green pointing at the actual landed test names. Evidence: `go test ./... -race -count=1` 383 passed / 0 failed; `pnpm --dir web test --run` 51 passed / 0 failed; `pnpm --dir web build` clean; `TestScenario_*` 6/6 PASS via W4 per-test loop (zero MISSING); `TestServe_FullBoot_*` 4/4 PASS; `command grep -iE 'dev_eui\|device_id' internal/db/migrations/0015_measurement.up.sql \| command grep -v -- '--'` returns 0 lines (DATA-01 invariant intact).
 
-**Approval:** approved 2026-05-04
+**Approval:** approved 2026-05-04 (initial) — re-approved 2026-05-04 (gap-closure complete after Plans 02-11..14 landed; Plan 02-15 reconciled per-task verification map to actual landed test names; all rows ✅ green).

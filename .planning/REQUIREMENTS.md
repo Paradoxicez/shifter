@@ -341,4 +341,17 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 
 ---
 *Requirements defined: 2026-04-27*
-*Last updated: 2026-04-27 after roadmap creation (traceability filled)*
+*Last updated: 2026-05-04 — Phase 2 gap-closure reconciliation (Plan 02-15). All 13 Phase 2 requirements (SITE-01, DATA-01..10, AUDIT-01, CHIRP-04) verified Complete with shipping evidence after gap-closure plans 02-11..14 landed. Evidence trail per requirement:*
+*- SITE-01 → `internal/site/handlers_test.go` + `web/src/routes/sites/create-site-dialog.test.tsx`*
+*- DATA-01 → `internal/db/migrations/0015_measurement.up.sql` invariant + `internal/resolver/cache_test.go` + `TestServe_FullBoot_MQTTUplinkPersists`*
+*- DATA-02 → `internal/db/migrations/0014_binding.up.sql` btree_gist EXCLUDE + `internal/resolver/cache_test.go`*
+*- DATA-03 → `internal/ingest/handler_test.go` + `TestServe_FullBoot_MQTTUplinkPersists` (server-time authoritative)*
+*- DATA-04 → `internal/swap/math_test.go` + `internal/swap/commit_test.go` + `internal/swap/handlers_test.go` + `web/src/routes/metering-points/swap-meter-dialog.test.tsx`*
+*- DATA-05 → `internal/swap/math_test.go` rollover detect + `internal/testharness/scenarios_test.go` Rollover scenarios*
+*- DATA-06 → `internal/testharness/scenarios_test.go` (5 named scenarios all PASS, W4 per-test loop verified)*
+*- DATA-07 → `internal/ingest/handler_test.go` + `TestServe_FullBoot_MQTTUplinkPersists`*
+*- DATA-08 → `internal/db/measurements_test.go` hybrid schema + `internal/ingest/normalize_test.go`*
+*- DATA-09 → `internal/profile/editor_test.go` + `internal/profile/handlers_test.go` + `web/src/routes/profiles/mapping-editor.test.tsx`*
+*- DATA-10 → `internal/profile/seed_test.go` (3 seeded profiles) + `TestScenario_AxiomaW1_E2E`*
+*- AUDIT-01 → `internal/audit/log_test.go` + `internal/audit/diff_test.go` + 13 same-tx call sites in production*
+*- CHIRP-04 → `internal/device/handlers_test.go` + `web/src/routes/devices/add-device-dialog.test.tsx` + `TestServe_FullBoot_*` boot wiring*
