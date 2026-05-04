@@ -78,7 +78,7 @@ var canonicalTargets = map[string]bool{
 // Per CONTEXT D-01 + D-08 + DATA-09 + Anti-Pattern "no decoders.ts":
 // this function CONTAINS NO VENDOR SWITCH. The mapping table is the only
 // configuration. Adding a vendor = adding a profile + its mappings. If
-// this file ever grows a `case "axioma":` style branch, the mapping
+// this file ever grows a `case "<vendor-slug>":` style branch, the mapping
 // mechanism is being bypassed — see PITFALLS §3.
 //
 // Returns ErrNoCanonicalValue when neither RawValue nor InstantValue gets
