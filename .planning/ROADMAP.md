@@ -96,7 +96,7 @@ Plans:
 - [x] 02-10-PLAN.md — site/MP/device CRUD HTTP handlers + DevEUI parser + CHIRP-04 atomic Add Device
 - [x] 02-11-PLAN.md — gap closure: swap + profile HTTP route surface (Plan 02-11)
 - [ ] 02-12-PLAN.md — gap closure: cmd/serve full Phase 2 boot wiring (formerly missing as Plan 02-15)
-- [ ] 02-13-PLAN.md — gap closure: DATA-06 synthetic test harness + `shifter test-harness` CLI
+- [x] 02-13-PLAN.md — gap closure: DATA-06 synthetic test harness + `shifter test-harness` CLI
 - [ ] 02-14-PLAN.md — gap closure: frontend dialogs + list pages + App.tsx routing
 - [ ] 02-15-PLAN.md — gap closure: REQUIREMENTS.md + VALIDATION.md status reconciliation
 
