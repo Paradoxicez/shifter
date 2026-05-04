@@ -15,3 +15,24 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: () => false,
   }),
 })
+
+// jsdom polyfills for Radix UI primitives (Plan 02-14 Task 2).
+// Radix Select / Popover / etc. probe these Element methods on pointer events;
+// jsdom doesn't implement them, which surfaces as "target.hasPointerCapture is
+// not a function" + "scrollIntoView is not a function" during userEvent.click
+// of a SelectTrigger. Mocking them as no-ops is the canonical workaround
+// recommended in Radix's own test docs.
+if (typeof Element !== 'undefined') {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {}
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => {}
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {}
+  }
+}
