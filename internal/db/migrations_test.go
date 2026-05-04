@@ -26,7 +26,7 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// Each Phase 1 + early Phase 2 table must exist after a clean run.
 	for _, table := range []string{
 		"user", "sessions", "install_state", "install_identity", "chirpstack_connection",
-		"site", "metering_point",
+		"site", "metering_point", "device_profile",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -46,12 +46,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	require.True(t, extExists, "timescaledb extension should be created by 0001_init")
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 6 to 8 in plan 02-02 Task 1 (added 0007_site, 0008_metering_point).
+	// Bumped from 8 to 9 in plan 02-02 Task 2 (added 0009_device_profile).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 8, version, "expected schema_migrations.version = 8 (latest after plan 02-02 Task 1)")
+	require.Equal(t, 9, version, "expected schema_migrations.version = 9 (latest after plan 02-02 Task 2)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 }
 
@@ -72,7 +72,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 8, version)
+	require.Equal(t, 9, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
