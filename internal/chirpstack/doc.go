@@ -14,6 +14,15 @@
 //
 // Plan 13 will land the MQTT subscriber alongside this gRPC surface.
 //
+// Phase 2 extends this package with control-plane wrappers (Plan 02-05):
+//   - EnsureTenant(name) — list-then-create per CONTEXT D-28 idempotency.
+//   - EnsureApplication(tenant_id, name) — same pattern, scoped to tenant.
+//   - CreateDeviceProfile / UpdateDeviceProfile — push QuickJS codec to CS (D-09).
+//   - CreateDevice / DeleteDevice — atomic backend for the Add Device dialog (CHIRP-04).
+//   - bootstrap.EnsureTenantAndApplication — runs on first serve boot, stores
+//     CS UUIDs in chirpstack_connection (cs_tenant_id, cs_application_id added
+//     by migration 0011) so subsequent boots are no-ops.
+//
 // Architectural seam: this package is the SOLE importer of
 // github.com/chirpstack/chirpstack/api/go/v4 in production code. The shared
 // in-process bufconn mock at internal/testsupport/chirpstack_mock.go also
