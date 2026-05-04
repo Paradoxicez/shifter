@@ -132,6 +132,13 @@ func (f *fakeDevice) Delete(_ context.Context, req *api.DeleteDeviceRequest) (*e
 	return &emptypb.Empty{}, nil
 }
 
+// CreateCalls / KeysCalls / DeleteCalls expose atomic counters so cross-package
+// tests in internal/chirpstack/ can assert RPC volumes without touching
+// unexported fields.
+func (f *fakeDevice) CreateCalls() int64 { return f.createCalls.Load() }
+func (f *fakeDevice) KeysCalls() int64   { return f.keysCalls.Load() }
+func (f *fakeDevice) DeleteCalls() int64 { return f.deleteCalls.Load() }
+
 func (f *fakeDevice) CreateKeys(_ context.Context, req *api.CreateDeviceKeysRequest) (*emptypb.Empty, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
