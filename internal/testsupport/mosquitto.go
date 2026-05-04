@@ -9,19 +9,24 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// StartMosquitto starts eclipse-mosquitto:2.0.18 with anonymous access enabled
-// and returns the broker URL like `tcp://127.0.0.1:32789`. The container is
-// torn down via t.Cleanup.
+// StartMosquitto returns a broker URL backed by an ephemeral
+// eclipse-mosquitto:2.0.20 container. Auto-cleaned via t.Cleanup. Used by
+// internal/testharness and integration tests in internal/ingest,
+// internal/resolver, internal/profile.
 //
-// Pinned tag (T-02-01): eclipse-mosquitto:2.0.18. The image ships with a
-// /mosquitto-no-auth.conf preset that enables anonymous + listener on 1883;
-// using it avoids bind-mounting a custom config from the test process.
+// Pinned tag (T-02-01-01 / T-02-01): eclipse-mosquitto:2.0.20 — never
+// `:latest`. The image ships with a /mosquitto-no-auth.conf preset that
+// enables anonymous + listener on 1883; using it avoids bind-mounting a
+// custom config from the test process.
+//
+// Phase 2 plan 02-01 bumped the pinned tag from 2.0.18 → 2.0.20 to track the
+// upstream patch line; the no-auth preset path is unchanged.
 func StartMosquitto(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
 
 	req := tc.ContainerRequest{
-		Image:        "eclipse-mosquitto:2.0.18",
+		Image:        "eclipse-mosquitto:2.0.20",
 		ExposedPorts: []string{"1883/tcp"},
 		Cmd:          []string{"mosquitto", "-c", "/mosquitto-no-auth.conf"},
 		WaitingFor: wait.ForLog("mosquitto version").
