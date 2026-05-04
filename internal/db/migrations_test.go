@@ -23,11 +23,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Each Phase 1 + early Phase 2 table must exist after a clean run.
+	// Each Phase 1 + Phase 2 table must exist after a clean run.
 	for _, table := range []string{
 		"user", "sessions", "install_state", "install_identity", "chirpstack_connection",
 		"site", "metering_point", "device_profile",
 		"device", "device_profile_mapping", "binding",
+		"measurement",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -67,12 +68,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 13 to 14 in plan 02-03 Task 3 (added 0014_binding).
+	// Bumped from 14 to 15 in plan 02-04 Task 1 (added 0015_measurement).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 14, version, "expected schema_migrations.version = 14 (latest after plan 02-03 Task 3)")
+	require.Equal(t, 15, version, "expected schema_migrations.version = 15 (latest after plan 02-04 Task 1)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
@@ -82,6 +83,27 @@ func TestRunMigrations_Clean(t *testing.T) {
 	).Scan(&btreeGistExists)
 	require.NoError(t, err)
 	require.True(t, btreeGistExists, "0014 must CREATE EXTENSION btree_gist")
+
+	// 0015 must convert `measurement` to a TimescaleDB hypertable (D-06).
+	// timescaledb_information.hypertables is the canonical source — the entry
+	// only exists after create_hypertable() succeeds.
+	var measurementIsHypertable bool
+	err = pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM timescaledb_information.hypertables WHERE hypertable_name = 'measurement')`,
+	).Scan(&measurementIsHypertable)
+	require.NoError(t, err)
+	require.True(t, measurementIsHypertable, "0015 must convert measurement to a hypertable")
+
+	// 0015 chunk_time_interval must be 1 day (CONTEXT D-06). The dimension
+	// `time_interval` is stored as a Postgres INTERVAL; cast to extract days.
+	var chunkDays float64
+	err = pool.QueryRow(ctx,
+		`SELECT EXTRACT(EPOCH FROM time_interval) / 86400.0
+		 FROM timescaledb_information.dimensions
+		 WHERE hypertable_name = 'measurement' AND dimension_type = 'Time'`,
+	).Scan(&chunkDays)
+	require.NoError(t, err)
+	require.InDelta(t, 1.0, chunkDays, 0.0001, "0015 chunk_time_interval must be 1 day")
 }
 
 // TestRunMigrations_Idempotent — Running RunMigrations twice in a row is a
@@ -101,7 +123,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 14, version)
+	require.Equal(t, 15, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
