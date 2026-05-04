@@ -3,7 +3,7 @@ phase: 2
 slug: domain-model-canonical-schema
 status: approved
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-03
 approved: 2026-05-04
 ---
@@ -93,38 +93,38 @@ approved: 2026-05-04
 > Plan 02-01 IS Wave 0 — it scaffolds every Phase 2 test file as a failing skeleton before any implementation lands.
 
 **Backend test files (stubs created by 02-01):**
-- [ ] `internal/site/handlers_test.go` — site CRUD + soft-delete + RBAC
-- [ ] `internal/meteringpoint/handlers_test.go` — MP CRUD + active binding view
-- [ ] `internal/device/handlers_test.go` — device add atomic + decommission
-- [ ] `internal/device/deveui_test.go` — DevEUI parse (MSB/LSB + OUI)
-- [ ] `internal/swap/math_test.go` — proposed offset, rollover detect
-- [ ] `internal/swap/commit_test.go` — atomic close+open, concurrent commit
-- [ ] `internal/ingest/handler_test.go` — MQTT uplink end-to-end
-- [ ] `internal/ingest/normalize_test.go` — canonical column extraction + JSONB extra
-- [ ] `internal/resolver/cache_test.go` — time-windowed binding lookup, cache invalidation
-- [ ] `internal/resolver/listener_test.go` — Postgres LISTEN/NOTIFY pickup
-- [ ] `internal/profile/editor_test.go` — mapping save + hot reload
-- [ ] `internal/profile/seed_test.go` — three seed profiles present at boot
-- [ ] `internal/audit/log_test.go` — same-transaction insert
-- [ ] `internal/audit/diff_test.go` — field-level diff
-- [ ] `internal/testharness/scenarios_test.go` — 5 DATA-06 scenarios
-- [ ] `internal/chirpstack/tenant_test.go` — tenant get-or-create
-- [ ] `internal/chirpstack/application_test.go` — application get-or-create
-- [ ] `internal/chirpstack/device_profile_test.go` — profile get-or-create
-- [ ] `internal/chirpstack/device_test.go` — device create + keys
-- [ ] `internal/chirpstack/bootstrap_test.go` — CHIRP-04 atomic orchestrator
+- [x] `internal/site/handlers_test.go` — site CRUD + soft-delete + RBAC
+- [x] `internal/meteringpoint/handlers_test.go` — MP CRUD + active binding view
+- [x] `internal/device/handlers_test.go` — device add atomic + decommission
+- [x] `internal/device/deveui_test.go` — DevEUI parse (MSB/LSB + OUI)
+- [x] `internal/swap/math_test.go` — proposed offset, rollover detect
+- [x] `internal/swap/commit_test.go` — atomic close+open, concurrent commit
+- [x] `internal/ingest/handler_test.go` — MQTT uplink end-to-end
+- [x] `internal/ingest/normalize_test.go` — canonical column extraction + JSONB extra
+- [x] `internal/resolver/cache_test.go` — time-windowed binding lookup, cache invalidation
+- [x] `internal/resolver/listener_test.go` — Postgres LISTEN/NOTIFY pickup
+- [x] `internal/profile/editor_test.go` — mapping save + hot reload
+- [x] `internal/profile/seed_test.go` — three seed profiles present at boot
+- [x] `internal/audit/log_test.go` — same-transaction insert
+- [x] `internal/audit/diff_test.go` — field-level diff
+- [x] `internal/testharness/scenarios_test.go` — 5 DATA-06 scenarios
+- [x] `internal/chirpstack/tenant_test.go` — tenant get-or-create
+- [x] `internal/chirpstack/application_test.go` — application get-or-create
+- [x] `internal/chirpstack/device_profile_test.go` — profile get-or-create
+- [x] `internal/chirpstack/device_test.go` — device create + keys
+- [x] `internal/chirpstack/bootstrap_test.go` — CHIRP-04 atomic orchestrator
 
 **Frontend test files (stubs created by 02-01):**
-- [ ] `web/src/routes/sites/create-site-dialog.test.tsx`
-- [ ] `web/src/routes/devices/add-device-dialog.test.tsx`
-- [ ] `web/src/routes/devices/deveui-parser.test.tsx`
-- [ ] `web/src/routes/metering-points/swap-meter-dialog.test.tsx`
-- [ ] `web/src/routes/profiles/mapping-editor.test.tsx`
+- [x] `web/src/routes/sites/create-site-dialog.test.tsx`
+- [x] `web/src/routes/devices/add-device-dialog.test.tsx`
+- [x] `web/src/routes/devices/deveui-parser.test.tsx`
+- [x] `web/src/routes/metering-points/swap-meter-dialog.test.tsx`
+- [x] `web/src/routes/profiles/mapping-editor.test.tsx`
 
-**Shared test support (created by 02-01):**
-- [ ] `internal/testsupport/mosquitto.go` — testcontainer Mosquitto helper for ingest path tests
+**Shared test support (updated by 02-01):**
+- [x] `internal/testsupport/mosquitto.go` — testcontainer Mosquitto helper for ingest path tests (Phase 1 helper repinned from `eclipse-mosquitto:2.0.18` to `eclipse-mosquitto:2.0.20` per T-02-01-01)
 
-**Framework install:** none (Phase 1 already installed testify, testcontainers-go, vitest, @testing-library/react)
+**Framework install:** none new — Phase 1 already installed testify, testcontainers-go, vitest, @testing-library/react. Plan 02-01 Task 1 added `@tanstack/react-table` 8.x to `web/package.json` (runtime dep for downstream Phase 2 data-table UIs; not a test framework but recorded here for the Wave 0 audit trail).
 
 ---
 
