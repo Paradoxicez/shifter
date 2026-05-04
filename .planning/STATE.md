@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-05-04T04:24:57.648Z"
+last_updated: "2026-05-04T04:52:30.982Z"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 34
-  completed_plans: 28
-  percent: 82
+  completed_plans: 29
+  percent: 85
 ---
 
 # Project State: Shifter
@@ -25,18 +25,19 @@ progress:
 ## Current Position
 
 Phase: 02 (domain-model-canonical-schema) — EXECUTING
-Plan: 5 of 10
+Plan: 5 of 10 (Plans 02-01..05 complete; 02-04 just landed)
 
 | Field | Value |
 |-------|-------|
 | **Phase** | 2 — domain-model-canonical-schema |
-| **Plan** | 04 — chirpstack-grpc-wrappers (next; Wave 2) |
+| **Plan** | 06 — sqlc-queries (next; Wave 3) |
+| **Plan 04 status** | COMPLETE (2026-05-04). 0015_measurement (TimescaleDB hypertable, chunk_time_interval=1d, full D-02 canonical column set + JSONB extra + raw_payload BYTEA + decoded_object JSONB + quality CHECK with 5 D-26 values; deliberately MP-keyed with NO device_id/dev_eui per DATA-01 invariant; server-side `time` authoritative per DATA-03 + Pitfall 4; 3 indexes incl. GIN(extra) + partial on quality<>'ok'; binding_id forward-compat; NO FK on hypertable per TS caveats) + 0016_audit_log (regular Postgres table NOT hypertable per D-06; 10 D-22 columns; user_id ON DELETE SET NULL; D-22+D-05 action vocabulary CHECK + 5 D-22 entity_type CHECK; 4 browse/filter indexes; **BEFORE UPDATE / BEFORE DELETE triggers raise 'audit_log is INSERT-ONLY'** — T-02-04-02 mitigation). Phase 2 schema is complete (16 migrations total). 3 audit_log regression tests added: TestAuditLog_RejectsUpdate (T-02-04-02), TestAuditLog_RejectsDelete (T-02-04-02), TestAuditLog_AcceptsInsertAndPersistsDiff (D-22 + D-24 happy path + CHECK rejects unknown vocabulary). 2 hypertable assertions added in TestRunMigrations_Clean (Rule 2 — defense-in-depth: is_hypertable=true for measurement, is_hypertable=false for audit_log, chunk_time_interval=1d via timescaledb_information.dimensions). 10 db tests (4 migration + 3 binding + 3 audit_log) + full short suite 176/176 green; vet + build clean. Commits: 48bd892 (Task 1) + fc6192f (Task 2). Container env: Podman socket restarted to recreate `/var/folders/.../podman-machine-default-api.sock` (Rule 3 env-only fix; continuing pattern). |
 | **Plan 03 status** | COMPLETE (2026-05-04). 0012_device + 0013_device_profile_mapping + 0014_binding migrations landed. binding has BOTH per-MP and per-device btree_gist EXCLUDE constraints (Rule 2 — per-device added beyond plan-verbatim to guard against ambiguous resolver dev_eui->MP queries). Half-open `[)` tstzrange semantics codified at schema layer (Open Q #1). 3 regression tests added: TestBinding_NoOverlapPerMP (Pitfall 10 + T-02-03-02), TestBinding_NoOverlapPerDevice (Rule 2 coverage), TestBinding_HalfOpenInterval (Open Q #1). 4 migration tests + 3 binding tests pass; full short suite (145 tests, 22 packages) green; vet + build clean. AppKey deliberately absent from device table (DEV-09). btree_gist extension created in 0014; intentionally NOT dropped in down (may be in use elsewhere). Commits: ed6560a (Task 1) + 6c6c574 (Task 2) + 2fc5ff4 (Task 3). Container env: Podman socket restarted to recreate `/var/folders/.../podman-machine-default-api.sock` (Rule 3 env-only fix; same condition as prior Phase 1 plans). |
 | **Status** | Plans 01–23 complete. Plan 22 shipped OPS-01 hardening at the Caddy edge: `Caddyfile` at repo root with env-driven TLS modes (D-21 acme/byo/internal via `{$CADDY_TLS_BLOCK}` interpolation point — install.sh's `case "${SHIFTER_TLS_MODE:-internal}"` block renders the Caddy `tls` directive before `docker compose up`), 5 OWASP-grade security headers + server-banner strip (Strict-Transport-Security max-age=31536000+includeSubDomains, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, X-Frame-Options DENY, Content-Security-Policy `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'`, `-Server` strip), `@sse path /sse /sse/*` SSE-aware handler with `flush_interval -1` + `read_buffer 0` + `response_header_timeout 0` (PITFALL #7 prophylaxis — Phase 1 has no /sse endpoint but the handler ships now to defuse Phase 4 retrofit risk), explicit `/health` fast-path handle (immune to future root-level header rewrites), root `reverse_proxy shifter:8080` with `header_up X-Forwarded-For {remote_host}` + `header_up X-Real-IP {remote_host}` (consumed by Plan 09 rate-limiter's `clientIP(r)` first-hop XFF helper), reserved `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam for future ZeroSSL-fallback (D-21). Both install scripts (`install/bundled/install.sh`, `install/external/install.sh`) gained the `case` block mapping SHIFTER_TLS_MODE → CADDY_TLS_BLOCK (acme="" / byo="tls /etc/caddy/cert.pem /etc/caddy/key.pem" / internal="tls internal") with explicit error-and-exit-2 on invalid value; both health polls switched from `http://localhost:8080/health` to `https://localhost/health` via `curl -fsk` (tolerating internal CA in default mode). Justfile `compose-smoke-bundled` + `compose-smoke-external` recipes export TLS env (SHIFTER_DOMAIN=localhost, SHIFTER_TLS_MODE=internal, CADDY_TLS_BLOCK="tls internal") then poll Caddy over HTTPS — smoke now validates the FULL edge → backend chain, not just shifter:8080 directly. **Deviations:** (1) X-Forwarded-For + X-Real-IP propagation declared explicitly in root reverse_proxy (Rule 2 — plan must_haves implied but plan-verbatim Caddyfile elided; making the Plan 09 trust-boundary contract visible at the Caddy edge prevents accidental drop in future Caddy upgrades). (2) `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam added in global block (Rule 2 — plan must_haves listed it explicitly but verbatim body elided; future ZeroSSL fallback is now an env var change, not a Caddyfile structural edit). **Resume context:** This plan was originally executed 2026-04-28T07:01:04Z; first-pass executor finished all four file edits but disk-full before commit/SUMMARY. Disk freed (74G), this resume executor verified all edits via grep against acceptance criteria, committed Task 1 (76304d8), and wrote SUMMARY.md. **Live verification deferred:** Docker daemon was unresponsive in this session (continuing the Plan 19/20/21 pattern Phase 1 sign-off accepts as Open Todo); `docker compose -f compose/bundled.yml config -q` and `docker compose -f compose/external.yml --env-file install/external/.env.example config -q` BOTH parse cleanly. D-20 + D-21 + D-22 enforced; PITFALL #7 prevented at Phase 1 boundary. |
 | **Progress (plans)** | `[████████░░] 27/34 (79%)` |
-| **Progress (phases)** | `[█░░░░░░░░░] 1/7 phases (Phase 01 complete; Phase 02 in progress 3/10)` |
+| **Progress (phases)** | `[█░░░░░░░░░] 1/7 phases (Phase 01 complete; Phase 02 in progress 5/10)` |
 
-**Next action:** `/gsd-execute-plan 02 04` (or `/gsd-execute-phase 02` to continue the chain)
+**Next action:** `/gsd-execute-plan 02 06` (or `/gsd-execute-phase 02` to continue the chain)
 
 ## Performance Metrics
 
@@ -53,6 +54,7 @@ Plan: 5 of 10
 | Phase 02 P02 | 5min | 3 tasks | 12 files |
 | Phase 02 P03 | 6min23s | 3 tasks | 8 files |
 | Phase 02 P05 | 11min | 3 tasks | 15 files |
+| Phase 02-domain-model-canonical-schema P04 | 5min37s | 2 tasks | 6 files |
 
 ### Per-plan execution log
 

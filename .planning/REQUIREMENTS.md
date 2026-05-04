@@ -66,15 +66,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **DATA-01**: Telemetry is keyed on a stable `metering_point_id`, never on `dev_eui` directly — this is the schema invariant
 - [x] **DATA-02**: Each device-to-metering-point binding has a `valid_from` / `valid_to` window and a `reading_offset`
-- [ ] **DATA-03**: The hypertable's authoritative `time` column is server-side ingest time (with `gateway_rx_time` and device-side time persisted as diagnostics)
+- [x] **DATA-03**: The hypertable's authoritative `time` column is server-side ingest time (with `gateway_rx_time` and device-side time persisted as diagnostics)
 - [ ] **DATA-04**: Admin can perform a meter swap via dialog: dialog captures the outgoing reading R, closes the active assignment, opens a new assignment, and proposes a `reading_offset` such that the displayed cumulative is continuous; admin confirms before commit
 - [ ] **DATA-05**: System detects counter rollovers (raw reading decreases between consecutive uplinks), advances the offset by the counter modulus, and logs the rollover event
 - [ ] **DATA-06**: Synthetic-data tests cover clean swap, swap with concurrent in-flight uplink, rollover, swap+rollover, and overlapping uplinks during swap
-- [ ] **DATA-07**: System persists each device's raw payload, decoded `object`, and the canonical normalized fields — none of the three is lost on the way to the hypertable
+- [x] **DATA-07**: System persists each device's raw payload, decoded `object`, and the canonical normalized fields — none of the three is lost on the way to the hypertable
 
 ### Multi-Vendor Measurement Model
 
-- [ ] **DATA-08**: Measurements use a hybrid wide+JSONB schema — canonical first-class columns (cumulative, flow_rate, voltage, current, battery_pct, rssi, snr) plus a JSONB `extra` for vendor-specific parameters
+- [x] **DATA-08**: Measurements use a hybrid wide+JSONB schema — canonical first-class columns (cumulative, flow_rate, voltage, current, battery_pct, rssi, snr) plus a JSONB `extra` for vendor-specific parameters
 - [x] **DATA-09**: Admin can map a device profile's decoded fields to canonical columns through a UI; new vendors require no backend deploy
 - [x] **DATA-10**: System comes with at least one fully wired vendor profile (most-common water or electricity meter) and a documented path to add more
 
@@ -142,7 +142,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Audit Log
 
-- [ ] **AUDIT-01**: System records an audit entry for every create / update / delete and for every meter swap, capturing user, timestamp, entity, and before/after where relevant
+- [x] **AUDIT-01**: System records an audit entry for every create / update / delete and for every meter swap, capturing user, timestamp, entity, and before/after where relevant
 - [ ] **AUDIT-02**: Admin can view the audit log with filters (date range, user, entity type)
 - [ ] **AUDIT-03**: Admin can export the audit log as CSV
 
@@ -264,12 +264,12 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | SITE-06 | Phase 5 | Pending |
 | DATA-01 | Phase 2 | Complete |
 | DATA-02 | Phase 2 | Complete |
-| DATA-03 | Phase 2 | Pending |
+| DATA-03 | Phase 2 | Complete |
 | DATA-04 | Phase 2 | Pending |
 | DATA-05 | Phase 2 | Pending |
 | DATA-06 | Phase 2 | Pending |
-| DATA-07 | Phase 2 | Pending |
-| DATA-08 | Phase 2 | Pending |
+| DATA-07 | Phase 2 | Complete |
+| DATA-08 | Phase 2 | Complete |
 | DATA-09 | Phase 2 | Complete |
 | DATA-10 | Phase 2 | Complete |
 | DATA-11 | Phase 5 | Pending |
@@ -310,7 +310,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | USER-02 | Phase 6 | Pending |
 | USER-03 | Phase 6 | Pending |
 | USER-04 | Phase 6 | Pending |
-| AUDIT-01 | Phase 2 | Pending |
+| AUDIT-01 | Phase 2 | Complete |
 | AUDIT-02 | Phase 6 | Pending |
 | AUDIT-03 | Phase 6 | Pending |
 | OPS-01 | Phase 1 | Complete |
