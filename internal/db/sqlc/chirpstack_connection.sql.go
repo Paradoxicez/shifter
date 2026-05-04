@@ -10,7 +10,7 @@ import (
 )
 
 const getChirpStackConnection = `-- name: GetChirpStackConnection :one
-SELECT id, mode, grpc_url, api_token_ref, mqtt_url, mqtt_user, mqtt_password_ref, region_name, region_common_name, created_at, updated_at FROM chirpstack_connection WHERE id = 1
+SELECT id, mode, grpc_url, api_token_ref, mqtt_url, mqtt_user, mqtt_password_ref, region_name, region_common_name, created_at, updated_at, cs_tenant_id, cs_application_id FROM chirpstack_connection WHERE id = 1
 `
 
 func (q *Queries) GetChirpStackConnection(ctx context.Context) (ChirpstackConnection, error) {
@@ -28,6 +28,8 @@ func (q *Queries) GetChirpStackConnection(ctx context.Context) (ChirpstackConnec
 		&i.RegionCommonName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CsTenantID,
+		&i.CsApplicationID,
 	)
 	return i, err
 }
@@ -48,7 +50,7 @@ ON CONFLICT (id) DO UPDATE SET
     mqtt_password_ref  = EXCLUDED.mqtt_password_ref,
     region_name        = EXCLUDED.region_name,
     region_common_name = EXCLUDED.region_common_name
-RETURNING id, mode, grpc_url, api_token_ref, mqtt_url, mqtt_user, mqtt_password_ref, region_name, region_common_name, created_at, updated_at
+RETURNING id, mode, grpc_url, api_token_ref, mqtt_url, mqtt_user, mqtt_password_ref, region_name, region_common_name, created_at, updated_at, cs_tenant_id, cs_application_id
 `
 
 type UpsertChirpStackConnectionParams struct {
@@ -87,6 +89,8 @@ func (q *Queries) UpsertChirpStackConnection(ctx context.Context, arg UpsertChir
 		&i.RegionCommonName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CsTenantID,
+		&i.CsApplicationID,
 	)
 	return i, err
 }

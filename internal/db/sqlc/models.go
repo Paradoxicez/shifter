@@ -137,6 +137,30 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+type AuditLog struct {
+	ID         pgtype.UUID
+	Time       pgtype.Timestamptz
+	UserID     pgtype.UUID
+	Action     string
+	EntityType string
+	EntityID   pgtype.UUID
+	Before     []byte
+	After      []byte
+	Notes      *string
+	RequestID  *string
+}
+
+type Binding struct {
+	ID              pgtype.UUID
+	MeteringPointID pgtype.UUID
+	DeviceID        pgtype.UUID
+	ValidFrom       pgtype.Timestamptz
+	ValidTo         pgtype.Timestamptz
+	ReadingOffset   pgtype.Numeric
+	LastRawValue    pgtype.Numeric
+	CreatedAt       pgtype.Timestamptz
+}
+
 type ChirpstackConnection struct {
 	ID               int32
 	Mode             ChirpstackMode
@@ -149,6 +173,52 @@ type ChirpstackConnection struct {
 	RegionCommonName string
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	CsTenantID       *string
+	CsApplicationID  *string
+}
+
+type Device struct {
+	ID               pgtype.UUID
+	DevEui           string
+	Name             string
+	DeviceProfileID  pgtype.UUID
+	CsDeviceUuid     *string
+	JoinEui          *string
+	Description      *string
+	LastSeenAt       pgtype.Timestamptz
+	DecommissionedAt pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type DeviceProfile struct {
+	ID              pgtype.UUID
+	Slug            string
+	Name            string
+	Vendor          string
+	Family          *string
+	Capabilities    []string
+	CounterModulus  int64
+	CodecJs         string
+	CsProfileID     pgtype.UUID
+	CodecJsSyncedAt pgtype.Timestamptz
+	Region          *string
+	MacVersion      string
+	ArchivedAt      pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type DeviceProfileMapping struct {
+	ID              pgtype.UUID
+	DeviceProfileID pgtype.UUID
+	JsonPointer     string
+	Target          string
+	Scale           pgtype.Numeric
+	DataType        string
+	Position        int32
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
 }
 
 type InstallIdentity struct {
@@ -174,10 +244,59 @@ type InstallState struct {
 	UpdatedAt       pgtype.Timestamptz
 }
 
+type Measurement struct {
+	Time            pgtype.Timestamptz
+	MeteringPointID pgtype.UUID
+	RawValue        pgtype.Numeric
+	CumulativeValue pgtype.Numeric
+	InstantValue    pgtype.Numeric
+	BatteryPct      *int16
+	Rssi            *int16
+	Snr             *float32
+	TemperatureC    *float32
+	PressureKpa     *float32
+	LeakDetected    *bool
+	TamperDetected  *bool
+	Extra           []byte
+	RawPayload      []byte
+	DecodedObject   []byte
+	Quality         string
+	Fcnt            *int32
+	GatewayRxTime   pgtype.Timestamptz
+	DeviceTime      pgtype.Timestamptz
+	BindingID       pgtype.UUID
+}
+
+type MeteringPoint struct {
+	ID                  pgtype.UUID
+	SiteID              pgtype.UUID
+	Name                string
+	UtilityClass        string
+	LocationDescription *string
+	ArchivedAt          pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+	UpdatedAt           pgtype.Timestamptz
+}
+
 type Session struct {
 	Token  string
 	Data   []byte
 	Expiry pgtype.Timestamptz
+}
+
+type Site struct {
+	ID          pgtype.UUID
+	ParentID    pgtype.UUID
+	Name        string
+	SiteType    *string
+	Lat         *float64
+	Lng         *float64
+	Timezone    string
+	Address     *string
+	Description *string
+	ArchivedAt  pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 type User struct {

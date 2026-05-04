@@ -6,24 +6,144 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	// Plan 14 first-run gate: returns TRUE if at least one enabled admin exists.
 	AdminExists(ctx context.Context) (bool, error)
+	// D-20 soft-delete for profiles. Note: device.device_profile_id has
+	// ON DELETE RESTRICT, so the row stays referenceable even when archived
+	// (existing devices keep working; archive only hides from the create-device
+	// dropdown).
+	ArchiveDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceProfile, error)
+	// D-20 soft-delete. Idempotent guard.
+	ArchiveMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
+	// D-20 soft-delete. Idempotent guard `archived_at IS NULL` — re-archiving an
+	// already-archived site returns no row (caller treats as no-op).
+	ArchiveSite(ctx context.Context, id pgtype.UUID) (Site, error)
+	// Site detail header badge "N metering points". Used by Plan 02-08 site detail
+	// page; counts only active MPs (D-20 — archived MPs hide from default views).
+	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
+	// Profile list page badge "N mappings" — quick count without fetching rows.
+	CountMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) (int64, error)
+	// Device Profile (D-01 layer 2 + D-04 capabilities + D-05 counter_modulus +
+	// D-09 codec sync state). Seeded by 0010 with three vendor profiles
+	// (axioma_w1, acrel_adl200, acrel_adw300); the bootstrap routine in
+	// internal/profile/seed.go (Plan 02-08) reads //go:embed-ed *.js codec
+	// bodies, pushes them to ChirpStack, and back-fills cs_profile_id +
+	// codec_js_synced_at via MarkProfileSyncedToChirpStack.
+	// Plan 02-08 profile editor "create new profile" path (rare in practice;
+	// seeded profiles cover Phase 2 — operator-authored profiles unlock in
+	// Phase 6). codec_js may be empty at creation; the seed routine fills it.
+	CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfileParams) (DeviceProfile, error)
+	// Metering Point (D-19 + D-20) — the canonical "thing being measured" that
+	// persists across physical meter swaps (DATA-01 invariant). MP is the join
+	// key for telemetry; binding history captures which device fed it when.
+	// Plan 02-08 MP create dialog. (site_id, name) UNIQUE constraint surfaces
+	// as a 23505 error to the caller — handler maps to a friendly toast.
+	CreateMP(ctx context.Context, arg CreateMPParams) (MeteringPoint, error)
+	// Device Profile Mapping (D-08 + DATA-09) — rows from decoded JSON to
+	// canonical measurement columns. The Plan 02-08 profile editor saves the
+	// whole mapping list at once: DeleteMappingsByProfile then a sequence of
+	// CreateMapping calls inside a single transaction (replace-all semantics
+	// so the editor never leaves a half-saved mapping set).
+	// Plan 02-08 profile editor save (per-row insert). UNIQUE (device_profile_id,
+	// target) surfaces as 23505 if the editor lets two rows claim the same
+	// canonical column — handler maps to a friendly error.
+	CreateMapping(ctx context.Context, arg CreateMappingParams) (DeviceProfileMapping, error)
+	// Site (D-17 + D-20) — physical/logical hierarchy anchor for metering points
+	// and devices. Soft-deleted via archived_at; hard delete blocked by FKs from
+	// metering_point and (transitively) binding.
+	// Plan 02-08 site dialog. Caller resolves parent_id from the parent picker
+	// (NULL for top-level sites). timezone is required (D-17 — every site has
+	// one; UI defaults to install timezone).
+	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
 	// Called by FinishSetup after all four target tables are populated.
 	DeleteInstallState(ctx context.Context) error
+	// Single-row delete — used by Phase 6 admin actions; Phase 2's editor uses
+	// the bulk DeleteMappingsByProfile path.
+	DeleteMapping(ctx context.Context, id pgtype.UUID) error
+	// Plan 02-08 profile editor save: wipes existing mappings before bulk
+	// re-insert. Wrapped in a tx with the subsequent CreateMapping calls so
+	// the editor never observes a half-saved state.
+	DeleteMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) error
 	GetChirpStackConnection(ctx context.Context) (ChirpstackConnection, error)
+	GetDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceProfile, error)
+	// Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
+	// (`/profiles/axioma_w1`).
+	GetDeviceProfileBySlug(ctx context.Context, slug string) (DeviceProfile, error)
 	GetInstallIdentity(ctx context.Context) (InstallIdentity, error)
+	GetMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
+	// MP detail page (Plan 02-08): shows "currently bound device + reading offset".
+	// LEFT JOINs return NULL for binding/device/profile columns when no active
+	// binding exists (a fresh MP that hasn't been wired up yet, or a swap-in-
+	// progress where the previous binding closed and the next hasn't opened).
+	GetMPWithActiveBinding(ctx context.Context, id pgtype.UUID) (GetMPWithActiveBindingRow, error)
+	GetMapping(ctx context.Context, id pgtype.UUID) (DeviceProfileMapping, error)
 	// Plan 15 reentrant wizard: GET /api/install/state returns the singleton row,
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
+	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	// Plan 15 install wizard finish — creates the bootstrap admin atomically with
 	// the rest of the wizard commit.
 	InsertAdminUser(ctx context.Context, arg InsertAdminUserParams) (InsertAdminUserRow, error)
+	// Profile list page + device-create dialog dropdown. Sorted vendor-then-name
+	// so users see Acrel/Axioma grouped.
+	ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile, error)
+	// Global MP list (rare — usually scoped by site). archived_at filter hits the
+	// partial index.
+	ListActiveMPs(ctx context.Context) ([]MeteringPoint, error)
+	// Site list page (D-20). archived_at IS NULL filter hits the partial index.
+	ListActiveSites(ctx context.Context) ([]Site, error)
+	ListArchivedMPs(ctx context.Context) ([]MeteringPoint, error)
+	// Archive view (D-20) — sorted most-recently-archived first so admins see
+	// their last action at the top.
+	ListArchivedSites(ctx context.Context) ([]Site, error)
+	// Site detail page sub-section: direct children only (one level), so the
+	// breadcrumb expands lazily rather than fetching the whole subtree.
+	ListChildSites(ctx context.Context, parentID pgtype.UUID) ([]Site, error)
+	// Site detail MP-list section. Active-only by default; site_idx covers the
+	// filter, archived_at NULL is the common case.
+	ListMPsBySite(ctx context.Context, siteID pgtype.UUID) ([]MeteringPoint, error)
+	// Plan 02-09 normalize engine: fetches the mapping table once at boot and
+	// caches per-profile (cache invalidates on profile save). Position ASC drives
+	// deterministic mapping pass order — required when a later mapping references
+	// a value materialized by an earlier one.
+	ListMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) ([]DeviceProfileMapping, error)
+	// Plan 02-08 boot-time seed routine reads this list to decide which profiles
+	// need a CS push. A profile is "unsynced" if it has no cs_profile_id (never
+	// pushed) OR the codec_js was modified after the last push (codec_js_synced_at
+	// is NULL after a SetProfileCodecJS write — the seed routine sets it back
+	// to now() once CS confirms the new codec).
+	ListUnsyncedProfiles(ctx context.Context) ([]DeviceProfile, error)
+	// Plan 02-08 seed routine — called after a successful CS DeviceProfileService
+	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
+	// next boot's ListUnsyncedProfiles query no longer returns this row.
+	MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error
+	RestoreMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
+	// D-20 restore from archive view. Symmetric guard.
+	RestoreSite(ctx context.Context, id pgtype.UUID) (Site, error)
+	// Plan 02-08 seed routine — writes the //go:embed-ed codec body into the row
+	// and clears codec_js_synced_at so the next pass re-pushes to ChirpStack.
+	SetProfileCodecJS(ctx context.Context, arg SetProfileCodecJSParams) error
+	// Plan 02-08 profile editor save path. capabilities + counter_modulus + codec
+	// are all editable; mappings are stored in device_profile_mapping (separate
+	// queries — see device_profile_mappings.sql). cs_profile_id is intentionally
+	// NOT updatable here; only MarkProfileSyncedToChirpStack writes that column.
+	UpdateDeviceProfile(ctx context.Context, arg UpdateDeviceProfileParams) (DeviceProfile, error)
+	// Plan 02-08 MP edit. utility_class IS editable here (operators sometimes
+	// mis-classify; the CHECK constraint still bounds the values to water |
+	// electricity).
+	UpdateMP(ctx context.Context, arg UpdateMPParams) (MeteringPoint, error)
+	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
+	// moving a site between parents is a separate "reparent" flow with audit
+	// implications and is deferred to Phase 6.
+	UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, error)
 	UpdateStep1(ctx context.Context, step1Admin []byte) error
 	UpdateStep2(ctx context.Context, step2Chirpstack []byte) error
 	UpdateStep3(ctx context.Context, step3Region []byte) error
