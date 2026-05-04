@@ -32,7 +32,9 @@ import (
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
+	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/site"
+	"github.com/shifter-io/shifter/internal/swap"
 )
 
 // Deps groups every dependency the router needs. Plan 18 (serve.go) constructs
@@ -68,6 +70,16 @@ type Deps struct {
 	// shape: CS gRPC client + bootstrapper + gRPC ping + MQTT ping.
 	DeviceDeps *device.Deps
 
+	// SwapDeps wires Plan 02-11's POST /api/metering-points/{id}/swap. nil
+	// when CS bootstrap hasn't completed (Phase 1 router unit tests + early-
+	// boot pre-install paths). Plan 02-12 (cmd/serve wiring) constructs the
+	// full shape: Pool + SessionMgr + Log + Resolver invalidator.
+	SwapDeps *swap.HTTPDeps
+
+	// ProfileDeps wires Plan 02-11's /api/device-profiles editor surface.
+	// nil when CS gRPC client + ConnStore are not yet constructed.
+	ProfileDeps *profile.HTTPDeps
+
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
 	SPA http.Handler
@@ -94,6 +106,13 @@ type Deps struct {
 //	GET  /api/settings/chirpstack             ActionConnectionTest (both roles)
 //	POST /api/settings/chirpstack/test        ActionConnectionTest (both roles)
 //	PUT  /api/settings/chirpstack             ActionConnectionEdit (admin)
+//	POST /api/metering-points/{id}/swap       ActionMeterSwap (admin) — Plan 02-11
+//	GET  /api/device-profiles                 ActionDeviceProfileRead (both)
+//	GET  /api/device-profiles/{id}            ActionDeviceProfileRead (both)
+//	POST /api/device-profiles/{id}/decoded-sample ActionDeviceProfileRead (both)
+//	POST /api/device-profiles                 ActionDeviceProfileCreate (admin)
+//	PATCH /api/device-profiles/{id}           ActionDeviceProfileUpdate (admin)
+//	POST /api/device-profiles/{id}/archive    ActionDeviceProfileArchive (admin)
 //	GET  /*                                   SPA fallback (Plan 19)
 //
 // SPA fallback is registered LAST (PITFALL #4); it MUST NOT shadow /api/*.
@@ -192,6 +211,18 @@ func NewRouter(deps Deps) http.Handler {
 		// adapter). Routes mount only when DeviceDeps is non-nil so unit
 		// tests of the http router don't need full CS wiring.
 		device.RegisterRoutes(r, *deps.DeviceDeps)
+	}
+	if deps.SwapDeps != nil {
+		// SwapDeps mounts POST /api/metering-points/{id}/swap (Plan 02-11).
+		// Mirrors DeviceDeps nil-guard pattern — skip when not wired so
+		// router unit tests stay free of pgxpool / SessionMgr requirements.
+		swap.RegisterRoutes(r, *deps.SwapDeps)
+	}
+	if deps.ProfileDeps != nil {
+		// ProfileDeps mounts /api/device-profiles editor REST surface
+		// (Plan 02-11). nil when CS gRPC client + ConnStore are not yet
+		// constructed.
+		profile.RegisterRoutes(r, *deps.ProfileDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
