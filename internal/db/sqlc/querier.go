@@ -13,6 +13,12 @@ import (
 type Querier interface {
 	// Plan 14 first-run gate: returns TRUE if at least one enabled admin exists.
 	AdminExists(ctx context.Context) (bool, error)
+	// DATA-05 rollover handler: when raw_value at time t < last_raw_value at
+	// time t-1 AND the gap is plausibly a counter wrap (not a swap), advance
+	// the offset by counter_modulus so cumulative_value stays monotonic.
+	// $2 = device_profile.counter_modulus (NUMERIC) — caller passes the value
+	// it already loaded for the resolver.
+	AdvanceReadingOffset(ctx context.Context, arg AdvanceReadingOffsetParams) error
 	// D-20 soft-delete for profiles. Note: device.device_profile_id has
 	// ON DELETE RESTRICT, so the row stays referenceable even when archived
 	// (existing devices keep working; archive only hides from the create-device
@@ -23,11 +29,22 @@ type Querier interface {
 	// D-20 soft-delete. Idempotent guard `archived_at IS NULL` — re-archiving an
 	// already-archived site returns no row (caller treats as no-op).
 	ArchiveSite(ctx context.Context, id pgtype.UUID) (Site, error)
+	// D-14: valid_to = swap.confirm_time (operator click) — the closing side of
+	// a swap. Idempotent guard: only closes a still-open binding.
+	CloseBinding(ctx context.Context, arg CloseBindingParams) (Binding, error)
 	// Site detail header badge "N metering points". Used by Plan 02-08 site detail
 	// page; counts only active MPs (D-20 — archived MPs hide from default views).
 	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
 	// Profile list page badge "N mappings" — quick count without fetching rows.
 	CountMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) (int64, error)
+	// Device — physical LoRaWAN endpoint (D-15 + D-25 + DEV-09). dev_eui is the
+	// LoRaWAN-canonical 16-char lowercase hex string (CS uses lowercase across
+	// v4 gRPC + MQTT topics — Plan 01-12). Schema CHECK enforces both the
+	// lowercase + hex16 invariants.
+	// Plan 02-08 device dialog. cs_device_uuid filled by Plan 02-05 wrapper after
+	// the ChirpStack DeviceService.Create gRPC ack. join_eui optional; AppKey is
+	// DELIBERATELY NOT stored here (DEV-09 — secret lives in ChirpStack only).
+	CreateDevice(ctx context.Context, arg CreateDeviceParams) (Device, error)
 	// Device Profile (D-01 layer 2 + D-04 capabilities + D-05 counter_modulus +
 	// D-09 codec sync state). Seeded by 0010 with three vendor profiles
 	// (axioma_w1, acrel_adl200, acrel_adw300); the bootstrap routine in
@@ -60,6 +77,11 @@ type Querier interface {
 	// (NULL for top-level sites). timezone is required (D-17 — every site has
 	// one; UI defaults to install timezone).
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
+	// D-15 decommission: marks the device retired. The active binding closure
+	// is a separate transaction (Plan 02-07 swap.commit calls CloseBinding)
+	// because the binding may already be closed when the operator decommissions
+	// (or vice versa); the application layer composes them.
+	DecommissionDevice(ctx context.Context, id pgtype.UUID) (Device, error)
 	// Called by FinishSetup after all four target tables are populated.
 	DeleteInstallState(ctx context.Context) error
 	// Single-row delete — used by Phase 6 admin actions; Phase 2's editor uses
@@ -69,7 +91,43 @@ type Querier interface {
 	// re-insert. Wrapped in a tx with the subsequent CreateMapping calls so
 	// the editor never observes a half-saved state.
 	DeleteMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) error
+	// Binding (DATA-02 + D-14 + D-15 + D-25). Each device-to-MP binding has a
+	// half-open [valid_from, valid_to) window (Open Q #1 resolution: tstzrange
+	// '[)' bounds — a swap at exactly t=valid_to attributes that uplink to the
+	// NEW binding).
+	//
+	// The 0014 EXCLUDE constraints (binding_no_overlap_per_mp +
+	// binding_no_overlap_per_device) make at most one active binding per MP
+	// AND per device — so OpenBinding is race-safe (concurrent commits get
+	// 23P01 and the loser retries).
+	// D-25 RESOLVER HOT-PATH: dev_eui → metering_point_id at uplink time.
+	// Verbatim from 02-RESEARCH §"sqlc query for find active binding for dev_eui
+	// at time T". Returns one denormalized row joining binding + device +
+	// device_profile so the resolver doesn't need three SELECTs in Go code.
+	//
+	// $1 = dev_eui (lowercase 16-hex), $2 = uplink time (TIMESTAMPTZ — typically
+	// gateway_rx_time, but resolver may also probe historical state by passing
+	// an older timestamp). Half-open window per Open Q #1: valid_from <= t AND
+	// (valid_to IS NULL OR valid_to > t).
+	//
+	// The btree_gist EXCLUDE on binding guarantees ≤1 row matches; LIMIT 1 is
+	// defensive against a hypothetical constraint violation rather than the
+	// normal case.
+	GetActiveBindingByDevEUI(ctx context.Context, arg GetActiveBindingByDevEUIParams) (GetActiveBindingByDevEUIRow, error)
+	// MP-side resolver path used by Plan 02-08 MP detail page when caller already
+	// has the MP id and wants the currently-bound device.
+	GetActiveBindingByMPID(ctx context.Context, meteringPointID pgtype.UUID) (Binding, error)
+	GetBinding(ctx context.Context, id pgtype.UUID) (Binding, error)
 	GetChirpStackConnection(ctx context.Context) (ChirpstackConnection, error)
+	// Plan 02-05 boot routine reads the singleton row's CS UUIDs to decide
+	// whether the bootstrap has already run. NULLs on either column mean the
+	// bootstrap must execute and back-fill via SetChirpStackTenantApp.
+	GetChirpStackTenantApp(ctx context.Context) (GetChirpStackTenantAppRow, error)
+	GetDevice(ctx context.Context, id pgtype.UUID) (Device, error)
+	// Used by Plan 02-07 swap commit to find the incoming device by EUI before
+	// opening the new binding. Caller MUST pass lower-cased EUI; the schema CHECK
+	// guards but the unique-index hit needs the lowercase form.
+	GetDeviceByDevEUI(ctx context.Context, devEui string) (Device, error)
 	GetDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceProfile, error)
 	// Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
 	// (`/profiles/axioma_w1`).
@@ -95,6 +153,10 @@ type Querier interface {
 	// Profile list page + device-create dialog dropdown. Sorted vendor-then-name
 	// so users see Acrel/Axioma grouped.
 	ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile, error)
+	// Devices list page (Plan 02-08 device list). Sorted last_seen_at DESC NULLS
+	// LAST so freshly-uplinking devices float to the top; LIMIT/OFFSET for the
+	// paginated list. Phase 2 minimal — device counts under 100 for v1 installs.
+	ListActiveDevices(ctx context.Context, arg ListActiveDevicesParams) ([]Device, error)
 	// Global MP list (rare — usually scoped by site). archived_at filter hits the
 	// partial index.
 	ListActiveMPs(ctx context.Context) ([]MeteringPoint, error)
@@ -104,9 +166,21 @@ type Querier interface {
 	// Archive view (D-20) — sorted most-recently-archived first so admins see
 	// their last action at the top.
 	ListArchivedSites(ctx context.Context) ([]Site, error)
+	// Plan 02-08 device detail "where has this device been" tab. Symmetric to
+	// ListBindingHistoryByMP but indexed by device_id.
+	ListBindingHistoryByDevice(ctx context.Context, deviceID pgtype.UUID) ([]ListBindingHistoryByDeviceRow, error)
+	// Plan 02-08 MP detail "binding history" tab. Phase 5 reports also walk this
+	// by MP_id to attribute historical readings to the right device. Sorted
+	// newest-first to match the typical "what changed recently" question.
+	ListBindingHistoryByMP(ctx context.Context, meteringPointID pgtype.UUID) ([]ListBindingHistoryByMPRow, error)
 	// Site detail page sub-section: direct children only (one level), so the
 	// breadcrumb expands lazily rather than fetching the whole subtree.
 	ListChildSites(ctx context.Context, parentID pgtype.UUID) ([]Site, error)
+	// Site detail page section: devices currently bound to MPs on this site.
+	// The JOIN through binding (active only) → metering_point handles the
+	// "device → site" association which is otherwise indirect (devices have no
+	// direct site_id; that's by design — D-15 + DATA-01).
+	ListDevicesBySite(ctx context.Context, siteID pgtype.UUID) ([]Device, error)
 	// Site detail MP-list section. Active-only by default; site_idx covers the
 	// filter, archived_at NULL is the common case.
 	ListMPsBySite(ctx context.Context, siteID pgtype.UUID) ([]MeteringPoint, error)
@@ -125,12 +199,51 @@ type Querier interface {
 	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
 	// next boot's ListUnsyncedProfiles query no longer returns this row.
 	MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error
+	// Plan 02-07 swap commit: opens a new active binding (valid_to = NULL).
+	// $4 = reading_offset; for a brand-new MP with no prior binding this is 0,
+	// for a swap the caller computes:
+	//     reading_offset = previous_binding.reading_offset + previous.last_raw_value
+	// so the new binding's "rebase to zero" math (D-05) keeps cumulative_value
+	// monotonic across the swap.
+	//
+	// The btree_gist EXCLUDE constraints (binding_no_overlap_per_mp +
+	// binding_no_overlap_per_device) make this race-safe — concurrent commits
+	// on the same MP or same device get 23P01 (exclusion_violation).
+	OpenBinding(ctx context.Context, arg OpenBindingParams) (Binding, error)
 	RestoreMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
 	// D-20 restore from archive view. Symmetric guard.
 	RestoreSite(ctx context.Context, id pgtype.UUID) (Site, error)
+	// Devices list page search (Phase 2 minimal: name OR dev_eui). The dev_eui
+	// ILIKE branch lower()s the input so the user can paste an EUI in any case
+	// and still hit the schema's lowercase-only column. T-02-06-03: this is
+	// unindexed by design for Phase 2's sub-100-device installs; Phase 3 DEV-01
+	// will add proper FTS or trigram index when device counts cross ~1K.
+	SearchDevices(ctx context.Context, arg SearchDevicesParams) ([]Device, error)
+	// Plan 02-05 first-boot bootstrap (EnsureTenantAndApplication, D-28) —
+	// persists the ChirpStack-side UUIDs after the tenant + application are
+	// created or reused. Subsequent boots read GetChirpStackTenantApp and skip
+	// the gRPC calls entirely; idempotent restart is a no-op.
+	SetChirpStackTenantApp(ctx context.Context, arg SetChirpStackTenantAppParams) error
+	// Called by Plan 02-05 atomic-create-rollback path after ChirpStack confirms
+	// the device — fills the cs_device_uuid column so subsequent gRPC calls can
+	// address by UUID rather than dev_eui.
+	SetDeviceCSUUID(ctx context.Context, arg SetDeviceCSUUIDParams) error
 	// Plan 02-08 seed routine — writes the //go:embed-ed codec body into the row
 	// and clears codec_js_synced_at so the next pass re-pushes to ChirpStack.
 	SetProfileCodecJS(ctx context.Context, arg SetProfileCodecJSParams) error
+	// Called by Plan 02-09 ingest after every successful uplink persist.
+	// Stored on binding (NOT device or measurement) so the rollover detector
+	// can SELECT one row to fetch the per-binding previous raw counter without
+	// a JOIN to a 1B-row hypertable (DATA-05 design rationale).
+	UpdateBindingLastRaw(ctx context.Context, arg UpdateBindingLastRawParams) error
+	// Plan 02-08 device edit dialog. dev_eui + device_profile_id are
+	// intentionally NOT updatable here — changing either is a "swap" workflow
+	// (close the binding, decommission/recreate device) per D-15.
+	UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Device, error)
+	// Called by ingest pipeline (Plan 02-09) on every successful uplink. The
+	// per-device write rate is bounded (one row per uplink ≤ once per minute
+	// for the highest-frequency Phase 2 vendor); no need to batch.
+	UpdateDeviceLastSeen(ctx context.Context, arg UpdateDeviceLastSeenParams) error
 	// Plan 02-08 profile editor save path. capabilities + counter_modulus + codec
 	// are all editable; mappings are stored in device_profile_mapping (separate
 	// queries — see device_profile_mappings.sql). cs_profile_id is intentionally

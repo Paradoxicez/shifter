@@ -19,3 +19,20 @@ ON CONFLICT (id) DO UPDATE SET
     region_name        = EXCLUDED.region_name,
     region_common_name = EXCLUDED.region_common_name
 RETURNING *;
+
+-- name: SetChirpStackTenantApp :exec
+-- Plan 02-05 first-boot bootstrap (EnsureTenantAndApplication, D-28) —
+-- persists the ChirpStack-side UUIDs after the tenant + application are
+-- created or reused. Subsequent boots read GetChirpStackTenantApp and skip
+-- the gRPC calls entirely; idempotent restart is a no-op.
+UPDATE chirpstack_connection
+SET cs_tenant_id = $1, cs_application_id = $2
+WHERE id = 1;
+
+-- name: GetChirpStackTenantApp :one
+-- Plan 02-05 boot routine reads the singleton row's CS UUIDs to decide
+-- whether the bootstrap has already run. NULLs on either column mean the
+-- bootstrap must execute and back-fill via SetChirpStackTenantApp.
+SELECT cs_tenant_id, cs_application_id
+FROM chirpstack_connection
+WHERE id = 1;

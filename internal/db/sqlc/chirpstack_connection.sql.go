@@ -34,6 +34,47 @@ func (q *Queries) GetChirpStackConnection(ctx context.Context) (ChirpstackConnec
 	return i, err
 }
 
+const getChirpStackTenantApp = `-- name: GetChirpStackTenantApp :one
+SELECT cs_tenant_id, cs_application_id
+FROM chirpstack_connection
+WHERE id = 1
+`
+
+type GetChirpStackTenantAppRow struct {
+	CsTenantID      *string
+	CsApplicationID *string
+}
+
+// Plan 02-05 boot routine reads the singleton row's CS UUIDs to decide
+// whether the bootstrap has already run. NULLs on either column mean the
+// bootstrap must execute and back-fill via SetChirpStackTenantApp.
+func (q *Queries) GetChirpStackTenantApp(ctx context.Context) (GetChirpStackTenantAppRow, error) {
+	row := q.db.QueryRow(ctx, getChirpStackTenantApp)
+	var i GetChirpStackTenantAppRow
+	err := row.Scan(&i.CsTenantID, &i.CsApplicationID)
+	return i, err
+}
+
+const setChirpStackTenantApp = `-- name: SetChirpStackTenantApp :exec
+UPDATE chirpstack_connection
+SET cs_tenant_id = $1, cs_application_id = $2
+WHERE id = 1
+`
+
+type SetChirpStackTenantAppParams struct {
+	CsTenantID      *string
+	CsApplicationID *string
+}
+
+// Plan 02-05 first-boot bootstrap (EnsureTenantAndApplication, D-28) —
+// persists the ChirpStack-side UUIDs after the tenant + application are
+// created or reused. Subsequent boots read GetChirpStackTenantApp and skip
+// the gRPC calls entirely; idempotent restart is a no-op.
+func (q *Queries) SetChirpStackTenantApp(ctx context.Context, arg SetChirpStackTenantAppParams) error {
+	_, err := q.db.Exec(ctx, setChirpStackTenantApp, arg.CsTenantID, arg.CsApplicationID)
+	return err
+}
+
 const upsertChirpStackConnection = `-- name: UpsertChirpStackConnection :one
 INSERT INTO chirpstack_connection (
     id, mode, grpc_url, api_token_ref,

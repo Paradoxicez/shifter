@@ -39,6 +39,12 @@ lint:
 migrate *args:
     go run ./cmd/shifter migrate {{args}}
 
+# Regenerate sqlc bindings from internal/db/queries against internal/db/migrations.
+# Generated code lives under internal/db/sqlc/ and IS committed to the repo (Phase 1
+# convention from Plan 01-03 — sqlc-generated code is part of the source tree).
+sqlc:
+    sqlc generate
+
 # Build the local shifter:0.1.0 image (used by both compose flavors).
 _compose-build-image:
     docker build -t shifter:0.1.0 \
