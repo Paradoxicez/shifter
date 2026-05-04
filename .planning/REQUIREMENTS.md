@@ -55,7 +55,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Sites & Physical Layout
 
-- [ ] **SITE-01**: Admin can create / edit / delete sites via dialogs, with site lat/lng for the map view
+- [x] **SITE-01**: Admin can create / edit / delete sites via dialogs, with site lat/lng for the map view
 - [ ] **SITE-02**: A site supports both horizontal layouts (single-floor / campus) and vertical layouts (building with multiple floors)
 - [ ] **SITE-03**: Admin can upload one or more floor-plan images per site (PNG / JPG / PDF→PNG, with size cap and format whitelist)
 - [ ] **SITE-04**: Admin can drag and drop devices onto a floor plan; positions are stored as normalized fractions (x_frac, y_frac in [0, 1])
@@ -75,8 +75,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Multi-Vendor Measurement Model
 
 - [ ] **DATA-08**: Measurements use a hybrid wide+JSONB schema — canonical first-class columns (cumulative, flow_rate, voltage, current, battery_pct, rssi, snr) plus a JSONB `extra` for vendor-specific parameters
-- [ ] **DATA-09**: Admin can map a device profile's decoded fields to canonical columns through a UI; new vendors require no backend deploy
-- [ ] **DATA-10**: System comes with at least one fully wired vendor profile (most-common water or electricity meter) and a documented path to add more
+- [x] **DATA-09**: Admin can map a device profile's decoded fields to canonical columns through a UI; new vendors require no backend deploy
+- [x] **DATA-10**: System comes with at least one fully wired vendor profile (most-common water or electricity meter) and a documented path to add more
 
 ### Live Dashboard & Realtime
 
@@ -256,7 +256,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DEV-07 | Phase 3 | Pending |
 | DEV-08 | Phase 3 | Pending |
 | DEV-09 | Phase 3 | Pending |
-| SITE-01 | Phase 2 | Pending |
+| SITE-01 | Phase 2 | Complete |
 | SITE-02 | Phase 5 | Pending |
 | SITE-03 | Phase 5 | Pending |
 | SITE-04 | Phase 5 | Pending |
@@ -270,8 +270,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DATA-06 | Phase 2 | Pending |
 | DATA-07 | Phase 2 | Pending |
 | DATA-08 | Phase 2 | Pending |
-| DATA-09 | Phase 2 | Pending |
-| DATA-10 | Phase 2 | Pending |
+| DATA-09 | Phase 2 | Complete |
+| DATA-10 | Phase 2 | Complete |
 | DATA-11 | Phase 5 | Pending |
 | DATA-12 | Phase 5 | Pending |
 | DATA-13 | Phase 5 | Pending |

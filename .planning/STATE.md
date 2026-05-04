@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-05-04T03:42:14.734Z"
+last_updated: "2026-05-04T03:52:53.049Z"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 34
-  completed_plans: 25
-  percent: 74
+  completed_plans: 26
+  percent: 76
 ---
 
 # Project State: Shifter
@@ -25,17 +25,17 @@ progress:
 ## Current Position
 
 Phase: 02 (domain-model-canonical-schema) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 
 | Field | Value |
 |-------|-------|
-| **Phase** | 1 — Foundation |
-| **Plan** | 24 — readme-docs (next, last plan in Phase 1) |
+| **Phase** | 2 — domain-model-canonical-schema |
+| **Plan** | 03 — sqlc generation + queries (next; Wave 1) |
 | **Status** | Plans 01–23 complete. Plan 22 shipped OPS-01 hardening at the Caddy edge: `Caddyfile` at repo root with env-driven TLS modes (D-21 acme/byo/internal via `{$CADDY_TLS_BLOCK}` interpolation point — install.sh's `case "${SHIFTER_TLS_MODE:-internal}"` block renders the Caddy `tls` directive before `docker compose up`), 5 OWASP-grade security headers + server-banner strip (Strict-Transport-Security max-age=31536000+includeSubDomains, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, X-Frame-Options DENY, Content-Security-Policy `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'`, `-Server` strip), `@sse path /sse /sse/*` SSE-aware handler with `flush_interval -1` + `read_buffer 0` + `response_header_timeout 0` (PITFALL #7 prophylaxis — Phase 1 has no /sse endpoint but the handler ships now to defuse Phase 4 retrofit risk), explicit `/health` fast-path handle (immune to future root-level header rewrites), root `reverse_proxy shifter:8080` with `header_up X-Forwarded-For {remote_host}` + `header_up X-Real-IP {remote_host}` (consumed by Plan 09 rate-limiter's `clientIP(r)` first-hop XFF helper), reserved `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam for future ZeroSSL-fallback (D-21). Both install scripts (`install/bundled/install.sh`, `install/external/install.sh`) gained the `case` block mapping SHIFTER_TLS_MODE → CADDY_TLS_BLOCK (acme="" / byo="tls /etc/caddy/cert.pem /etc/caddy/key.pem" / internal="tls internal") with explicit error-and-exit-2 on invalid value; both health polls switched from `http://localhost:8080/health` to `https://localhost/health` via `curl -fsk` (tolerating internal CA in default mode). Justfile `compose-smoke-bundled` + `compose-smoke-external` recipes export TLS env (SHIFTER_DOMAIN=localhost, SHIFTER_TLS_MODE=internal, CADDY_TLS_BLOCK="tls internal") then poll Caddy over HTTPS — smoke now validates the FULL edge → backend chain, not just shifter:8080 directly. **Deviations:** (1) X-Forwarded-For + X-Real-IP propagation declared explicitly in root reverse_proxy (Rule 2 — plan must_haves implied but plan-verbatim Caddyfile elided; making the Plan 09 trust-boundary contract visible at the Caddy edge prevents accidental drop in future Caddy upgrades). (2) `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam added in global block (Rule 2 — plan must_haves listed it explicitly but verbatim body elided; future ZeroSSL fallback is now an env var change, not a Caddyfile structural edit). **Resume context:** This plan was originally executed 2026-04-28T07:01:04Z; first-pass executor finished all four file edits but disk-full before commit/SUMMARY. Disk freed (74G), this resume executor verified all edits via grep against acceptance criteria, committed Task 1 (76304d8), and wrote SUMMARY.md. **Live verification deferred:** Docker daemon was unresponsive in this session (continuing the Plan 19/20/21 pattern Phase 1 sign-off accepts as Open Todo); `docker compose -f compose/bundled.yml config -q` and `docker compose -f compose/external.yml --env-file install/external/.env.example config -q` BOTH parse cleanly. D-20 + D-21 + D-22 enforced; PITFALL #7 prevented at Phase 1 boundary. |
 | **Progress (plans)** | `[██████████] 23/24 (96%)` |
 | **Progress (phases)** | `[░░░░░░░░░░] 0/7 phases` |
 
-**Next action:** `/gsd-execute-plan 01 24` (or `/gsd-execute-phase 01` to continue the chain)
+**Next action:** `/gsd-execute-plan 02 03` (or `/gsd-execute-phase 02` to continue the chain)
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Plan: 2 of 10
 | Phase 01-foundation P22 | 6min | 1 tasks | 4 files |
 | Phase 01-foundation P24-readme-docs | 2min46s | 3 tasks | 5 files |
 | Phase 02-domain-model-canonical-schema P01 | 6min | 3 tasks | 34 files |
+| Phase 02 P02 | 5min | 3 tasks | 12 files |
 
 ### Per-plan execution log
 
@@ -261,6 +262,15 @@ Plan: 2 of 10
 - **~~Plan 19 — Bundle size review.~~ Resolved 2026-04-28: Plan 19 shipped with route-level code splitting already in place (Plan 16's React.lazy for InstallWizard). Final bundle: index-BC86Dl5m.js 484KB (gzip 153KB) + lazy-loaded login-gLpX3j-r.js 1.97KB + settings-DrVcycHs.js 19.76KB + index-CZzXdOVH.js 34KB. Embedded binary size 33.6M including all assets + woff2 fonts. Acceptable for a single-tenant install image; revisit if customer-onboarding feedback flags first-load latency.
 - **CI plan — Testcontainer port-mapping race.** Default-parallel `go test ./internal/... -short` occasionally fails one test case with `postgres dsn: port "5432/tcp" not found` when many TimescaleDB containers spin up simultaneously. Re-running the affected test always passes; per-package runs are stable. CI plan should use `-p 1` or per-package serialization for full-suite verification.
 - **Bootstrap docs — Node version pre-flight check.** Local Node `<22.12` (e.g. 22.11) silently breaks vitest's forks pool with `ERR_REQUIRE_ESM` from `html-encoding-sniffer@6.0.0` requiring `@exodus/bytes`'s ESM `encoding-lite.js` — Node 22.12+ added the `node:diagnostics_channel` `TracingChannel.traceSync` interop machinery jsdom 29 transitively depends on. Reproduced during Plan 11 resume. The .nvmrc=22.12 floor is correct; the operator's shell needs `nvm use` (or fnm/asdf equivalent) before `pnpm test:run`. Plan 24 (readme-docs) or whichever plan lands developer onboarding instructions should document an explicit `node --version` pre-flight check or wire a Justfile recipe (`just bootstrap-check`) that fails fast on a stale local Node.
+
+### Phase 02 Execution Decisions
+
+- **Plan 02-02 — `chirpstack_connection.cs_tenant_id` and `cs_application_id` are TEXT, not UUID (D-28).** ChirpStack v4's gRPC API returns IDs as strings; storing them as UUID would force parse-then-restringify on every boot just to feed gRPC requests. Format is validated as 36-char strings at the application layer in plan 02-05's bootstrap. Deliberate departure from the otherwise-uniform UUID PK pattern in Phase 2 — future plans that introduce ChirpStack-mirrored ID columns (e.g. device.cs_device_id once Plan 02-04 lands) MUST follow this convention.
+- **Plan 02-02 — Capability vocabulary uses TEXT[] + CHECK with `<@` subset, not Postgres ENUM.** Postgres ENUM `ALTER TYPE ADD VALUE` has historical edge cases (non-transactional in older versions, ordering quirks) and arrays of enums compose awkwardly. TEXT[] + CHECK gives identical DB-layer enforcement (T-02-02-01 mitigation) plus a one-line `ALTER TABLE ... DROP CONSTRAINT / ADD CONSTRAINT` if D-04 ever expands. Future plans extending the vocabulary MUST follow this pattern (no ENUM resurrections).
+- **Plan 02-02 — Round-trip migration test added (TestRunMigrations_RoundTrip).** Forward → full down → forward harness in `internal/db/roundtrip_test.go` catches non-idempotent down migrations the moment a future plan lands one. Costs ~3s per run; future Phase 2 plans (02-03 device, 02-03 binding, 02-04 measurement, 02-08 audit_log) inherit it for free. Plans MUST keep their down migrations symmetric to up; this test will fail loudly otherwise.
+- **Plan 02-02 — Per-task migration-version bumps in `migrations_test.go`.** When a Phase 2 plan adds N migrations, update `require.Equal(t, X, version)` (and the matching idempotent test) inside the same task that lands the migration. The comment on the assertion should cite the plan + task number that made the bump. Single-bump-at-end-of-plan would have left two intermediate task commits with failing tests, violating the per-task green-commit policy.
+- **Plan 02-02 — `device_profile.region TEXT NULL` (NULL = inherit install region).** 99% of installs run a single ChirpStack region (Open Q#2 resolution). Per-profile override left NULL by default; a v2 multi-region install can populate it without a schema change. Plan 02-08's profile-editor UI MUST treat NULL as "inherit" rather than rendering an empty dropdown.
+- **Plan 02-02 — Counter modulus baked at profile level, not device level (D-05).** Profile-level placement means swapping a meter to a same-profile replacement reuses the modulus automatically; only a profile change requires re-deriving the rollover detection threshold. Plan 02-07's swap math + rollover detection MUST read counter_modulus from the bound profile, never from a device-level override (no such column will exist).
 
 ### Open Blockers
 
