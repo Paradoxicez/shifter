@@ -205,7 +205,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 24/24 | Complete | 2026-04-30 |
-| 2. Domain Model & Canonical Schema | 2/10 | In Progress | - |
+| 2. Domain Model & Canonical Schema | 3/10 | In Progress | - |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 0/0 | Not started | - |
 | 4. Realtime & Dashboard | 0/0 | Not started | - |
 | 5. Aggregates, Reports, Map & Floor Plans | 0/0 | Not started | - |

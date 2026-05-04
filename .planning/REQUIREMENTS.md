@@ -64,8 +64,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Metering Point & Meter Swap (Domain Model)
 
-- [ ] **DATA-01**: Telemetry is keyed on a stable `metering_point_id`, never on `dev_eui` directly — this is the schema invariant
-- [ ] **DATA-02**: Each device-to-metering-point binding has a `valid_from` / `valid_to` window and a `reading_offset`
+- [x] **DATA-01**: Telemetry is keyed on a stable `metering_point_id`, never on `dev_eui` directly — this is the schema invariant
+- [x] **DATA-02**: Each device-to-metering-point binding has a `valid_from` / `valid_to` window and a `reading_offset`
 - [ ] **DATA-03**: The hypertable's authoritative `time` column is server-side ingest time (with `gateway_rx_time` and device-side time persisted as diagnostics)
 - [ ] **DATA-04**: Admin can perform a meter swap via dialog: dialog captures the outgoing reading R, closes the active assignment, opens a new assignment, and proposes a `reading_offset` such that the displayed cumulative is continuous; admin confirms before commit
 - [ ] **DATA-05**: System detects counter rollovers (raw reading decreases between consecutive uplinks), advances the offset by the counter modulus, and logs the rollover event
@@ -262,8 +262,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | SITE-04 | Phase 5 | Pending |
 | SITE-05 | Phase 5 | Pending |
 | SITE-06 | Phase 5 | Pending |
-| DATA-01 | Phase 2 | Pending |
-| DATA-02 | Phase 2 | Pending |
+| DATA-01 | Phase 2 | Complete |
+| DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 2 | Pending |
 | DATA-04 | Phase 2 | Pending |
 | DATA-05 | Phase 2 | Pending |
