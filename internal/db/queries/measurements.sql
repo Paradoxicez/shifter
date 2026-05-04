@@ -79,3 +79,10 @@ FROM measurement
 WHERE metering_point_id = $1
   AND quality <> 'ok'
   AND time >= $2;
+
+-- name: CountMeasurementsByMP :one
+-- Plan 02-13 testharness W3 sync barrier: scenarios poll this every 100ms
+-- (10s ceiling) after publishing an uplink to the MQTT broker so the next
+-- step (e.g. CommitSwap) doesn't race with the not-yet-persisted measurement
+-- row. Also useful for any caller that needs an MP's row count.
+SELECT count(*) FROM measurement WHERE metering_point_id = $1;

@@ -73,6 +73,11 @@ type Querier interface {
 	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
 	// Profile list page badge "N mappings" — quick count without fetching rows.
 	CountMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) (int64, error)
+	// Plan 02-13 testharness W3 sync barrier: scenarios poll this every 100ms
+	// (10s ceiling) after publishing an uplink to the MQTT broker so the next
+	// step (e.g. CommitSwap) doesn't race with the not-yet-persisted measurement
+	// row. Also useful for any caller that needs an MP's row count.
+	CountMeasurementsByMP(ctx context.Context, meteringPointID pgtype.UUID) (int64, error)
 	// Device — physical LoRaWAN endpoint (D-15 + D-25 + DEV-09). dev_eui is the
 	// LoRaWAN-canonical 16-char lowercase hex string (CS uses lowercase across
 	// v4 gRPC + MQTT topics — Plan 01-12). Schema CHECK enforces both the

@@ -153,6 +153,21 @@ func (q *Queries) CountFlaggedRecent(ctx context.Context, arg CountFlaggedRecent
 	return i, err
 }
 
+const countMeasurementsByMP = `-- name: CountMeasurementsByMP :one
+SELECT count(*) FROM measurement WHERE metering_point_id = $1
+`
+
+// Plan 02-13 testharness W3 sync barrier: scenarios poll this every 100ms
+// (10s ceiling) after publishing an uplink to the MQTT broker so the next
+// step (e.g. CommitSwap) doesn't race with the not-yet-persisted measurement
+// row. Also useful for any caller that needs an MP's row count.
+func (q *Queries) CountMeasurementsByMP(ctx context.Context, meteringPointID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countMeasurementsByMP, meteringPointID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getLatestMeasurement = `-- name: GetLatestMeasurement :one
 SELECT time, metering_point_id, raw_value, cumulative_value, instant_value, battery_pct, rssi, snr, temperature_c, pressure_kpa, leak_detected, tamper_detected, extra, raw_payload, decoded_object, quality, fcnt, gateway_rx_time, device_time, binding_id FROM measurement
 WHERE metering_point_id = $1
