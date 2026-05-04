@@ -81,7 +81,25 @@ Plans:
   4. Counter rollovers (raw reading decreases between consecutive uplinks) are auto-detected, advance the offset by the counter modulus, and are logged as a device-health event.
   5. Synthetic-data test harness passes for clean swap, swap with concurrent in-flight uplink, rollover, swap+rollover, and overlapping uplinks during swap; one fully-wired vendor profile (most-common water or electricity meter) produces correct canonical fields end-to-end and every state-changing action lands in the audit table.
 
-**Plans**: TBD
+**Plans**: 15 plans (10 original + 5 gap-closure)
+
+Plans:
+- [ ] 02-01-PLAN.md — Wave 0 test scaffolding + tanstack table install
+- [ ] 02-02-PLAN.md — site / metering_point / device_profile / device migrations + sqlc baseline
+- [ ] 02-03-PLAN.md — resolver dev_eui→MP cache + LISTEN/NOTIFY listener
+- [ ] 02-04-PLAN.md — measurement hypertable + raw_payload/decoded_object persistence
+- [ ] 02-05-PLAN.md — chirpstack pkg gRPC wrappers (tenant/application/profile/device) + bootstrap
+- [ ] 02-06-PLAN.md — Phase 2 sqlc query suite (sites, MPs, devices, profiles, mappings, bindings, measurements, audit)
+- [ ] 02-07-PLAN.md — swap math + atomic CommitSwap + audit-in-tx + Invalidator interface
+- [ ] 02-08-PLAN.md — profile editor (programmatic API) + first-boot CS seed sync
+- [ ] 02-09-PLAN.md — ingest pipeline (decode + normalize + persist + handler) + SetUplinkHandler hook
+- [ ] 02-10-PLAN.md — site/MP/device CRUD HTTP handlers + DevEUI parser + CHIRP-04 atomic Add Device
+- [ ] 02-11-PLAN.md — gap closure: swap + profile HTTP route surface (Plan 02-11)
+- [ ] 02-12-PLAN.md — gap closure: cmd/serve full Phase 2 boot wiring (formerly missing as Plan 02-15)
+- [ ] 02-13-PLAN.md — gap closure: DATA-06 synthetic test harness + `shifter test-harness` CLI
+- [ ] 02-14-PLAN.md — gap closure: frontend dialogs + list pages + App.tsx routing
+- [ ] 02-15-PLAN.md — gap closure: REQUIREMENTS.md + VALIDATION.md status reconciliation
+
 **UI hint**: yes
 
 ### Phase 3: Provisioning (Gateways, Devices, Bulk Import)
