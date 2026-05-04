@@ -19,6 +19,33 @@ type Querier interface {
 	// $2 = device_profile.counter_modulus (NUMERIC) — caller passes the value
 	// it already loaded for the resolver.
 	AdvanceReadingOffset(ctx context.Context, arg AdvanceReadingOffsetParams) error
+	// Measurement (DATA-01 + DATA-03 + DATA-07 + DATA-08 + D-02 + D-26).
+	// TimescaleDB hypertable. The ONLY way Shifter writes telemetry is via
+	// AppendMeasurement; raw `pool.Exec INSERT INTO measurement ...` in handlers
+	// is a code-review reject (CLAUDE.md: sqlc + pgx, never raw SQL in handlers).
+	//
+	// DATA-01 invariant: keyed by metering_point_id only. NO device_id /
+	// dev_eui column on this table — the active binding at write time implies
+	// the device, captured forward-compat in binding_id (NULLABLE) so future
+	// Phase 4/5 historical-binding JOINs don't need time-range gymnastics.
+	// Plan 02-09 ingest pipeline: the single canonical write path. 20 column
+	// positional placeholders match the migration column order:
+	//   $1  time             — server-side ingest time (DATA-03 + Pitfall 4)
+	//   $2  metering_point_id (DATA-01 invariant — NEVER device_id)
+	//   $3..$5  raw_value, cumulative_value, instant_value (D-02 Layer-1)
+	//   $6..$8  battery_pct, rssi, snr (D-02 diagnostics)
+	//   $9..$10 temperature_c, pressure_kpa (D-02 environmentals)
+	//   $11..$12 leak_detected, tamper_detected (D-02 booleans)
+	//   $13 extra (JSONB; vendor-specific fields per D-08 hybrid wide+JSONB)
+	//   $14 raw_payload (BYTEA; DATA-07 — never lose raw bytes)
+	//   $15 decoded_object (JSONB; DATA-07 — never lose decoded JSON)
+	//   $16 quality (D-26 — 'ok' | 'decode_fail' | 'missing_canonical' |
+	//               'out_of_range' | 'duplicate_fcnt')
+	//   $17..$19 fcnt, gateway_rx_time, device_time (diagnostic only — server
+	//               time is authoritative)
+	//   $20 binding_id (forward-compat for Phase 4/5; NULL when no binding
+	//               covers the timestamp — quality='missing_canonical' per Q#3)
+	AppendMeasurement(ctx context.Context, arg AppendMeasurementParams) error
 	// D-20 soft-delete for profiles. Note: device.device_profile_id has
 	// ON DELETE RESTRICT, so the row stays referenceable even when archived
 	// (existing devices keep working; archive only hides from the create-device
@@ -32,6 +59,15 @@ type Querier interface {
 	// D-14: valid_to = swap.confirm_time (operator click) — the closing side of
 	// a swap. Idempotent guard: only closes a still-open binding.
 	CloseBinding(ctx context.Context, arg CloseBindingParams) (Binding, error)
+	// Phase 6 metrics tile + Phase 2 tests. Time-bounded so the tile can show
+	// "X swaps in the last 7 days" without scanning the whole table.
+	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
+	// D-26 quality-flag categorization: powers the MP detail "X uplinks flagged"
+	// badge (Plan 02-08) and Phase 4 dashboard tile. count(*) FILTER is the
+	// canonical Postgres pattern for parallel category counts in one scan; far
+	// cheaper than 5 separate aggregate queries. The partial index on
+	// `quality <> 'ok'` (0015) keeps this fast for the flagged-only branches.
+	CountFlaggedRecent(ctx context.Context, arg CountFlaggedRecentParams) (CountFlaggedRecentRow, error)
 	// Site detail header badge "N metering points". Used by Plan 02-08 site detail
 	// page; counts only active MPs (D-20 — archived MPs hide from default views).
 	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
@@ -117,6 +153,10 @@ type Querier interface {
 	// MP-side resolver path used by Plan 02-08 MP detail page when caller already
 	// has the MP id and wants the currently-bound device.
 	GetActiveBindingByMPID(ctx context.Context, meteringPointID pgtype.UUID) (Binding, error)
+	// Test-only in Phase 2 (the round-trip assertion in measurements_test.go's
+	// audit sibling). Phase 6 audit browse will use ListAuditEntriesByEntity +
+	// pagination instead.
+	GetAuditEntry(ctx context.Context, id pgtype.UUID) (AuditLog, error)
 	GetBinding(ctx context.Context, id pgtype.UUID) (Binding, error)
 	GetChirpStackConnection(ctx context.Context) (ChirpstackConnection, error)
 	// Plan 02-05 boot routine reads the singleton row's CS UUIDs to decide
@@ -133,6 +173,10 @@ type Querier interface {
 	// (`/profiles/axioma_w1`).
 	GetDeviceProfileBySlug(ctx context.Context, slug string) (DeviceProfile, error)
 	GetInstallIdentity(ctx context.Context) (InstallIdentity, error)
+	// Plan 02-08 MP detail page header card "Last reading at <time>". The
+	// (metering_point_id, time DESC) hot-path index makes this an index scan +
+	// LIMIT 1 — fast even on a 1B-row hypertable (chunk pruning by MP).
+	GetLatestMeasurement(ctx context.Context, meteringPointID pgtype.UUID) (Measurement, error)
 	GetMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
 	// MP detail page (Plan 02-08): shows "currently bound device + reading offset".
 	// LEFT JOINs return NULL for binding/device/profile columns when no active
@@ -166,6 +210,14 @@ type Querier interface {
 	// Archive view (D-20) — sorted most-recently-archived first so admins see
 	// their last action at the top.
 	ListArchivedSites(ctx context.Context) ([]Site, error)
+	// Phase 6 audit browse with entity filter ("show me everything that ever
+	// happened to MP <id>"). Phase 2 ships the query so internal tests can
+	// assert WriteEntry actually persisted what was claimed. Bounded by LIMIT/
+	// OFFSET so a UI can't accidentally page through years of audit rows.
+	ListAuditEntriesByEntity(ctx context.Context, arg ListAuditEntriesByEntityParams) ([]AuditLog, error)
+	// Phase 6 "all actions by Alice" browse. The (user_id, time DESC) index
+	// (0016) covers this directly.
+	ListAuditEntriesByUser(ctx context.Context, arg ListAuditEntriesByUserParams) ([]AuditLog, error)
 	// Plan 02-08 device detail "where has this device been" tab. Symmetric to
 	// ListBindingHistoryByMP but indexed by device_id.
 	ListBindingHistoryByDevice(ctx context.Context, deviceID pgtype.UUID) ([]ListBindingHistoryByDeviceRow, error)
@@ -189,6 +241,10 @@ type Querier interface {
 	// deterministic mapping pass order — required when a later mapping references
 	// a value materialized by an earlier one.
 	ListMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) ([]DeviceProfileMapping, error)
+	// Plan 02-08 MP detail "recent uplinks" tab + Phase 4 DETL-01 chart preload.
+	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
+	// can't accidentally page through years of telemetry.
+	ListRecentMeasurements(ctx context.Context, arg ListRecentMeasurementsParams) ([]Measurement, error)
 	// Plan 02-08 boot-time seed routine reads this list to decide which profiles
 	// need a CS push. A profile is "unsynced" if it has no cs_profile_id (never
 	// pushed) OR the codec_js was modified after the last push (codec_js_synced_at
@@ -267,6 +323,26 @@ type Querier interface {
 	UpsertChirpStackConnection(ctx context.Context, arg UpsertChirpStackConnectionParams) (ChirpstackConnection, error)
 	// Plan 15 wizard finish + Phase 5 settings page edit.
 	UpsertInstallIdentity(ctx context.Context, arg UpsertInstallIdentityParams) (InstallIdentity, error)
+	// Audit Log (D-22 + D-23 + D-24 + AUDIT-01). The audit_log table is
+	// INSERT-ONLY at the DB layer (0016 trigger raises `audit_log is INSERT-ONLY`
+	// on UPDATE / DELETE — T-02-04-02 mitigation). Every state-changing action on
+	// Site, Metering Point, Device, Device Profile, and Binding writes a row
+	// here in the SAME transaction as the domain mutation (D-23, Pitfall 7).
+	//
+	// Plan 02-08 wraps WriteAuditLog in `internal/audit/log.go` with an Entry
+	// struct + audit.WriteEntry(ctx, tx, entry) helper that takes a pgx.Tx
+	// (NOT a Pool) — call sites pass the same tx the domain mutation uses so
+	// the audit row commits atomically with the change it describes.
+	// D-22 + D-23: 8 caller-provided fields (id auto-generated by
+	// gen_random_uuid() default, time auto by now() default).
+	// The CHECK constraints enforce D-22 vocabulary at the DB layer:
+	//   action ∈ {create, update, archive, restore, swap, decommission,
+	//             profile_create, profile_update, binding_open, binding_close,
+	//             rollover_detected}
+	//   entity_type ∈ {site, metering_point, device, device_profile, binding}
+	// An action / entity_type outside these sets raises 23514 (check_violation)
+	// with the named CHECK constraint in the error — caller treats as a bug.
+	WriteAuditLog(ctx context.Context, arg WriteAuditLogParams) error
 }
 
 var _ Querier = (*Queries)(nil)
