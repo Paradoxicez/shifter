@@ -1,10 +1,15 @@
 // Package cli — `shifter serve` long-running entry point.
 //
-// Plan 18 ships the full wiring: config + DB + auto-migrate (D-13) + boot-time
-// ChirpStack v3 refusal (INST-05) + MQTT subscriber start (CHIRP-02) + chi
-// router (Plan 18 NewRouter) + graceful shutdown on SIGTERM. Plan 19 fills in
-// the SPA embed; Plan 23 fills in the login screen surface; Phase 2+ adds
-// device handlers.
+// Plan 18 ships the Phase 1 wiring: config + DB + auto-migrate (D-13) +
+// boot-time ChirpStack v3 refusal (INST-05) + MQTT subscriber start (CHIRP-02)
+// + chi router + graceful shutdown on SIGTERM.
+//
+// Plan 02-12 adds: ChirpStack gRPC Client construction, EnsureTenantAnd
+// Application bootstrap call, profile.RunSeedSync first-boot codec push,
+// *resolver.Resolver construction + listener goroutine, ingest.UplinkHandler
+// binding to MQTTSubscriber via SetUplinkHandler, and DeviceDeps + SwapDeps
+// + ProfileDeps construction so every Phase 2 route surface mounts in
+// production.
 //
 // INST-05 startup gate is extracted into probeChirpStackOrRefuse so a unit
 // test (serve_test.go) can drive the v3-rejection path against the bufconn
@@ -16,12 +21,17 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
@@ -29,9 +39,15 @@ import (
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
 	"github.com/shifter-io/shifter/internal/db"
+	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
+	"github.com/shifter-io/shifter/internal/device"
 	httpapi "github.com/shifter-io/shifter/internal/http"
+	"github.com/shifter-io/shifter/internal/ingest"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/logging"
+	"github.com/shifter-io/shifter/internal/profile"
+	"github.com/shifter-io/shifter/internal/resolver"
+	"github.com/shifter-io/shifter/internal/swap"
 )
 
 // secretsDir is the on-disk path under which file-by-REF secrets live.
@@ -115,6 +131,78 @@ var serveCmd = &cobra.Command{
 			},
 		}
 
+		// 6a. ChirpStack ConnectionStore — singleton row adapter; satisfies
+		//     BOTH chirpstack.ConnectionStore (bootstrap) and
+		//     profile.ConnectionStore (seed sync + editor).
+		csConnStore := NewConnectionStore(pool)
+
+		// 6b. ChirpStack gRPC Client — only constructed if CS is configured AND
+		//     reachable. Reused across DeviceDeps + ProfileDeps + RunSeedSync
+		//     + EnsureTenantAndApplication. Nil tolerated downstream by the
+		//     RegisterRoutes nil-guards (Plan 02-11) so degraded boot still
+		//     serves the SPA + auth + install + settings.
+		var (
+			csClient   *chirpstack.Client
+			csTenantID string
+			csAppID    string
+		)
+		if cfg.ChirpStack.GRPCURL != "" {
+			csConn, err := chirpstack.Dial(ctx, cfg.ChirpStack)
+			if err != nil {
+				log.Warn("chirpstack dial failed; CS-dependent routes will not mount", "err", err)
+			} else {
+				csClient = chirpstack.NewClient(csConn)
+				// First-boot tenant + application bootstrap (D-28). Best-effort
+				// — a CS-unreachable window does NOT block boot. RunSeedSync
+				// also gracefully skips when csTenantID is empty.
+				tID, aID, bootErr := chirpstack.EnsureTenantAndApplication(ctx, csClient, csConnStore, log)
+				if bootErr != nil {
+					log.Warn("chirpstack bootstrap failed; first add-device attempt will retry", "err", bootErr)
+				} else {
+					csTenantID = tID
+					csAppID = aID
+				}
+			}
+		}
+		_ = csTenantID // referenced by RunSeedSync indirectly via csConnStore
+
+		// 6c. Resolver — dev_eui → binding cache + LISTEN/NOTIFY listener
+		//     (D-25). Loader wraps the existing sqlc query; Run starts the
+		//     listener goroutine that drops cache entries on swap NOTIFY.
+		//     *resolver.Resolver satisfies swap.Invalidator so swap commits
+		//     invalidate defensively.
+		res := resolver.New(&sqlcResolverLoader{pool: pool})
+		go res.Run(ctx, pool, log)
+
+		// 6d. Ingest pipeline binding — production MQTT messages route through
+		//     the full decode → resolve → normalize → persist pipeline. Without
+		//     this the binary would log uplinks via the Phase 1 default handler
+		//     and silently drop every measurement (VERIFICATION.md Truth 2 root
+		//     cause).
+		if mqttSub != nil {
+			ingestDeps := ingest.Deps{
+				Pool:     pool,
+				Resolver: res,
+				Mappings: &ingest.SQLCMappingStore{Pool: pool},
+				Log:      log,
+			}
+			mqttSub.SetUplinkHandler(ingest.UplinkHandler(ingestDeps))
+		}
+
+		// 6e. profile.RunSeedSync — first-boot codec push to ChirpStack per
+		//     D-09. Best-effort; never returns error; never blocks boot. Only
+		//     runs when CS gRPC client is non-nil; RunSeedSync does its own
+		//     re-check on the tenant id (defensive).
+		if csClient != nil {
+			seedDeps := profile.Deps{
+				Pool:      pool,
+				CSClient:  csClient,
+				ConnStore: csConnStore,
+				Log:       log,
+			}
+			profile.RunSeedSync(ctx, seedDeps)
+		}
+
 		// 7. Test-Connection deps reuse Plan 17's ProductionDial (its private
 		// chirpStackConn interface has the same shape but cannot be aliased
 		// without exporting; passing the function directly is the cleanest path).
@@ -125,7 +213,55 @@ var serveCmd = &cobra.Command{
 			PingMQTT: chirpstack.PingMQTT,
 		}
 
-		// 8. Router.
+		// 8. Phase 2 handler deps — only constructed when CS gRPC client is
+		//    wired. Each pointer is nil-tolerated by Plan 02-11's RegisterRoutes
+		//    nil-guards so a degraded boot (CS unreachable) still serves the
+		//    Phase 1 surface.
+		var (
+			deviceDeps  *device.Deps
+			swapDeps    *swap.HTTPDeps
+			profileDeps *profile.HTTPDeps
+		)
+		if csClient != nil {
+			// Closure that adapts EnsureTenantAndApplication into the
+			// device.CSBootstrapper 1-method interface.
+			bootstrapper := bootstrapperFunc(func(c context.Context) (string, string, error) {
+				return chirpstack.EnsureTenantAndApplication(c, csClient, csConnStore, log)
+			})
+			pingMQTT := func(c context.Context) error {
+				if cfg.MQTT.URL == "" {
+					return errors.New("mqtt not configured")
+				}
+				return chirpstack.PingMQTT(c, cfg.MQTT.URL, cfg.MQTT.User, cfg.MQTT.Password)
+			}
+			capturedAppID := csAppID
+			deviceDeps = &device.Deps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log,
+				CS:         csClient,
+				Bootstrap:  bootstrapper,
+				PingGRPC: func(c context.Context, _ string) error {
+					return csClient.PingDevices(c, capturedAppID)
+				},
+				PingMQTT: pingMQTT,
+			}
+			swapDeps = &swap.HTTPDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log,
+				Resolver:   res,
+			}
+			profileDeps = &profile.HTTPDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log,
+				CSClient:   csClient,
+				ConnStore:  csConnStore,
+			}
+		}
+
+		// 9. Router with full Phase 2 wiring.
 		router := httpapi.NewRouter(httpapi.Deps{
 			Pool:         pool,
 			SessionMgr:   sm,
@@ -136,6 +272,9 @@ var serveCmd = &cobra.Command{
 			InstallDeps:  installDeps,
 			TestConnDeps: tcDeps,
 			SecretsDir:   secretsDir,
+			DeviceDeps:   deviceDeps,
+			SwapDeps:     swapDeps,
+			ProfileDeps:  profileDeps,
 			SPA:          httpapi.SPAHandler(),
 		})
 
@@ -231,3 +370,60 @@ type csConnWrapper struct{ c *grpc.ClientConn }
 
 func (w *csConnWrapper) Conn() *grpc.ClientConn { return w.c }
 func (w *csConnWrapper) Close() error           { return w.c.Close() }
+
+// sqlcResolverLoader adapts the resolver.Loader interface to the production
+// sqlc query GetActiveBindingByDevEUI. Plan 02-04 + 02-07 ship the query;
+// this loader wraps it, normalizes pgx.ErrNoRows to resolver.ErrNoActive
+// Binding, and builds a resolver.Binding with all fields populated.
+//
+// W5 reuse: the loader calls ingest.BigFloatFromNumeric +
+// BigFloatFromNumericNullable directly — no inline duplication of the
+// pgtype.Numeric → *big.Float conversion. Single source of truth lives in
+// internal/ingest/numeric.go.
+type sqlcResolverLoader struct{ pool *pgxpool.Pool }
+
+func (l *sqlcResolverLoader) LoadActive(ctx context.Context, devEUI string, at time.Time) (resolver.Binding, error) {
+	q := sqlc.New(l.pool)
+	row, err := q.GetActiveBindingByDevEUI(ctx, sqlc.GetActiveBindingByDevEUIParams{
+		DevEui:    devEUI,
+		ValidFrom: pgtype.Timestamptz{Time: at, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return resolver.Binding{}, resolver.ErrNoActiveBinding
+	}
+	if err != nil {
+		return resolver.Binding{}, fmt.Errorf("resolver loader: %w", err)
+	}
+	// reading_offset is NOT NULL in schema; fall through to 0 if some
+	// edge case sneaks an invalid value.
+	offset := ingest.BigFloatFromNumeric(row.ReadingOffset)
+	if offset == nil {
+		offset = big.NewFloat(0)
+	}
+	b := resolver.Binding{
+		BindingID:       uuid.UUID(row.ID.Bytes),
+		MeteringPointID: uuid.UUID(row.MeteringPointID.Bytes),
+		DeviceID:        uuid.UUID(row.DeviceID.Bytes),
+		DeviceProfileID: uuid.UUID(row.DeviceProfileID.Bytes),
+		ReadingOffset:   offset,
+		LastRawValue:    ingest.BigFloatFromNumericNullable(row.LastRawValue),
+		CounterModulus:  row.CounterModulus,
+	}
+	if row.ValidFrom.Valid {
+		b.ValidFrom = row.ValidFrom.Time
+	}
+	if row.ValidTo.Valid {
+		b.ValidTo = row.ValidTo.Time
+	}
+	return b, nil
+}
+
+// bootstrapperFunc adapts a function to the device.CSBootstrapper interface.
+// Used in serve.go's Phase 2 wiring to thread chirpstack.EnsureTenantAnd
+// Application (free-function with extra args) into the 1-method interface
+// device.Deps.Bootstrap expects.
+type bootstrapperFunc func(ctx context.Context) (tenantID, appID string, err error)
+
+func (f bootstrapperFunc) EnsureTenantAndApplication(ctx context.Context) (string, string, error) {
+	return f(ctx)
+}
