@@ -68,12 +68,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 15 to 16 in plan 02-04 Task 2 (added 0016_audit_log).
+	// Bumped from 16 to 17 in plan 02-07 Task 1 (added 0017_binding_changed_trigger).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 16, version, "expected schema_migrations.version = 16 (latest after plan 02-04 Task 2)")
+	require.Equal(t, 17, version, "expected schema_migrations.version = 17 (latest after plan 02-07 Task 1)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
@@ -131,7 +131,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 16, version)
+	require.Equal(t, 17, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
