@@ -27,7 +27,7 @@ func TestRunMigrations_Clean(t *testing.T) {
 	for _, table := range []string{
 		"user", "sessions", "install_state", "install_identity", "chirpstack_connection",
 		"site", "metering_point", "device_profile",
-		"device", "device_profile_mapping",
+		"device", "device_profile_mapping", "binding",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -67,13 +67,21 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 12 to 13 in plan 02-03 Task 2 (added 0013_device_profile_mapping).
+	// Bumped from 13 to 14 in plan 02-03 Task 3 (added 0014_binding).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 13, version, "expected schema_migrations.version = 13 (latest after plan 02-03 Task 2)")
+	require.Equal(t, 14, version, "expected schema_migrations.version = 14 (latest after plan 02-03 Task 3)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
+
+	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
+	var btreeGistExists bool
+	err = pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'btree_gist')`,
+	).Scan(&btreeGistExists)
+	require.NoError(t, err)
+	require.True(t, btreeGistExists, "0014 must CREATE EXTENSION btree_gist")
 }
 
 // TestRunMigrations_Idempotent — Running RunMigrations twice in a row is a
@@ -93,7 +101,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 13, version)
+	require.Equal(t, 14, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -117,4 +125,169 @@ func TestRunMigrations_DirtyState(t *testing.T) {
 	require.Error(t, err, "RunMigrations must refuse to advance a dirty schema")
 	require.Contains(t, err.Error(), "dirty",
 		"error must mention 'dirty' so operators recognize it: got %q", err.Error())
+}
+
+// TestBinding_NoOverlapPerMP — 0014's btree_gist EXCLUDE constraint
+// `binding_no_overlap_per_mp` must reject a second active binding on the same
+// metering_point. Two opens windows on the same MP would corrupt the resolver
+// dev_eui→MP query which assumes ≤1 active row per MP.
+//
+// Pitfall 10 + T-02-03-02 regression test. If the EXCLUDE were ever omitted
+// or the bound semantics changed (e.g. `[]` instead of `[)`), this test catches
+// it before the swap commit logic in Plan 02-07 silently produces overlapping
+// windows.
+func TestBinding_NoOverlapPerMP(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Seed minimum graph: site → metering_point + device_profile → 2 devices.
+	var siteID, mpID, profileID, devAID, devBID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO site (name, timezone) VALUES ('test-site', 'UTC') RETURNING id`,
+	).Scan(&siteID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, 'mp-1', 'water') RETURNING id`,
+		siteID,
+	).Scan(&mpID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = 'axioma_w1'`,
+	).Scan(&profileID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('aaaaaaaaaaaaaaa1', 'dev-A', $1) RETURNING id`,
+		profileID,
+	).Scan(&devAID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('aaaaaaaaaaaaaaa2', 'dev-B', $1) RETURNING id`,
+		profileID,
+	).Scan(&devBID))
+
+	// First binding: open window starting at t0 (valid_to NULL = active).
+	_, err := pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from)
+		 VALUES ($1, $2, '2026-01-01T00:00:00Z')`,
+		mpID, devAID,
+	)
+	require.NoError(t, err, "first active binding should insert successfully")
+
+	// Second binding: SAME mp, different device, overlapping window.
+	// The per-MP EXCLUDE must reject this — at most one active binding per MP.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from)
+		 VALUES ($1, $2, '2026-02-01T00:00:00Z')`,
+		mpID, devBID,
+	)
+	require.Error(t, err, "second overlapping binding on same MP must be rejected")
+	require.Contains(t, err.Error(), "binding_no_overlap_per_mp",
+		"error must name the EXCLUDE constraint: got %q", err.Error())
+}
+
+// TestBinding_NoOverlapPerDevice — 0014's btree_gist EXCLUDE constraint
+// `binding_no_overlap_per_device` must reject a second active binding on the
+// same device. Two simultaneous bindings on one device would make the
+// resolver dev_eui→MP lookup ambiguous (return >1 row); silent telemetry
+// corruption that's hard to detect after the fact.
+func TestBinding_NoOverlapPerDevice(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	var siteID, mpAID, mpBID, profileID, devID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO site (name, timezone) VALUES ('test-site', 'UTC') RETURNING id`,
+	).Scan(&siteID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, 'mp-A', 'water') RETURNING id`,
+		siteID,
+	).Scan(&mpAID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, 'mp-B', 'water') RETURNING id`,
+		siteID,
+	).Scan(&mpBID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = 'axioma_w1'`,
+	).Scan(&profileID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('bbbbbbbbbbbbbbb1', 'dev-1', $1) RETURNING id`,
+		profileID,
+	).Scan(&devID))
+
+	// First binding: device on mpA, open-ended.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from)
+		 VALUES ($1, $2, '2026-01-01T00:00:00Z')`,
+		mpAID, devID,
+	)
+	require.NoError(t, err, "first active binding should insert successfully")
+
+	// Second binding: SAME device, different MP, overlapping window.
+	// Per-device EXCLUDE must reject — a device can only be at one MP at a time.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from)
+		 VALUES ($1, $2, '2026-02-01T00:00:00Z')`,
+		mpBID, devID,
+	)
+	require.Error(t, err, "second overlapping binding on same device must be rejected")
+	require.Contains(t, err.Error(), "binding_no_overlap_per_device",
+		"error must name the EXCLUDE constraint: got %q", err.Error())
+}
+
+// TestBinding_HalfOpenInterval — Open Q #1 resolution: a binding with
+// valid_to = T must NOT collide with a binding starting at exactly T (because
+// the range bound is `[)`, not `[]`). This is the "swap at the exact second"
+// determinism test.
+func TestBinding_HalfOpenInterval(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	var siteID, mpID, profileID, devAID, devBID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO site (name, timezone) VALUES ('test-site', 'UTC') RETURNING id`,
+	).Scan(&siteID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, 'mp-1', 'water') RETURNING id`,
+		siteID,
+	).Scan(&mpID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = 'axioma_w1'`,
+	).Scan(&profileID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('cccccccccccccc01', 'dev-A', $1) RETURNING id`,
+		profileID,
+	).Scan(&devAID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('cccccccccccccc02', 'dev-B', $1) RETURNING id`,
+		profileID,
+	).Scan(&devBID))
+
+	swap := "2026-03-15T12:00:00Z"
+
+	// Closed window for dev-A: [t0, swap). Then open window for dev-B starting at swap.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from, valid_to)
+		 VALUES ($1, $2, '2026-01-01T00:00:00Z', $3)`,
+		mpID, devAID, swap,
+	)
+	require.NoError(t, err, "closed-window first binding should insert")
+
+	// Adjacent (not overlapping) — half-open `[)` makes valid_to=swap exclusive.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO binding (metering_point_id, device_id, valid_from)
+		 VALUES ($1, $2, $3)`,
+		mpID, devBID, swap,
+	)
+	require.NoError(t, err, "adjacent binding starting at exact valid_to must be allowed (half-open)")
 }
