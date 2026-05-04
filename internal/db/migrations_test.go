@@ -45,13 +45,33 @@ func TestRunMigrations_Clean(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, extExists, "timescaledb extension should be created by 0001_init")
 
+	// 0010 seeds three vendor profiles (Axioma W1, Acrel ADL200, Acrel ADW300) — D-07 + DATA-10.
+	var profileCount int
+	err = pool.QueryRow(ctx,
+		`SELECT count(*) FROM device_profile WHERE slug IN ('axioma_w1', 'acrel_adl200', 'acrel_adw300')`,
+	).Scan(&profileCount)
+	require.NoError(t, err)
+	require.Equal(t, 3, profileCount, "0010 must seed all three D-07 vendor profiles")
+
+	// 0011 adds cs_tenant_id + cs_application_id columns to chirpstack_connection (D-28).
+	for _, col := range []string{"cs_tenant_id", "cs_application_id"} {
+		var colExists bool
+		err = pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM information_schema.columns
+			               WHERE table_name = 'chirpstack_connection' AND column_name = $1)`,
+			col,
+		).Scan(&colExists)
+		require.NoError(t, err, "querying for column %s", col)
+		require.True(t, colExists, "0011 must add column chirpstack_connection.%s", col)
+	}
+
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 8 to 9 in plan 02-02 Task 2 (added 0009_device_profile).
+	// Bumped from 9 to 11 in plan 02-02 Task 3 (added 0010_seed_profiles, 0011_chirpstack_connection_cs_ids).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 9, version, "expected schema_migrations.version = 9 (latest after plan 02-02 Task 2)")
+	require.Equal(t, 11, version, "expected schema_migrations.version = 11 (latest after plan 02-02 Task 3)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 }
 
@@ -72,7 +92,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 9, version)
+	require.Equal(t, 11, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
