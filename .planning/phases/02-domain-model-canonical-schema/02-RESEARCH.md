@@ -942,32 +942,37 @@ func PublishSyntheticUplink(ctx context.Context, brokerURL, appID, devEUI string
 | A7 | Mosquitto's testcontainers-go module exists or can be substituted by `eclipse-mosquitto:2` raw image with `testcontainers.GenericContainer`. | Synthetic Test Harness (D-27) | LOW — a generic-container fallback is straightforward; planner verifies module availability or uses raw image. |
 | A8 | `extra` JSONB at ~1KB per row × 100K rows/day × 365 days = ~37GB/year/MP at the high end. With 100 MPs at 1-min interval (worst case for v1), raw `measurement` table grows ~3.7TB/year before compression. Phase 5 will add TimescaleDB compression policy reducing this 5-10×. | Schema (D-02, D-08) | MEDIUM — if real customer telemetry is bigger than estimated, Phase 5 compression timeline becomes urgent. Phase 2 should NOT optimize for this — premature. Document in Phase 5 RESEARCH. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should the binding `valid_to` boundary be inclusive or exclusive (`[valid_from, valid_to)` vs `(valid_from, valid_to]`)?**
    - What we know: PostgreSQL's `tstzrange(..., ..., '[)')` is the conventional half-open interval and matches CONTEXT D-14's `gateway_rx_time < valid_to` rule.
    - What's unclear: edge case where `gateway_rx_time == valid_to` exactly — under `[)` semantics, that uplink is attributed to the NEW binding. CONTEXT D-14 says `<` (strict less-than) → old binding gets it. Slight contradiction.
    - Recommendation: planner picks `[)` (Postgres convention) and updates D-14's text in CONTEXT to `gateway_rx_time < valid_to` → old, `gateway_rx_time >= valid_to` → new. Document in plan.
+   - **RESOLVED:** Half-open `[valid_from, valid_to)` per Plan 02-03 SUMMARY. The btree_gist EXCLUDE constraint in `internal/db/migrations/0014_binding.up.sql` uses tstzrange `[)` semantics; CONTEXT D-14 text was reconciled to read "gateway_rx_time < valid_to → old binding, gateway_rx_time >= valid_to → new binding." Citation: `internal/db/migrations/0014_binding.up.sql` (EXCLUDE definition) + `02-03-SUMMARY.md` + regression test `TestBinding_HalfOpenInterval` in `internal/db/binding_test.go`.
 
 2. **Should `device_profile.region` be a column on the device_profile table (per-profile region override) or always inherit from `chirpstack_connection.region_name` (install-wide)?**
    - What we know: Phase 1 already locks an install-wide region picker (INST-04, AS923-2 default for Thailand).
    - What's unclear: A multi-vendor deployment might have profiles built for different sub-plans. CONTEXT doesn't explicitly say.
    - Recommendation: planner adds `device_profile.region TEXT NULL` (NULL = inherit from install). Profile editor surfaces an "Override region" advanced toggle. Avoids a forward-compat migration in Phase 3.
+   - **RESOLVED:** Per-profile column `device_profile.region TEXT NULL` (NULL = inherit from install-wide chirpstack_connection.region_name) per Plan 02-02 schema migration `0009_device_profile.up.sql`. Profile editor surfaces the override per UI-SPEC §Profile editor identity row (Plan 02-08 + Plan 02-14 mapping editor). Citation: `internal/db/migrations/0009_device_profile.up.sql` + `02-02-SUMMARY.md` + `web/src/routes/profiles/mapping-editor.tsx` (Region field in identity row).
 
 3. **What happens to in-flight uplinks during a swap if `gateway_rx_time` is missing from the CS event?**
    - What we know: ChirpStack v4 always populates `rxInfo[].time` for received packets.
    - What's unclear: simulated/replayed uplinks (testharness) must populate this. Operator-injected events (none in Phase 2) might not.
    - Recommendation: ingest pipeline falls back to server-ingest-time (`time = time.Now()`) if `rxInfo[].time` is missing AND sets `quality = 'missing_canonical'` with a `notes` JSONB field explaining "missing gateway_rx_time, used server time." Documented behavior.
+   - **RESOLVED:** Ingest pipeline falls back to server-ingest-time (`time.Now().UTC()`) when `rxInfo[].time` is missing, AND records the substitution. Concurrent swap commits use Serializable txn with first-commit-wins semantics: the second commit hits pgconn 23P01 (exclusion_violation from the binding btree_gist EXCLUDE) and is mapped to HTTP 409 "concurrent_swap" by Plan 02-11's swap handler. Citation: Plan 02-09 SUMMARY `internal/ingest/decode.go` `TestDecodeChirpStackEvent_EarliestGatewayRxTime` + Plan 02-07 SUMMARY `internal/swap/commit.go` + `TestCommitSwap_ConcurrentOneWins` + Plan 02-11 SUMMARY `internal/swap/handlers.go` 23P01 → 409 mapping + `TestSwapHandler_Concurrent_409`.
 
 4. **Should the `audit_log.before`/`after` JSONB diffs preserve null-valued keys explicitly (`{archived_at: null}`) or use missing-key semantics (`{}`)?**
    - What we know: CONTEXT D-24 doesn't specify; planner discretion.
    - What's unclear: Phase 6 audit browse UI will need to render diffs; missing-key vs explicit-null affects rendering.
    - Recommendation: explicit nulls. JSON `{archived_at: null}` distinguishes "this field changed FROM something TO null" from "this field wasn't part of the diff." Document in plan.
+   - **RESOLVED:** Explicit null preserved (`{field: null}` in `before`/`after` JSONB) per Plan 02-07. `internal/audit/diff.go ChangedFields(before, after)` produces field-level diffs with EXPLICIT-NULL semantics for added/removed keys (Open Q #4) — distinguishing "field absent from diff" (key not in JSONB) from "field changed FROM something TO null" (key present with null value). Phase 6 audit browse UI will render the two cases distinctly. Rollover audit rows use `action: "rollover.detected"`, `before` = previous reading snapshot, `after` = current reading + advanced offset. Citation: `internal/audit/diff.go` + `02-07-SUMMARY.md` line 84 (key-decisions: "ChangedFields produces field-level diffs with EXPLICIT-NULL semantics") + Plan 02-09 `internal/ingest/persist.go` rollover branch + tests `TestChangedFields_FieldChanged` + `TestChangedFields_FieldRemoved` + `TestChangedFields_FieldAdded`.
 
 5. **Should `0010_seed_profiles` be a SQL migration (CONTEXT specifies "yes") OR a Go-code seed routine called after migration?**
    - What we know: CONTEXT D-09 says SQL migration `0010_seed_profiles.up.sql` inserts the rows; a separate Go boot routine pushes codec_js to ChirpStack.
    - What's unclear: codec_js can be ~5-30KB of JavaScript. SQL string literal escaping is annoying but works. Alternative: SQL migration inserts placeholder rows; Go routine populates `codec_js` from a `.js` file embedded via `//go:embed`.
    - Recommendation: planner picks `//go:embed` for codec_js source files (`internal/profile/codecs/axioma_w1.js`, `acrel_family.js`) and the migration just inserts the metadata rows with empty `codec_js`. Boot routine reads the embedded JS, fills in the row's `codec_js`, then syncs to ChirpStack. Cleaner than SQL string literals.
+   - **RESOLVED:** //go:embed from `internal/profile/codecs/*.js` per Plan 02-08. Migration `0010_seed_profiles.up.sql` inserts profile metadata rows (slug + name + vendor + family + capabilities + counter_modulus + mac_version) with codec_js LEFT EMPTY; `internal/profile/codecs/embed.go` //go:embed-s the `axioma_w1.js` + `acrel_family.js` source files; `internal/profile/seed.go::RunSeedSync` at boot reads the embedded JS via `codecs.CodecBySlug(slug)`, pushes it to ChirpStack via gRPC, and persists the body + `cs_profile_id` + `codec_js_synced_at` in a Serializable txn. Citation: `internal/profile/codecs/embed.go` + `internal/profile/seed.go::RunSeedSync` + `02-08-SUMMARY.md` lines 42, 102 + `internal/db/migrations/0010_seed_profiles.up.sql` (metadata-only inserts).
 
 ## Environment Availability
 
