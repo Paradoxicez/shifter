@@ -23,6 +23,16 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] Modern minimal aesthetic in blue family on shadcn/ui — custom navy OKLCH theme, 21+ components, self-hosted Inter+JetBrains Mono
 - [x] UI in English only
 
+**Domain model & canonical schema (Phase 2, 2026-05-05 — runtime UAT pending in 02-HUMAN-UAT.md)**
+- [x] Single-action Add Device dialog auto-creates ChirpStack tenant/application/profile/device behind the scenes (CHIRP-04 atomic transaction with full rollback)
+- [x] Telemetry lands in TimescaleDB hypertable keyed by `metering_point_id` (never `dev_eui`) with server-side ingest time, raw payload, decoded object, and canonical normalized fields (DATA-01..03, DATA-08)
+- [x] Meter-swap dialog reads outgoing reading R, closes active assignment, opens new, proposes `reading_offset` for cumulative continuity (DATA-04)
+- [x] Counter rollovers auto-detected, advance offset by counter modulus, logged as device-health audit event (DATA-05)
+- [x] Site CRUD with lat/lng (SITE-01); MP CRUD; Device CRUD; Profile editor (D-08 paste-JSON + click-leaf) — all dialog-driven
+- [x] Synthetic-data test harness covers clean swap, swap+inflight uplink, rollover, swap+rollover, overlapping uplinks; one wired vendor profile (Axioma W1) produces correct canonical fields E2E (DATA-06, DATA-10)
+- [x] Every state-changing action lands in audit_log inside the same transaction (AUDIT-01)
+- [x] Vendor-agnostic measurement model — wide canonical columns + JSONB `raw` for vendor-specific debug fields (DATA-08, DATA-09)
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
@@ -32,20 +42,15 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 
 **ChirpStack integration**
 - [ ] Manage gateways from Shifter (no need to log into ChirpStack)
-- [ ] Manage devices from Shifter (no need to log into ChirpStack)
 - [ ] Collapse multi-step ChirpStack flows (e.g. device activation) into a single app action — or, if absolutely needed, into a stepped dialog — so the user never context-switches
 
 **Sites & physical layout**
-- [ ] Create and manage sites
 - [ ] Support both horizontal (campus / floor) and vertical (building with multiple floors) layouts
 - [ ] Import floor plans / images and drop devices as normalized fractional points (x_frac, y_frac in [0, 1]) on them — resolution-independent, survives image replacement and Retina/mobile DPR
 - [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre)
 
 **Devices & meters**
 - [ ] Bulk import devices (CSV / spreadsheet)
-- [ ] Decouple meter from location: a "metering point" persists; the physical device behind it can be swapped without losing the historical data series
-- [ ] When a meter is replaced, support an offset (or equivalent reading-continuity mechanism) so the displayed cumulative reading stays correct
-- [ ] Support multiple device vendors with different parameter sets through a vendor-agnostic measurement model — ingest whatever the device sends and map it to canonical fields the UI knows how to render
 
 **Live data & dashboard**
 - [ ] Real-time updates from IoT devices (push to UI, no manual refresh)
@@ -138,4 +143,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-02 — Phase 1 (foundation) complete. Runtime UAT pending in 01-HUMAN-UAT.md.*
+*Last updated: 2026-05-05 — Phase 2 (domain model & canonical schema) complete. Runtime UAT pending in 02-HUMAN-UAT.md.*
