@@ -5,11 +5,18 @@
 //  1. INSERT admin user (rejects if duplicate email)
 //  2. UPSERT install_identity (singleton id=1)
 //  3. UPSERT chirpstack_connection (singleton id=1)
-//  4. DELETE install_state (drops the wizard draft)
+//  4. INSERT retention_config with D-09 defaults (Phase 5 DATA-13)
+//  5. DELETE install_state (drops the wizard draft)
 //
 // All-or-nothing — if any step fails the txn rolls back and the wizard remains
 // reachable. Re-running succeeds because the prior partial state is gone.
 // Re-running AFTER success returns ErrAlreadyCompleted (admin row exists).
+//
+// The retention_config seed is part of the same Serializable transaction as
+// admin user creation (D-23 audit/atomicity invariant): either all rows land
+// or none do. ON CONFLICT DO NOTHING on the retention_config INSERT preserves
+// any operator-set values on the rare path where the row was manually inserted
+// before wizard completion.
 //
 // Concurrency: Serializable isolation collapses two simultaneous finish
 // requests to a single committed state — never partial. The pre-check
@@ -177,7 +184,19 @@ func FinishSetup(ctx context.Context, deps Deps) error {
 		return fmt.Errorf("upsert chirpstack_connection: %w", err)
 	}
 
-	// 4. Drop the install_state draft (D-11: post-finish, GET /state → 410).
+	// 4. Seed retention_config with D-09 defaults (Phase 5 DATA-13). NULL yearly_days
+	// = forever per D-09. ON CONFLICT DO NOTHING preserves operator changes made
+	// before a re-run (which is itself blocked above by ErrAlreadyCompleted, but
+	// belt-and-suspenders).
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO retention_config (id, raw_days, hourly_days, daily_days, monthly_days, yearly_days)
+		VALUES (1, 90, 365, 1825, 7300, NULL)
+		ON CONFLICT (id) DO NOTHING
+	`); err != nil {
+		return fmt.Errorf("seed retention_config: %w", err)
+	}
+
+	// 5. Drop the install_state draft (D-11: post-finish, GET /state → 410).
 	if _, err := tx.Exec(ctx, `DELETE FROM install_state WHERE id = 1`); err != nil {
 		return fmt.Errorf("delete install_state: %w", err)
 	}
