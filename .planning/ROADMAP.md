@@ -158,7 +158,7 @@ Plans:
 - [x] 04-04-PLAN.md — Dashboard REST: `/api/dashboard/scope`, `/snapshot`, `/timeseries` + KPI assembler (D-05/06/07/08/12)
 - [x] 04-05-PLAN.md — Metering-point detail REST: detail + uplinks (cursor) + timeseries + signal-history (DETL-01/02/03)
 - [x] 04-06-PLAN.md — `useSSE` hook (D-04 backoff verbatim, D-03 snapshot-on-reconnect) + `useDashboardScope` hook
-- [ ] 04-07-PLAN.md — Dashboard route shell + KpiCard/KpiGrid + EmptyStateOnboarding + LiveChannelBanner + sidebar nav
+- [x] 04-07-PLAN.md — Dashboard route shell + KpiCard/KpiGrid + EmptyStateOnboarding + LiveChannelBanner + sidebar nav
 - [ ] 04-08-PLAN.md — DateRangePicker (URL-state) + ConsumptionChart + CumulativeChartCard (D-11/12/13/14)
 - [ ] 04-09-PLAN.md — MP detail route: 3-tab layout (Normal/Advanced/Uplinks) + JsonTree + SparklineTriplet + UplinksLogTab (D-15..D-22)
 - [ ] 04-10-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS.md/VALIDATION.md reconciliation (phase closure)
