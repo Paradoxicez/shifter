@@ -11,6 +11,52 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countDevicesFiltered = `-- name: CountDevicesFiltered :one
+WITH active_bindings AS (
+    SELECT b.device_id, mp.site_id
+    FROM binding b
+    JOIN metering_point mp ON mp.id = b.metering_point_id
+    WHERE b.valid_to IS NULL
+)
+SELECT COUNT(*)
+FROM device d
+LEFT JOIN active_bindings ab ON ab.device_id = d.id
+WHERE d.decommissioned_at IS NULL
+  AND (cardinality($1::uuid[]) = 0 OR ab.site_id = ANY($1::uuid[]))
+  AND (
+        $2::text = ''
+        OR ($2 = 'active'        AND d.last_seen_at IS NOT NULL AND d.last_seen_at >  now() - interval '24 hours')
+        OR ($2 = 'inactive'      AND d.last_seen_at IS NOT NULL AND d.last_seen_at <= now() - interval '24 hours')
+        OR ($2 = 'never_joined'  AND d.last_seen_at IS NULL)
+      )
+  AND ($3::timestamptz IS NULL OR d.last_seen_at >= $3)
+  AND (
+        $4::text = ''
+        OR d.name    ILIKE '%' || $4 || '%'
+        OR d.dev_eui ILIKE '%' || $4 || '%'
+      )
+`
+
+type CountDevicesFilteredParams struct {
+	Column1 []pgtype.UUID
+	Column2 string
+	Column3 pgtype.Timestamptz
+	Column4 string
+}
+
+// Same WHERE clause as ListDevicesFiltered for accurate total_count.
+func (q *Queries) CountDevicesFiltered(ctx context.Context, arg CountDevicesFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDevicesFiltered,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDevice = `-- name: CreateDevice :one
 
 INSERT INTO device (dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description)
@@ -218,6 +264,149 @@ func (q *Queries) ListDevicesBySite(ctx context.Context, siteID pgtype.UUID) ([]
 			&i.DecommissionedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDevicesFiltered = `-- name: ListDevicesFiltered :many
+WITH active_bindings AS (
+    SELECT b.device_id, mp.site_id, s.name AS site_name
+    FROM binding b
+    JOIN metering_point mp ON mp.id = b.metering_point_id
+    JOIN site s ON s.id = mp.site_id
+    WHERE b.valid_to IS NULL
+)
+SELECT
+    d.id,
+    d.dev_eui,
+    d.name,
+    d.device_profile_id,
+    d.cs_device_uuid,
+    d.join_eui,
+    d.description,
+    d.last_seen_at,
+    d.decommissioned_at,
+    d.created_at,
+    d.updated_at,
+    ab.site_id   AS current_site_id,
+    ab.site_name AS current_site_name
+FROM device d
+LEFT JOIN active_bindings ab ON ab.device_id = d.id
+WHERE d.decommissioned_at IS NULL
+  AND (
+        cardinality($1::uuid[]) = 0
+        OR ab.site_id = ANY($1::uuid[])
+      )
+  AND (
+        $2::text = ''
+        OR ($2 = 'active'        AND d.last_seen_at IS NOT NULL AND d.last_seen_at >  now() - interval '24 hours')
+        OR ($2 = 'inactive'      AND d.last_seen_at IS NOT NULL AND d.last_seen_at <= now() - interval '24 hours')
+        OR ($2 = 'never_joined'  AND d.last_seen_at IS NULL)
+      )
+  AND ($3::timestamptz IS NULL OR d.last_seen_at >= $3)
+  AND (
+        $4::text = ''
+        OR d.name    ILIKE '%' || $4 || '%'
+        OR d.dev_eui ILIKE '%' || $4 || '%'
+      )
+ORDER BY
+    CASE WHEN $5::text = 'name'        AND $6::bool = false THEN d.name             END ASC,
+    CASE WHEN $5::text = 'name'        AND $6::bool = true  THEN d.name             END DESC,
+    CASE WHEN $5::text = 'dev_eui'     AND $6::bool = false THEN d.dev_eui          END ASC,
+    CASE WHEN $5::text = 'dev_eui'     AND $6::bool = true  THEN d.dev_eui          END DESC,
+    CASE WHEN $5::text = 'site'        AND $6::bool = false THEN ab.site_name       END ASC NULLS LAST,
+    CASE WHEN $5::text = 'site'        AND $6::bool = true  THEN ab.site_name       END DESC NULLS LAST,
+    CASE WHEN $5::text = 'last_seen'   AND $6::bool = false THEN d.last_seen_at     END ASC NULLS LAST,
+    CASE WHEN $5::text = 'last_seen'   AND $6::bool = true  THEN d.last_seen_at     END DESC NULLS LAST,
+    CASE WHEN $5::text = 'created_at'  AND $6::bool = false THEN d.created_at       END ASC,
+    CASE WHEN $5::text = 'created_at'  AND $6::bool = true  THEN d.created_at       END DESC,
+    d.last_seen_at DESC NULLS LAST,
+    d.id ASC
+LIMIT $7 OFFSET $8
+`
+
+type ListDevicesFilteredParams struct {
+	Column1 []pgtype.UUID
+	Column2 string
+	Column3 pgtype.Timestamptz
+	Column4 string
+	Column5 string
+	Column6 bool
+	Limit   int32
+	Offset  int32
+}
+
+type ListDevicesFilteredRow struct {
+	ID               pgtype.UUID
+	DevEui           string
+	Name             string
+	DeviceProfileID  pgtype.UUID
+	CsDeviceUuid     *string
+	JoinEui          *string
+	Description      *string
+	LastSeenAt       pgtype.Timestamptz
+	DecommissionedAt pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CurrentSiteID    pgtype.UUID
+	CurrentSiteName  *string
+}
+
+// Phase 3 D-12..D-18: server-side filter/sort/page for the Devices list.
+// Site join via active binding (no current_site_id denormalisation per
+// RESEARCH Open Q #2). The device schema's soft-delete column is
+// decommissioned_at (see migration 0012), not archived_at — the plan-level
+// "archived_at" wording refers to "live" devices and maps to
+// `decommissioned_at IS NULL` here.
+// Filter args:
+//
+//	$1 = site_ids UUID[] — empty = no filter
+//	$2 = status_filter TEXT — 'active'|'inactive'|'never_joined'|'' (empty = no filter)
+//	$3 = last_seen_cutoff TIMESTAMPTZ NULL — devices with last_seen_at >= cutoff (or any if NULL)
+//	$4 = text_q TEXT — '' = no filter; matches name ILIKE %q% OR dev_eui ILIKE %q%
+//	$5 = sort_col TEXT — 'name'|'dev_eui'|'site'|'last_seen'|'created_at'
+//	$6 = sort_desc BOOL
+//	$7 = limit_n INT
+//	$8 = offset_n INT
+func (q *Queries) ListDevicesFiltered(ctx context.Context, arg ListDevicesFilteredParams) ([]ListDevicesFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listDevicesFiltered,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDevicesFilteredRow
+	for rows.Next() {
+		var i ListDevicesFilteredRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DevEui,
+			&i.Name,
+			&i.DeviceProfileID,
+			&i.CsDeviceUuid,
+			&i.JoinEui,
+			&i.Description,
+			&i.LastSeenAt,
+			&i.DecommissionedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CurrentSiteID,
+			&i.CurrentSiteName,
 		); err != nil {
 			return nil, err
 		}

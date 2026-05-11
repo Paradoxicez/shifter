@@ -68,6 +68,8 @@ type Querier interface {
 	// Phase 6 metrics tile + Phase 2 tests. Time-bounded so the tile can show
 	// "X swaps in the last 7 days" without scanning the whole table.
 	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
+	// Same WHERE clause as ListDevicesFiltered for accurate total_count.
+	CountDevicesFiltered(ctx context.Context, arg CountDevicesFilteredParams) (int64, error)
 	// D-26 quality-flag categorization: powers the MP detail "X uplinks flagged"
 	// badge (Plan 02-08) and Phase 4 dashboard tile. count(*) FILTER is the
 	// canonical Postgres pattern for parallel category counts in one scan; far
@@ -281,6 +283,22 @@ type Querier interface {
 	// "device → site" association which is otherwise indirect (devices have no
 	// direct site_id; that's by design — D-15 + DATA-01).
 	ListDevicesBySite(ctx context.Context, siteID pgtype.UUID) ([]Device, error)
+	// Phase 3 D-12..D-18: server-side filter/sort/page for the Devices list.
+	// Site join via active binding (no current_site_id denormalisation per
+	// RESEARCH Open Q #2). The device schema's soft-delete column is
+	// decommissioned_at (see migration 0012), not archived_at — the plan-level
+	// "archived_at" wording refers to "live" devices and maps to
+	// `decommissioned_at IS NULL` here.
+	// Filter args:
+	//   $1 = site_ids UUID[] — empty = no filter
+	//   $2 = status_filter TEXT — 'active'|'inactive'|'never_joined'|'' (empty = no filter)
+	//   $3 = last_seen_cutoff TIMESTAMPTZ NULL — devices with last_seen_at >= cutoff (or any if NULL)
+	//   $4 = text_q TEXT — '' = no filter; matches name ILIKE %q% OR dev_eui ILIKE %q%
+	//   $5 = sort_col TEXT — 'name'|'dev_eui'|'site'|'last_seen'|'created_at'
+	//   $6 = sort_desc BOOL
+	//   $7 = limit_n INT
+	//   $8 = offset_n INT
+	ListDevicesFiltered(ctx context.Context, arg ListDevicesFilteredParams) ([]ListDevicesFilteredRow, error)
 	// D-32 default view: hides archived rows. Phase 3 ships a stable
 	// created_at DESC ordering (the gateway list is small — ≤200 per page —
 	// and operator workflows expect "newest first"). The handler exposes
