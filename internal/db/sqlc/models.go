@@ -281,21 +281,22 @@ type Device struct {
 }
 
 type DeviceProfile struct {
-	ID              pgtype.UUID
-	Slug            string
-	Name            string
-	Vendor          string
-	Family          *string
-	Capabilities    []string
-	CounterModulus  int64
-	CodecJs         string
-	CsProfileID     pgtype.UUID
-	CodecJsSyncedAt pgtype.Timestamptz
-	Region          *string
-	MacVersion      string
-	ArchivedAt      pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
+	ID                pgtype.UUID
+	Slug              string
+	Name              string
+	Vendor            string
+	Family            *string
+	Capabilities      []string
+	CounterModulus    int64
+	CodecJs           string
+	CsProfileID       pgtype.UUID
+	CodecJsSyncedAt   pgtype.Timestamptz
+	Region            *string
+	MacVersion        string
+	ArchivedAt        pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	ExpectedIntervalS int32
 }
 
 type DeviceProfileMapping struct {
@@ -365,14 +366,15 @@ type ImportJobRow struct {
 }
 
 type InstallIdentity struct {
-	ID          int32
-	DisplayName string
-	LogoPath    *string
-	Address     *string
-	Timezone    string
-	Units       UnitsSystem
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID           int32
+	DisplayName  string
+	LogoPath     *string
+	Address      *string
+	Timezone     string
+	Units        UnitsSystem
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+	Capabilities string
 }
 
 type InstallState struct {

@@ -10,7 +10,7 @@ import (
 )
 
 const getInstallIdentity = `-- name: GetInstallIdentity :one
-SELECT id, display_name, logo_path, address, timezone, units, created_at, updated_at FROM install_identity WHERE id = 1
+SELECT id, display_name, logo_path, address, timezone, units, created_at, updated_at, capabilities FROM install_identity WHERE id = 1
 `
 
 func (q *Queries) GetInstallIdentity(ctx context.Context) (InstallIdentity, error) {
@@ -25,6 +25,7 @@ func (q *Queries) GetInstallIdentity(ctx context.Context) (InstallIdentity, erro
 		&i.Units,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Capabilities,
 	)
 	return i, err
 }
@@ -38,7 +39,7 @@ ON CONFLICT (id) DO UPDATE SET
     address      = EXCLUDED.address,
     timezone     = EXCLUDED.timezone,
     units        = EXCLUDED.units
-RETURNING id, display_name, logo_path, address, timezone, units, created_at, updated_at
+RETURNING id, display_name, logo_path, address, timezone, units, created_at, updated_at, capabilities
 `
 
 type UpsertInstallIdentityParams struct {
@@ -68,6 +69,7 @@ func (q *Queries) UpsertInstallIdentity(ctx context.Context, arg UpsertInstallId
 		&i.Units,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Capabilities,
 	)
 	return i, err
 }

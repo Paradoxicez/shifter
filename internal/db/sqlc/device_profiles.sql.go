@@ -14,7 +14,7 @@ import (
 const archiveDeviceProfile = `-- name: ArchiveDeviceProfile :one
 UPDATE device_profile SET archived_at = now()
 WHERE id = $1 AND archived_at IS NULL
-RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at
+RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s
 `
 
 // D-20 soft-delete for profiles. Note: device.device_profile_id has
@@ -40,6 +40,7 @@ func (q *Queries) ArchiveDeviceProfile(ctx context.Context, id pgtype.UUID) (Dev
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
 	)
 	return i, err
 }
@@ -51,7 +52,7 @@ INSERT INTO device_profile (
     codec_js, region, mac_version
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at
+RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s
 `
 
 type CreateDeviceProfileParams struct {
@@ -104,12 +105,13 @@ func (q *Queries) CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfi
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
 	)
 	return i, err
 }
 
 const getDeviceProfile = `-- name: GetDeviceProfile :one
-SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at FROM device_profile WHERE id = $1
+SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s FROM device_profile WHERE id = $1
 `
 
 func (q *Queries) GetDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceProfile, error) {
@@ -131,12 +133,13 @@ func (q *Queries) GetDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceP
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
 	)
 	return i, err
 }
 
 const getDeviceProfileBySlug = `-- name: GetDeviceProfileBySlug :one
-SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at FROM device_profile WHERE slug = $1
+SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s FROM device_profile WHERE slug = $1
 `
 
 // Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
@@ -160,12 +163,13 @@ func (q *Queries) GetDeviceProfileBySlug(ctx context.Context, slug string) (Devi
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
 	)
 	return i, err
 }
 
 const listActiveDeviceProfiles = `-- name: ListActiveDeviceProfiles :many
-SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at FROM device_profile
+SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s FROM device_profile
 WHERE archived_at IS NULL
 ORDER BY vendor ASC, name ASC
 `
@@ -197,6 +201,7 @@ func (q *Queries) ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExpectedIntervalS,
 		); err != nil {
 			return nil, err
 		}
@@ -209,7 +214,7 @@ func (q *Queries) ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile
 }
 
 const listUnsyncedProfiles = `-- name: ListUnsyncedProfiles :many
-SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at FROM device_profile
+SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s FROM device_profile
 WHERE archived_at IS NULL
   AND (cs_profile_id IS NULL OR codec_js_synced_at IS NULL)
 `
@@ -244,6 +249,7 @@ func (q *Queries) ListUnsyncedProfiles(ctx context.Context) ([]DeviceProfile, er
 			&i.ArchivedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ExpectedIntervalS,
 		); err != nil {
 			return nil, err
 		}
@@ -298,7 +304,7 @@ UPDATE device_profile SET
     capabilities = $5, counter_modulus = $6,
     codec_js = $7, region = $8, mac_version = $9
 WHERE id = $1
-RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at
+RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s
 `
 
 type UpdateDeviceProfileParams struct {
@@ -346,6 +352,7 @@ func (q *Queries) UpdateDeviceProfile(ctx context.Context, arg UpdateDeviceProfi
 		&i.ArchivedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
 	)
 	return i, err
 }

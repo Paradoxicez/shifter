@@ -619,7 +619,9 @@ func TestPhase3Migrations_0018_Gateway_Apply(t *testing.T) {
 }
 
 // TestPhase3Migrations_0018_Down — applies all migrations then rolls back
-// 0020, 0019, 0018 (three steps). gateway table must disappear.
+// to before 0018 so the gateway table must disappear.
+// Plan 04-01 bumped the chain to 23, so the rollback distance is 6 steps:
+// 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
 func TestPhase3Migrations_0018_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -629,8 +631,8 @@ func TestPhase3Migrations_0018_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back three steps: 0020 → 0019 → 0018.
-	require.NoError(t, runMigrateSteps(t, pool, -3))
+	// Roll back six steps: 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
+	require.NoError(t, runMigrateSteps(t, pool, -6))
 
 	var exists bool
 	require.NoError(t, pool.QueryRow(ctx,
@@ -744,8 +746,10 @@ func TestPhase3Migrations_0019_ImportJob_Apply(t *testing.T) {
 	require.True(t, idxExists)
 }
 
-// TestPhase3Migrations_0019_Down — roll back 0020 + 0019; import_job and
+// TestPhase3Migrations_0019_Down — roll back to before 0019; import_job and
 // import_job_row + both enums must be dropped.
+// Plan 04-01 bumped the chain to 23, so the rollback distance is 5 steps:
+// 0023 → 0022 → 0021 → 0020 → 0019. 0018 (gateway) stays applied.
 func TestPhase3Migrations_0019_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -755,8 +759,8 @@ func TestPhase3Migrations_0019_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back 0020 + 0019 (two steps). 0018 (gateway) stays.
-	require.NoError(t, runMigrateSteps(t, pool, -2))
+	// Roll back five steps: 0023 → 0022 → 0021 → 0020 → 0019. 0018 (gateway) stays.
+	require.NoError(t, runMigrateSteps(t, pool, -5))
 
 	for _, table := range []string{"import_job", "import_job_row"} {
 		var exists bool
@@ -892,8 +896,9 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back 0020 only (one step). 0019/0018 stay applied.
-	require.NoError(t, runMigrateSteps(t, pool, -1))
+	// Roll back to before 0020. Plan 04-01 bumped the chain to 23, so the
+	// rollback distance is 4 steps: 0023 → 0022 → 0021 → 0020. 0019/0018 stay applied.
+	require.NoError(t, runMigrateSteps(t, pool, -4))
 
 	var userID string
 	require.NoError(t, pool.QueryRow(ctx,
