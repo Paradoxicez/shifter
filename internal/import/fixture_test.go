@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -198,4 +199,25 @@ func rowsFromFixture(t *testing.T, f *importFixture, xlsx []byte) []ParsedRow {
 		_ = i
 	}
 	return rows
+}
+
+// buildBigXLSX returns an XLSX with the canonical header + n data rows.
+// Used by upload-row-cap tests; the content of each row doesn't matter
+// because the parser counts rows before the dry-run consumes them.
+func buildBigXLSX(t *testing.T, n int) []byte {
+	t.Helper()
+	headers := []string{
+		"dev_eui", "name", "device_profile", "site_id", "activation_mode",
+		"join_eui", "app_key", "dev_addr", "f_cnt_up", "f_cnt_down",
+	}
+	var buf bytes.Buffer
+	buf.WriteString(strings.Join(headers, ",") + "\n")
+	// Each data row is a single comma-separated line; the parser counts by
+	// row, not by content validity. We use CSV here because building a
+	// 5001-row XLSX via excelize would be slow; the row-cap check fires the
+	// same way for both formats.
+	for i := 0; i < n; i++ {
+		buf.WriteString("70b3d59999000000,d,axioma_w1,site-A,OTAA,0000000000000000,00112233445566778899aabbccddeeff,,,\n")
+	}
+	return buf.Bytes()
 }

@@ -31,6 +31,7 @@ import (
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/gateway"
+	importpkg "github.com/shifter-io/shifter/internal/import"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
@@ -85,6 +86,12 @@ type Deps struct {
 	// restore + cached metrics). nil when CS gRPC client + metrics cache
 	// are not yet constructed — mirrors DeviceDeps nil-guard pattern.
 	GatewayDeps *gateway.Deps
+
+	// ImportDeps wires Plan 03-05's /api/imports surface (upload, dry-run,
+	// commit, template, errors.xlsx). nil when CS client + bootstrap are
+	// not yet constructed — mirrors DeviceDeps nil-guard pattern so router
+	// unit tests can run without CS wiring.
+	ImportDeps *importpkg.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -236,6 +243,13 @@ func NewRouter(deps Deps) http.Handler {
 		// client + metrics cache are not yet wired, the gateway routes are
 		// simply not mounted (router unit tests stay free of CS deps).
 		gateway.RegisterRoutes(r, *deps.GatewayDeps)
+	}
+	if deps.ImportDeps != nil {
+		// ImportDeps mounts /api/imports upload + dry-run + commit + template
+		// + errors.xlsx (Plan 03-05). nil-guard mirrors DeviceDeps: skip when
+		// CS client + bootstrap are not yet constructed so router unit tests
+		// stay free of CS deps.
+		importpkg.RegisterRoutes(r, *deps.ImportDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
