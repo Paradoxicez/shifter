@@ -152,6 +152,33 @@ type Querier interface {
 	// (NULL for top-level sites). timezone is required (D-17 — every site has
 	// one; UI defaults to install timezone).
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
+	// D-06: latest instant_value per MP, summed across all active MPs.
+	// $1 = utility_class text
+	CurrentInstantSumByUtility(ctx context.Context, utilityClass string) (pgtype.Numeric, error)
+	// Per-MP latest reading for the snapshot response.
+	// Filtered to utility_classes in the active capabilities set.
+	// $1 = utility_classes (text[]; e.g. {'water'}, {'electricity'}, {'water','electricity'})
+	DashboardLatestReadings(ctx context.Context, dollar_1 []string) ([]DashboardLatestReadingsRow, error)
+	// Time-series chart queries — D-12 bucket schedule implemented in handler.
+	//
+	// DashboardTimeseries: cross-MP aggregate for the dashboard consumption chart
+	//   (GET /api/dashboard/timeseries). The handler picks bucket interval per D-12
+	//   schedule:
+	//
+	//   | range        | bucket_interval |
+	//   |--------------|-----------------|
+	//   | today        | 5 minutes       |
+	//   | 24h          | 5 minutes       |
+	//   | 7d           | 1 hour          |
+	//   | 30d          | 4 hours         |
+	//   | custom ≤ 30d | 1 hour          |
+	//   | custom > 30d | 1 day           |
+	//
+	// MeteringPointTimeseries: per-MP detail (Plan 05/09 consume).
+	// D-12: time_bucket() with handler-controlled interval. Aggregates cumulative
+	// delta across all MPs of the given utility_class.
+	// sqlc.arg(utility_class), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
+	DashboardTimeseries(ctx context.Context, arg DashboardTimeseriesParams) ([]DashboardTimeseriesRow, error)
 	// D-15 decommission: marks the device retired. The active binding closure
 	// is a separate transaction (Plan 02-07 swap.commit calls CloseBinding)
 	// because the binding may already be closed when the operator decommissions
@@ -166,6 +193,10 @@ type Querier interface {
 	// re-insert. Wrapped in a tx with the subsequent CreateMapping calls so
 	// the editor never observes a half-saved state.
 	DeleteMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) error
+	// D-07: per-profile expected_interval_s; online = last_seen_at within 2x interval.
+	// Joins device → device_profile → binding → metering_point to filter by utility.
+	// $1 = utility_class text
+	DeviceOnlineCount(ctx context.Context, utilityClass string) (DeviceOnlineCountRow, error)
 	// Binding (DATA-02 + D-14 + D-15 + D-25). Each device-to-MP binding has a
 	// half-open [valid_from, valid_to) window (Open Q #1 resolution: tstzrange
 	// '[)' bounds — a swap at exactly t=valid_to attributes that uplink to the
@@ -197,6 +228,9 @@ type Querier interface {
 	// pagination instead.
 	GetAuditEntry(ctx context.Context, id pgtype.UUID) (AuditLog, error)
 	GetBinding(ctx context.Context, id pgtype.UUID) (Binding, error)
+	// D-09: install_identity.capabilities (singleton row).
+	// Returns the capability string: 'water', 'electricity', or 'both'.
+	GetCapabilities(ctx context.Context) (string, error)
 	GetChirpStackConnection(ctx context.Context) (ChirpstackConnection, error)
 	// Plan 02-05 boot routine reads the singleton row's CS UUIDs to decide
 	// whether the bootstrap has already run. NULLs on either column mean the
@@ -337,6 +371,12 @@ type Querier interface {
 	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
 	// next boot's ListUnsyncedProfiles query no longer returns this row.
 	MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error
+	// For per-MP detail page (Plan 05/09 consume).
+	// sqlc.arg(metering_point_id), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
+	MeteringPointTimeseries(ctx context.Context, arg MeteringPointTimeseriesParams) ([]MeteringPointTimeseriesRow, error)
+	// D-21: progressive empty-state counts used by GET /api/dashboard/scope.
+	// Cheap aggregates across three small tables; never touches the measurement hypertable.
+	OnboardingCounts(ctx context.Context) (OnboardingCountsRow, error)
 	// Plan 02-07 swap commit: opens a new active binding (valid_to = NULL).
 	// $4 = reading_offset; for a brand-new MP with no prior binding this is 0,
 	// for a swap the caller computes:
@@ -348,6 +388,11 @@ type Querier interface {
 	// binding_no_overlap_per_device) make this race-safe — concurrent commits
 	// on the same MP or same device get 23P01 (exclusion_violation).
 	OpenBinding(ctx context.Context, arg OpenBindingParams) (Binding, error)
+	// D-08: today [00:00→now] vs yesterday [00:00→same-time-yesterday].
+	// Returns both windows so the handler can compute abs + pct change.
+	// If yesterday window has no data the handler returns period_delta_abs = null.
+	// sqlc.arg(timezone) / sqlc.arg(utility_class)
+	PeriodDeltaByUtility(ctx context.Context, arg PeriodDeltaByUtilityParams) (PeriodDeltaByUtilityRow, error)
 	// Restore reads archived_snapshot and the handler calls
 	// chirpstackClient.CreateGateway with it; this UPDATE clears the archive
 	// columns atomic with the CS recreate.
@@ -373,6 +418,27 @@ type Querier interface {
 	// Plan 02-08 seed routine — writes the //go:embed-ed codec body into the row
 	// and clears codec_js_synced_at so the next pass re-pushes to ChirpStack.
 	SetProfileCodecJS(ctx context.Context, arg SetProfileCodecJSParams) error
+	// Dashboard KPI queries (DASH-01..DASH-06, DASH-08, DASH-21, D-05..D-09, D-12).
+	//
+	// These queries feed the three dashboard REST endpoints in internal/dashboard/:
+	//   GET /api/dashboard/scope     — capabilities + onboarding tuple (D-09, D-21)
+	//   GET /api/dashboard/snapshot  — KPI tiles + per-MP latest readings
+	//   GET /api/dashboard/timeseries — time-bucket chart data (D-12)
+	//
+	// D-05 "today" boundary: date_trunc('day', now() AT TIME ZONE $tz) AT TIME ZONE $tz
+	// All KPI queries accept timezone from install_identity.timezone (server-side
+	// ONLY — never from request query string per T-04-04-04 threat register).
+	//
+	// D-07 online/offline rule (verbatim from plan):
+	//   COUNT(*) FILTER (
+	//       WHERE d.last_seen_at > now() - (2 * dp.expected_interval_s * INTERVAL '1 second')
+	//   ) AS online_count
+	//
+	// D-08 period delta: today [00:00→now] vs yesterday [00:00→same-time-yesterday].
+	// sqlc.arg() annotations provide clean field names in the generated Params structs.
+	// D-05: today's consumption in install_identity.timezone.
+	// sqlc.arg(timezone) / sqlc.arg(utility_class)
+	TodayConsumptionByUtility(ctx context.Context, arg TodayConsumptionByUtilityParams) (pgtype.Numeric, error)
 	// Called by Plan 02-09 ingest after every successful uplink persist.
 	// Stored on binding (NOT device or measurement) so the rollover detector
 	// can SELECT one row to fetch the per-binding previous raw counter without
