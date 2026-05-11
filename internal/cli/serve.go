@@ -38,6 +38,7 @@ import (
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
+	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 	"github.com/shifter-io/shifter/internal/device"
@@ -333,6 +334,10 @@ var serveCmd = &cobra.Command{
 			EventsDeps: &events.Deps{
 				Hub:    eventsHub,
 				Logger: log.With("component", "events.handler"),
+			},
+			DashboardDeps: &dashboard.Deps{
+				Pool:   pool,
+				Logger: log.With("component", "dashboard"),
 			},
 			SPA: httpapi.SPAHandler(),
 		})

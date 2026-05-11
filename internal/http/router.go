@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shifter-io/shifter/internal/auth"
+	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/events"
 	"github.com/shifter-io/shifter/internal/gateway"
@@ -99,6 +100,14 @@ type Deps struct {
 	// Mounted under the authenticated group so both admin and viewer roles
 	// can subscribe (D-23). No admin-only guard — see plan §design_notes.
 	EventsDeps *events.Deps
+
+	// DashboardDeps wires Plan 04-04's dashboard REST endpoints:
+	//   GET /api/dashboard/scope      — D-09 + D-21
+	//   GET /api/dashboard/snapshot   — KPI tiles + latest readings
+	//   GET /api/dashboard/timeseries — D-12 time-bucket chart series
+	// nil when pool is not yet available (router unit tests stay free of
+	// pool deps). Mounted under authenticated group (D-23 any role).
+	DashboardDeps *dashboard.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -269,6 +278,12 @@ func NewRouter(deps Deps) http.Handler {
 		// here (authenticated group, any role) so both admin and viewer can
 		// connect (D-23). No admin-only sub-group needed.
 		events.RegisterRoutes(r, *deps.EventsDeps)
+	}
+	if deps.DashboardDeps != nil {
+		// DashboardDeps mounts the three Plan 04-04 dashboard endpoints.
+		// Both admin and viewer roles have full read access (D-23).
+		// Mounted before the SPA fallback (PITFALL #4 preserved).
+		dashboard.RegisterRoutes(r, *deps.DashboardDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without

@@ -18,20 +18,30 @@
 -- name: DashboardTimeseries :many
 -- D-12: time_bucket() with handler-controlled interval. Aggregates cumulative
 -- delta across all MPs of the given utility_class.
+--
+-- The LAG window function computes the per-row delta in a CTE; the outer query
+-- then SUMs those deltas per time_bucket. This two-step pattern is required
+-- because Postgres forbids aggregate functions that contain window function
+-- calls directly (SQLSTATE 42803).
+--
 -- sqlc.arg(utility_class), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
-SELECT
-    time_bucket(sqlc.arg(bucket_interval)::interval, m.time) AS bucket,
-    COALESCE(SUM(
+WITH deltas AS (
+    SELECT
+        time_bucket(sqlc.arg(bucket_interval)::interval, m.time) AS bucket,
         m.cumulative_value - LAG(m.cumulative_value) OVER (
             PARTITION BY m.metering_point_id ORDER BY m.time
-        )
-    ), 0)::numeric AS cumulative_delta
-FROM measurement m
-INNER JOIN metering_point mp ON mp.id = m.metering_point_id
-WHERE mp.utility_class = sqlc.arg(utility_class)
-  AND mp.archived_at IS NULL
-  AND m.time >= sqlc.arg(start_time)
-  AND m.time < sqlc.arg(end_time)
+        ) AS row_delta
+    FROM measurement m
+    INNER JOIN metering_point mp ON mp.id = m.metering_point_id
+    WHERE mp.utility_class = sqlc.arg(utility_class)
+      AND mp.archived_at IS NULL
+      AND m.time >= sqlc.arg(start_time)
+      AND m.time < sqlc.arg(end_time)
+)
+SELECT
+    bucket,
+    COALESCE(SUM(row_delta), 0)::numeric AS cumulative_delta
+FROM deltas
 GROUP BY bucket
 ORDER BY bucket;
 

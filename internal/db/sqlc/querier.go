@@ -177,6 +177,12 @@ type Querier interface {
 	// MeteringPointTimeseries: per-MP detail (Plan 05/09 consume).
 	// D-12: time_bucket() with handler-controlled interval. Aggregates cumulative
 	// delta across all MPs of the given utility_class.
+	//
+	// The LAG window function computes the per-row delta in a CTE; the outer query
+	// then SUMs those deltas per time_bucket. This two-step pattern is required
+	// because Postgres forbids aggregate functions that contain window function
+	// calls directly (SQLSTATE 42803).
+	//
 	// sqlc.arg(utility_class), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
 	DashboardTimeseries(ctx context.Context, arg DashboardTimeseriesParams) ([]DashboardTimeseriesRow, error)
 	// D-15 decommission: marks the device retired. The active binding closure

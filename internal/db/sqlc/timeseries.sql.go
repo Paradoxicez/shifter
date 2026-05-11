@@ -13,19 +13,23 @@ import (
 
 const dashboardTimeseries = `-- name: DashboardTimeseries :many
 
-SELECT
-    time_bucket($1::interval, m.time) AS bucket,
-    COALESCE(SUM(
+WITH deltas AS (
+    SELECT
+        time_bucket($1::interval, m.time) AS bucket,
         m.cumulative_value - LAG(m.cumulative_value) OVER (
             PARTITION BY m.metering_point_id ORDER BY m.time
-        )
-    ), 0)::numeric AS cumulative_delta
-FROM measurement m
-INNER JOIN metering_point mp ON mp.id = m.metering_point_id
-WHERE mp.utility_class = $2
-  AND mp.archived_at IS NULL
-  AND m.time >= $3
-  AND m.time < $4
+        ) AS row_delta
+    FROM measurement m
+    INNER JOIN metering_point mp ON mp.id = m.metering_point_id
+    WHERE mp.utility_class = $2
+      AND mp.archived_at IS NULL
+      AND m.time >= $3
+      AND m.time < $4
+)
+SELECT
+    bucket,
+    COALESCE(SUM(row_delta), 0)::numeric AS cumulative_delta
+FROM deltas
 GROUP BY bucket
 ORDER BY bucket
 `
@@ -61,6 +65,12 @@ type DashboardTimeseriesRow struct {
 // MeteringPointTimeseries: per-MP detail (Plan 05/09 consume).
 // D-12: time_bucket() with handler-controlled interval. Aggregates cumulative
 // delta across all MPs of the given utility_class.
+//
+// The LAG window function computes the per-row delta in a CTE; the outer query
+// then SUMs those deltas per time_bucket. This two-step pattern is required
+// because Postgres forbids aggregate functions that contain window function
+// calls directly (SQLSTATE 42803).
+//
 // sqlc.arg(utility_class), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
 func (q *Queries) DashboardTimeseries(ctx context.Context, arg DashboardTimeseriesParams) ([]DashboardTimeseriesRow, error) {
 	rows, err := q.db.Query(ctx, dashboardTimeseries,
