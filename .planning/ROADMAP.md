@@ -159,7 +159,7 @@ Plans:
 - [x] 04-05-PLAN.md — Metering-point detail REST: detail + uplinks (cursor) + timeseries + signal-history (DETL-01/02/03)
 - [x] 04-06-PLAN.md — `useSSE` hook (D-04 backoff verbatim, D-03 snapshot-on-reconnect) + `useDashboardScope` hook
 - [x] 04-07-PLAN.md — Dashboard route shell + KpiCard/KpiGrid + EmptyStateOnboarding + LiveChannelBanner + sidebar nav
-- [ ] 04-08-PLAN.md — DateRangePicker (URL-state) + ConsumptionChart + CumulativeChartCard (D-11/12/13/14)
+- [x] 04-08-PLAN.md — DateRangePicker (URL-state) + ConsumptionChart + CumulativeChartCard (D-11/12/13/14)
 - [ ] 04-09-PLAN.md — MP detail route: 3-tab layout (Normal/Advanced/Uplinks) + JsonTree + SparklineTriplet + UplinksLogTab (D-15..D-22)
 - [ ] 04-10-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS.md/VALIDATION.md reconciliation (phase closure)
 **UI hint**: yes
@@ -251,7 +251,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 1. Foundation | 24/24 | Complete | 2026-04-30 |
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
-| 4. Realtime & Dashboard | 6/10 | In Progress|  |
+| 4. Realtime & Dashboard | 8/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 0/0 | Not started | - |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
