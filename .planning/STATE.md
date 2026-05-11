@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-last_updated: "2026-05-11T16:37:19.184Z"
+status: Ready to execute
+last_updated: "2026-05-11T23:24:27.068Z"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 59
-  completed_plans: 59
-  percent: 100
+  total_plans: 71
+  completed_plans: 60
+  percent: 85
 ---
 
 # Project State: Shifter
@@ -20,12 +20,12 @@ progress:
 
 **Core Value:** The operator runs their entire LoRaWAN water/electricity monitoring operation — provisioning, placement, monitoring, reporting — from Shifter alone, and meter swaps never break historical continuity.
 
-**Current Focus:** Phase 04 — realtime-dashboard
+**Current Focus:** Phase 05 — aggregates-reports-map-floor-plans
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (aggregates-reports-map-floor-plans) — EXECUTING
+Plan: 2 of 12
 
 > **Phase 2 closure (2026-05-04):** Plans 02-11..15 closed every gap surfaced by the Phase 2 verifier:
 > - 02-11: swap + profile HTTP route surface
@@ -97,6 +97,7 @@ Plan: Not started
 | Phase 04-realtime-dashboard P08 | 9min | 2 tasks | 9 files |
 | Phase 04-realtime-dashboard P09 | 120 | 3 tasks | 16 files |
 | Phase 04-realtime-dashboard P10 | 10min | 2 tasks | 13 files |
+| Phase 05 P01 | 17 | 3 tasks | 30 files |
 
 ### Per-plan execution log
 
@@ -342,6 +343,13 @@ Plan: Not started
 - **Plan 03-05 — `isNoRows` substring check in dryrun.go avoids importing pgx.** The dryrun validator does only sqlc reads (no transaction ownership), so importing `pgx.ErrNoRows` would pull the pgx surface into a layer that doesn't need it. `strings.Contains(err.Error(), "no rows in result set")` is the substring sentinel. Future read-only validators MAY use this pattern when the consumer is otherwise pgx-free.
 - **Plan 03-05 — `tags` column deferred for device.** The bulk-import schema accepts `tags` in the file (operator-pasted) but currently drops it because `device` has no `tags` column. Phase 7 (vendor catalog) will add the column + surface it. Decision documented to forestall future scope expansion of Phase 3's device schema.
 - **Plan 03-05 — `ImportDeps` nil-guard parallels `GatewayDeps`.** Both gateway routes (Plan 03-04) and import routes (Plan 03-05) mount only when their full CS+bootstrap wiring is present. `serve.go` does not yet construct either; Plan 03-10 (or equivalent cmd-wiring catch-up) lands the CS-client construction that both surfaces need.
+
+### Phase 05 Execution Decisions
+
+- **Plan 05-01 — `cumulative_delta` is ABSENT from measurement hypertable.** The `measurement` hypertable stores `cumulative_value` (absolute reading) only. No stored `cumulative_delta` column exists anywhere in migrations, ingest code, or queries. Plan 05-02 computes delta via `LAG()` in the hourly CAGG SELECT. Future plans that need per-period deltas MUST use this LAG()-based pattern — adding a `cumulative_delta` column would require storing redundant data and complicates rollover handling.
+- **Plan 05-01 — go.mod upgraded from go 1.25.0 to go 1.26.1.** Required by maroto/v2 v2.4.0 (the CLAUDE.md-mandated PDF library). `go get` upgraded the directive automatically. All existing tests still pass. Future plans targeting Go 1.25.x features do not exist in the codebase; the upgrade is non-breaking.
+- **Plan 05-01 — River schema embedded as golang-migrate 0024 (not run via `river migrate-up` at startup).** Pitfall #8 mitigation: if you run `river migrate-up` at startup and also have the tables in golang-migrate, the UNIQUE constraint on `river_migration` prevents double-seeding. Embedding in golang-migrate keeps the DB schema 100% owned by one tool. All 6 River migration version rows (main v1-v6) are seeded in the migration file.
+- **Plan 05-01 — `river_leader`, `river_client`, `river_client_queue` are UNLOGGED tables.** This matches River v0.36.0's own schema output. UNLOGGED trades WAL durability for performance on high-churn queue-management tables. River's design intentionally accepts losing these rows on crash (job state in `river_job` is regular/durable and survives). Future plans that interact with River MUST NOT alter these tables to LOGGED.
 
 ### Open Blockers
 

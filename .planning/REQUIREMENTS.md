@@ -56,11 +56,11 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Sites & Physical Layout
 
 - [x] **SITE-01**: Admin can create / edit / delete sites via dialogs, with site lat/lng for the map view
-- [ ] **SITE-02**: A site supports both horizontal layouts (single-floor / campus) and vertical layouts (building with multiple floors)
-- [ ] **SITE-03**: Admin can upload one or more floor-plan images per site (PNG / JPG / PDF→PNG, with size cap and format whitelist)
-- [ ] **SITE-04**: Admin can drag and drop devices onto a floor plan; positions are stored as normalized fractions (x_frac, y_frac in [0, 1])
-- [ ] **SITE-05**: Floor plan view shows each placed device with a state-tinted marker (green / yellow / red) reflecting current health
-- [ ] **SITE-06**: User can navigate map → site → floor plan → device detail in a single click-through path
+- [x] **SITE-02**: A site supports both horizontal layouts (single-floor / campus) and vertical layouts (building with multiple floors)
+- [x] **SITE-03**: Admin can upload one or more floor-plan images per site (PNG / JPG / PDF→PNG, with size cap and format whitelist)
+- [x] **SITE-04**: Admin can drag and drop devices onto a floor plan; positions are stored as normalized fractions (x_frac, y_frac in [0, 1])
+- [x] **SITE-05**: Floor plan view shows each placed device with a state-tinted marker (green / yellow / red) reflecting current health
+- [x] **SITE-06**: User can navigate map → site → floor plan → device detail in a single click-through path
 
 ### Metering Point & Meter Swap (Domain Model)
 
@@ -95,26 +95,26 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Map View
 
-- [ ] **MAP-01**: Map view renders sites and gateways on OpenStreetMap tiles via Leaflet (or MapLibre as upgrade path)
-- [ ] **MAP-02**: Map clusters markers automatically when more than ~50 are in view and supports zoom-driven decluster
-- [ ] **MAP-03**: Clicking a site marker drills into the site's floor plan or device list
-- [ ] **MAP-04**: Map view does not depend on any paid external API (no Google Maps / Mapbox API key at install time)
+- [x] **MAP-01**: Map view renders sites and gateways on OpenStreetMap tiles via Leaflet (or MapLibre as upgrade path)
+- [x] **MAP-02**: Map clusters markers automatically when more than ~50 are in view and supports zoom-driven decluster
+- [x] **MAP-03**: Clicking a site marker drills into the site's floor plan or device list
+- [x] **MAP-04**: Map view does not depend on any paid external API (no Google Maps / Mapbox API key at install time)
 
 ### Reports & Exports
 
-- [ ] **REPT-01**: User can generate daily, monthly, and yearly consumption reports
-- [ ] **REPT-02**: User can generate reports per single meter and aggregate ("all meters", grouped by site or category)
-- [ ] **REPT-03**: User can export any report as CSV (UTF-8 BOM, ISO timestamps, timezone in header)
-- [ ] **REPT-04**: User can export any report as Excel with formatted dates, units, and totals
-- [ ] **REPT-05**: User can export any report as PDF, branded with install identity (display name / logo / address) from settings
-- [ ] **REPT-06**: PDF generation runs as a background job — request returns a downloadable artifact, not a synchronous response
-- [ ] **REPT-07**: Reports show period delta and percent change versus the previous period
+- [x] **REPT-01**: User can generate daily, monthly, and yearly consumption reports
+- [x] **REPT-02**: User can generate reports per single meter and aggregate ("all meters", grouped by site or category)
+- [x] **REPT-03**: User can export any report as CSV (UTF-8 BOM, ISO timestamps, timezone in header)
+- [x] **REPT-04**: User can export any report as Excel with formatted dates, units, and totals
+- [x] **REPT-05**: User can export any report as PDF, branded with install identity (display name / logo / address) from settings
+- [x] **REPT-06**: PDF generation runs as a background job — request returns a downloadable artifact, not a synchronous response
+- [x] **REPT-07**: Reports show period delta and percent change versus the previous period
 
 ### Continuous Aggregates (Backing Reports)
 
-- [ ] **DATA-11**: System maintains hierarchical TimescaleDB continuous aggregates (hourly → daily → monthly → yearly) over the measurement hypertable
-- [ ] **DATA-12**: CAGG refresh policies have `end_offset` ≥ 2× expected-interval to absorb late uplinks, and CAGG `start_offset` ≤ raw-data retention so aggregates are never silently wiped
-- [ ] **DATA-13**: Aggregate tables have their own (longer) retention policy — default raw 90 days, daily 5 years, monthly 20 years, all configurable in settings
+- [x] **DATA-11**: System maintains hierarchical TimescaleDB continuous aggregates (hourly → daily → monthly → yearly) over the measurement hypertable
+- [x] **DATA-12**: CAGG refresh policies have `end_offset` ≥ 2× expected-interval to absorb late uplinks, and CAGG `start_offset` ≤ raw-data retention so aggregates are never silently wiped
+- [x] **DATA-13**: Aggregate tables have their own (longer) retention policy — default raw 90 days, daily 5 years, monthly 20 years, all configurable in settings
 
 ### Alerts
 
@@ -257,11 +257,11 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DEV-08 | Phase 3 | Complete |
 | DEV-09 | Phase 3 | Complete |
 | SITE-01 | Phase 2 | Complete |
-| SITE-02 | Phase 5 | Pending |
-| SITE-03 | Phase 5 | Pending |
-| SITE-04 | Phase 5 | Pending |
-| SITE-05 | Phase 5 | Pending |
-| SITE-06 | Phase 5 | Pending |
+| SITE-02 | Phase 5 | Complete |
+| SITE-03 | Phase 5 | Complete |
+| SITE-04 | Phase 5 | Complete |
+| SITE-05 | Phase 5 | Complete |
+| SITE-06 | Phase 5 | Complete |
 | DATA-01 | Phase 2 | Complete |
 | DATA-02 | Phase 2 | Complete |
 | DATA-03 | Phase 2 | Complete |
@@ -272,9 +272,9 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DATA-08 | Phase 2 | Complete |
 | DATA-09 | Phase 2 | Complete |
 | DATA-10 | Phase 2 | Complete |
-| DATA-11 | Phase 5 | Pending |
-| DATA-12 | Phase 5 | Pending |
-| DATA-13 | Phase 5 | Pending |
+| DATA-11 | Phase 5 | Complete |
+| DATA-12 | Phase 5 | Complete |
+| DATA-13 | Phase 5 | Complete |
 | DASH-01 | Phase 4 | Complete |
 | DASH-02 | Phase 4 | Complete |
 | DASH-03 | Phase 4 | Complete |
@@ -284,17 +284,17 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DETL-01 | Phase 4 | Complete |
 | DETL-02 | Phase 4 | Complete |
 | DETL-03 | Phase 4 | Complete |
-| MAP-01 | Phase 5 | Pending |
-| MAP-02 | Phase 5 | Pending |
-| MAP-03 | Phase 5 | Pending |
-| MAP-04 | Phase 5 | Pending |
-| REPT-01 | Phase 5 | Pending |
-| REPT-02 | Phase 5 | Pending |
-| REPT-03 | Phase 5 | Pending |
-| REPT-04 | Phase 5 | Pending |
-| REPT-05 | Phase 5 | Pending |
-| REPT-06 | Phase 5 | Pending |
-| REPT-07 | Phase 5 | Pending |
+| MAP-01 | Phase 5 | Complete |
+| MAP-02 | Phase 5 | Complete |
+| MAP-03 | Phase 5 | Complete |
+| MAP-04 | Phase 5 | Complete |
+| REPT-01 | Phase 5 | Complete |
+| REPT-02 | Phase 5 | Complete |
+| REPT-03 | Phase 5 | Complete |
+| REPT-04 | Phase 5 | Complete |
+| REPT-05 | Phase 5 | Complete |
+| REPT-06 | Phase 5 | Complete |
+| REPT-07 | Phase 5 | Complete |
 | ALERT-01 | Phase 6 | Pending |
 | ALERT-02 | Phase 6 | Pending |
 | ALERT-03 | Phase 6 | Pending |
