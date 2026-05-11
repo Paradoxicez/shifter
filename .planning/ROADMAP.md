@@ -72,7 +72,7 @@ Plans:
 
 **Depends on**: Phase 1
 
-**Requirements**: SITE-01, DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06, DATA-07, DATA-08, DATA-09, DATA-10, AUDIT-01, CHIRP-04
+**Requirements**: SITE-01, DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06, DATA-07, DATA-08, DATA-09, DATA-10, DEV-05, AUDIT-01, CHIRP-04
 
 **Success Criteria** (what must be TRUE):
   1. Admin can create a site (with site lat/lng), create a metering point on that site, and add a device through a single one-action dialog that auto-creates the underlying ChirpStack tenant/application/profile/device behind the scenes.
@@ -110,7 +110,7 @@ Plans:
 
 **Depends on**: Phase 2
 
-**Requirements**: GW-01, GW-02, GW-03, GW-04, DEV-01, DEV-02, DEV-03, DEV-04, DEV-05, DEV-06, DEV-07, DEV-08, DEV-09, CHIRP-05, CHIRP-06, UX-03
+**Requirements**: GW-01, GW-02, GW-03, GW-04, DEV-01, DEV-02, DEV-03, DEV-04, DEV-06, DEV-07, DEV-08, DEV-09, CHIRP-05, CHIRP-06, UX-03
 
 **Success Criteria** (what must be TRUE):
   1. Admin can list, search, and filter gateways with online/offline status, last-seen, lat/lng, and per-gateway RX/TX statistics, and can create / edit / delete a gateway via dialogs with a regulator-aware region picker.
@@ -119,7 +119,19 @@ Plans:
   4. Admin can bulk-import devices from a CSV with a two-phase flow — dry-run validation produces a per-row error report; commit phase produces a per-row outcome log; re-running the same CSV is idempotent (no duplicates, no spurious creates); a downloadable CSV template is provided.
   5. Throughout provisioning UI the operator never sees ChirpStack-native terminology ("tenant", "application") — Shifter speaks in customer/site/device language; multi-step ChirpStack flows are collapsed to one user action or a stepped dialog; every CRUD and every bulk-import row outcome lands in the audit log.
 
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Wave 0 test scaffolding: excelize/v2 + golang.org/x/sync + Playwright + testsupport gRPC mock extensions + 18 skeleton test files
+- [ ] 03-02-PLAN.md — Migrations 0018 (gateway), 0019 (import_job), 0020 (audit_log Phase 3 vocab) + extend auth.Can() with 6 new actions + audit constants
+- [ ] 03-03-PLAN.md — ChirpStack v4 GatewayService 6 RPC wrappers + GetMetrics 1-min TTL singleflight cache + Device ActivateDevice/GetDeviceKeys/GetDeviceActivation wrappers
+- [ ] 03-04-PLAN.md — Gateway backend: sqlc queries + 6 HTTP handlers + atomic CS+PG + soft-delete + cache refresher
+- [ ] 03-05-PLAN.md — Bulk import backend: parser (XLSX+CSV+UTF-8 guard) + dryrun + commit (envelope+per-row audit) + template + errors.xlsx + 5 HTTP endpoints
+- [ ] 03-06-PLAN.md — Devices list filter/sort/page sqlc + handlers + bulk decommission + reveal-secrets endpoint (admin-only, no secret in audit)
+- [ ] 03-07-PLAN.md — 5-step Add Device dialog (OTAA/ABP) backend + frontend with success-state keys panel
+- [ ] 03-08-PLAN.md — Gateway frontend: list with sparkline + Add/Edit single dialog + Decommission AlertDialog + detail page + 3 new shadcn primitives
+- [ ] 03-09-PLAN.md — Devices filter URL-state (react-router-dom v7 useSearchParams + zod) + bulk-action bar + Bulk Import 3-step dialog + Imports admin pages
+- [ ] 03-10-PLAN.md — Reveal Keys dialog + device detail page + 6 Playwright E2E specs + UX-03 vocabulary audit + REQUIREMENTS.md + VALIDATION.md reconciliation
 **UI hint**: yes
 
 ### Phase 4: Realtime & Dashboard
@@ -226,7 +238,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 |-------|----------------|--------|-----------|
 | 1. Foundation | 24/24 | Complete | 2026-04-30 |
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
-| 3. Provisioning (Gateways, Devices, Bulk Import) | 0/0 | Not started | - |
+| 3. Provisioning (Gateways, Devices, Bulk Import) | 0/10 | Planned | - |
 | 4. Realtime & Dashboard | 0/0 | Not started | - |
 | 5. Aggregates, Reports, Map & Floor Plans | 0/0 | Not started | - |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
@@ -244,7 +256,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 - DATA-01..10 → Phase 2 (10); DATA-11..13 → Phase 5 (3)
 - AUDIT-01 → Phase 2 (1); AUDIT-02, AUDIT-03 → Phase 6 (2)
 - GW-01..04 → Phase 3 (4)
-- DEV-01..09 → Phase 3 (9)
+- DEV-01..04, DEV-06..09 → Phase 3 (8); DEV-05 → Phase 2 (1)
 - DASH-01..06 → Phase 4 (6)
 - DETL-01..03 → Phase 4 (3)
 - REPT-01..07 → Phase 5 (7)

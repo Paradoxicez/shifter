@@ -251,7 +251,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DEV-02 | Phase 3 | Pending |
 | DEV-03 | Phase 3 | Pending |
 | DEV-04 | Phase 3 | Pending |
-| DEV-05 | Phase 3 | Pending |
+| DEV-05 | Phase 2 | Pending |
 | DEV-06 | Phase 3 | Pending |
 | DEV-07 | Phase 3 | Pending |
 | DEV-08 | Phase 3 | Pending |
@@ -332,8 +332,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 
 **Per-phase counts:**
 - Phase 1 (Foundation): 18 — AUTH-01..06, INST-01..06, CHIRP-01..03, OPS-01, UX-01, UX-02
-- Phase 2 (Domain Model & Canonical Schema): 13 — SITE-01, DATA-01..10, AUDIT-01, CHIRP-04
-- Phase 3 (Provisioning): 16 — GW-01..04, DEV-01..09, CHIRP-05, CHIRP-06, UX-03
+- Phase 2 (Domain Model & Canonical Schema): 14 — SITE-01, DATA-01..10, DEV-05, AUDIT-01, CHIRP-04
+- Phase 3 (Provisioning): 15 — GW-01..04, DEV-01..04, DEV-06..09, CHIRP-05, CHIRP-06, UX-03
 - Phase 4 (Realtime & Dashboard): 9 — DASH-01..06, DETL-01..03
 - Phase 5 (Aggregates, Reports, Map & Floor Plans): 19 — SITE-02..06, MAP-01..04, REPT-01..07, DATA-11..13
 - Phase 6 (Alerts, Users, Audit & Ops Hardening): 24 — ALERT-01..06, USER-01..04, AUDIT-02, AUDIT-03, SETT-01..05, OPS-02..08

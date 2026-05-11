@@ -672,7 +672,7 @@ entity_type IN ('site','metering_point','device','device_profile','binding')
 
 Phase 3 needs **new actions**: `bulk_import` (envelope), `reveal_secrets`, and **new entity_types**: `gateway`, `import_job`.
 
-**Migration:** `0020_audit_log_phase3_vocab.up.sql` — `ALTER TABLE audit_log DROP CONSTRAINT audit_log_action_valid` + re-`ADD CONSTRAINT` with extended set; same for `entity_type`. The Phase 2 `internal/audit/log.go` action/entity constants get new siblings (`ActionBulkImport`, `ActionRevealSecrets`, `EntityTypeGateway`, `EntityTypeImportJob`).
+**Migration:** `0020_audit_log_vocabulary.up.sql` — `ALTER TABLE audit_log DROP CONSTRAINT audit_log_action_valid` + re-`ADD CONSTRAINT` with extended set; same for `entity_type`. The Phase 2 `internal/audit/log.go` action/entity constants get new siblings (`ActionBulkImport`, `ActionRevealSecrets`, `EntityTypeGateway`, `EntityTypeImportJob`).
 
 ### `metadata` shape — reuse `after` JSONB, no schema change
 
@@ -1095,7 +1095,7 @@ If the planner / user disagrees and wants CS DeleteGateway: restore must re-call
 |-------|------|------------------|
 | 0018 | `0018_gateway.up.sql` | `gateway` table + `gateway_archived_idx`, `gateway_region_idx`, `gateway_touch` trigger |
 | 0019 | `0019_import_job.up.sql` | `import_job_status` + `import_job_row_status` enums; `import_job` and `import_job_row` tables; partial index `WHERE status='preview'`; touch trigger |
-| 0020 | `0020_audit_log_phase3_vocab.up.sql` | `ALTER TABLE audit_log` → DROP + re-ADD CHECK constraints with the new action vocab (`bulk_import`, `reveal_secrets`) + entity_type vocab (`gateway`, `import_job`) |
+| 0020 | `0020_audit_log_vocabulary.up.sql` | `ALTER TABLE audit_log` → DROP + re-ADD CHECK constraints with the new action vocab (`bulk_import`, `reveal_secrets`) + entity_type vocab (`gateway`, `import_job`) |
 | 0021 | `0021_device_indexes_phase3.up.sql` | `CREATE INDEX device_name_lower_idx ON device (lower(name))`, `CREATE INDEX device_site_last_seen_idx ON device (?)` — see Open Questions: devices don't have `site_id` yet; bindings link device→MP→site. Resolving requires either a denormalized `site_id` on `device` (cheap) or a more complex join (slow). Planner's call. |
 
 **Open issue (Open Questions #3):** Devices are currently bound to MPs via `binding`, not directly to sites. D-12's "site (multi-select)" filter requires a join chain `device → active binding → metering_point → site`. For Phase 3 perf at 100K devices, denormalize a `current_site_id` column on device (NULLable, updated by the swap commit + new-binding-open trigger).
@@ -1212,34 +1212,40 @@ Test infrastructure to create before implementation tasks start:
 | A10 | `import_job_row.raw_payload JSONB` stores the original column → string map (lossless for errors.xlsx round-trip). Excel numeric cells get cast to string at parse time so they round-trip exactly | §Two-Phase Import Job | **Low**: requires the XLSX reader to use `GetRows` (string-typed) not `GetCellValue` (typed) for the raw_payload column |
 | A11 | New `audit_log` action values (`bulk_import`, `reveal_secrets`) + entity_type values (`gateway`, `import_job`) require a Phase 3 vocabulary-extension migration (0020). The existing `audit_log_action_valid` and `audit_log_entity_type_valid` CHECK constraints lock the vocab — extending them is a one-line DROP+ADD | §Audit Envelope — vocabulary extension | **Low**: pattern is standard; Phase 2 already locked the vocab so Phase 3 must extend |
 
-## Open Questions / Risks
+## Open Questions (RESOLVED)
 
 1. **Gateway decommission semantics — CS-side delete or Shifter-only soft-delete?**
    - What we know: D-30 explicitly says "soft-delete in Postgres + DeleteGateway in ChirpStack". Recommended Phase 3 pattern argues for Shifter-only soft-delete (see Assumption A3).
    - What's unclear: whether the user / planner agrees with the rationale, or wants to keep CS-side delete (which then requires Restore to re-CreateGateway and loses CS metrics history).
    - Recommendation: **Flag this in `/gsd-discuss-phase` follow-up** before locking the implementation pattern.
+   - **RESOLVED:** User chose D-30 verbatim (CS DeleteGateway + PG soft-delete, atomic) on 2026-05-11. Plan 03-04 updated to ship the atomic CS+PG decommission with archived_snapshot for restore.
 
 2. **`current_site_id` denormalisation on `device`?**
    - What we know: D-12 requires server-side site multi-select filter; devices currently link to sites only via `binding → metering_point → site` chain.
    - What's unclear: scale threshold — at 1K devices the join is fine; at 100K it isn't. Planner's call.
    - Recommendation: **Ship without denormalisation in Phase 3**; add `0021_device_current_site_id.up.sql` migration if benchmarks during Phase 4 dashboard work show slow filtering.
+   - **RESOLVED:** Ship without denormalisation (Plan 03-06 uses join via `metering_point` per Phase 2 schema). Revisit if devices-list p95 latency exceeds 500ms at 100K-device fleets.
 
 3. **Synchronous commit vs SSE-progress vs River background job (D-Discretion #6)**
    - What we know: 500-row commit takes ~75s synchronously (gRPC dominates); chi `WriteTimeout` must be ≥120s.
    - What's unclear: whether the operator UX needs live progress for 500-row imports, or can wait synchronously.
    - Recommendation: **Synchronous for Phase 3**; chi WriteTimeout bumped to 180s for the import-commit route only (via per-route timeout middleware). If operator feedback wants progress, add SSE in Phase 4 alongside the realtime work.
+   - **RESOLVED:** Synchronous commit for Phase 3 (typical fleet 50–500 devices). Plan 03-05 documents the 5000-row cap. Background queue deferred to backlog per CONTEXT D-Discretion item 6.
 
 4. **`gateway.region` semantics — Shifter-only or pushed to CS?**
    - What we know: ChirpStack v4 does not have a `region` field on the `Gateway` proto — region lives on `device_profile`. The Phase 3 D-03 "regulator-aware region picker" is for the operator's visual model of the gateway, not a CS-syncable attribute.
    - What's unclear: whether the operator expects the region pick to mean anything to CS, or whether it's purely Shifter-side metadata for the picker UI.
    - Recommendation: **Shifter-only column** with a tooltip explaining "Region is set per device profile in ChirpStack — this picker is for your reference."
+   - **RESOLVED:** Shifter-only metadata column on `gateway` table; ChirpStack v4 stores region on device profile, not gateway. Plan 03-04 schema includes `gateway.region TEXT NOT NULL`.
 
 5. **`current_site_id` denormalisation OR a `device_site_view` materialized view?**
    - See #2. A `MATERIALIZED VIEW device_with_site AS SELECT d.*, mp.site_id FROM device d LEFT JOIN binding b … LEFT JOIN metering_point mp …` with `REFRESH MATERIALIZED VIEW CONCURRENTLY` on swap commit is a cleaner alternative — surface to planner.
+   - **RESOLVED:** Not adopted in Phase 3. Plain joins are fine at v1 scale. Revisit in Phase 7+ if reporting needs materialised aggregates.
 
 6. **Tags JSONB vs TEXT[] in `gateway` and import schema?**
    - D-04 says CSV "tags (comma-separated or JSON)" — the parser accepts both. PG storage shape is one decision: JSONB allows arbitrary key-value (CS native shape) or TEXT[] is simpler for the "flat list of tags" UX.
    - Recommendation: **JSONB** matching CS `Gateway.Tags map[string]string` — supports future "tag with value" patterns without a migration.
+   - **RESOLVED:** `tags JSONB` on `gateway` and `device` tables (matches CS proto). Plan 03-04 + 03-05 schemas use JSONB.
 
 ## Environment Availability
 
@@ -1272,7 +1278,7 @@ A first-pass wave decomposition for Phase 3. Each wave is a contiguous chunk of 
 - Add `github.com/xuri/excelize/v2` to `go.mod`; verify version pinned.
 - Add skeleton test files (table above) — empty test functions that compile.
 - Add new `auth.Action` constants to `internal/auth/authz.go` + admin-bundle entries; viewer-denied test for each new action.
-- Migration `0020_audit_log_phase3_vocab.up.sql` to extend audit_log CHECK vocabularies.
+- Migration `0020_audit_log_vocabulary.up.sql` to extend audit_log CHECK vocabularies.
 
 **Wave 1 — Gateway Backend**
 - `internal/chirpstack/gateway.go` — `CreateGateway`, `GetGateway`, `UpdateGateway`, `DeleteGateway`, `ListGateways`, `GetGatewayMetrics` wrappers + tests against bufconn mock.
