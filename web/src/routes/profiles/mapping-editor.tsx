@@ -245,9 +245,9 @@ export function MappingEditor({ profileId, mode }: MappingEditorProps) {
       }
       if (status === 503) {
         setSaveError(
-          'ChirpStack tenant not bootstrapped. Open Settings → Test connection.',
+          'ChirpStack is not connected. Open Settings → Test connection.',
         )
-        toast.error('ChirpStack not bootstrapped')
+        toast.error('ChirpStack not connected')
         return
       }
       setSaveError(detail)

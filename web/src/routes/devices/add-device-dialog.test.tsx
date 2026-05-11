@@ -185,7 +185,7 @@ describe('AddDeviceDialog — Plan 03-07 (5 steps, OTAA/ABP)', () => {
     // ABP-mode fields present.
     expect(screen.getByLabelText('Dev Addr')).toBeInTheDocument()
     expect(screen.getByLabelText('Network Session Key')).toBeInTheDocument()
-    expect(screen.getByLabelText('Application Session Key')).toBeInTheDocument()
+    expect(screen.getByLabelText('AppSKey')).toBeInTheDocument()
     expect(screen.getByLabelText('FCnt Up')).toBeInTheDocument()
     expect(screen.getByLabelText('FCnt Down')).toBeInTheDocument()
 
@@ -246,7 +246,7 @@ describe('AddDeviceDialog — Plan 03-07 (5 steps, OTAA/ABP)', () => {
     )
     expect(nextBtn).toBeDisabled()
     await userEvent.type(
-      screen.getByLabelText('Application Session Key'),
+      screen.getByLabelText('AppSKey'),
       '1011121314151617181920212223242a',
     )
     expect(nextBtn).not.toBeDisabled()
@@ -342,7 +342,7 @@ describe('AddDeviceDialog — Plan 03-07 (5 steps, OTAA/ABP)', () => {
       '0102030405060708090a0b0c0d0e0f10',
     )
     await userEvent.type(
-      screen.getByLabelText('Application Session Key'),
+      screen.getByLabelText('AppSKey'),
       '1011121314151617181920212223242a',
     )
     await userEvent.click(screen.getByRole('button', { name: /Next/i }))
@@ -400,7 +400,7 @@ describe('AddDeviceDialog — Plan 03-07 (5 steps, OTAA/ABP)', () => {
       '0102030405060708090a0b0c0d0e0f10',
     )
     await userEvent.type(
-      screen.getByLabelText('Application Session Key'),
+      screen.getByLabelText('AppSKey'),
       '1011121314151617181920212223242a',
     )
     await userEvent.click(screen.getByRole('button', { name: /Next/i }))

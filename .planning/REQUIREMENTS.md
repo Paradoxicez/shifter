@@ -39,7 +39,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **GW-01**: Admin can list, search, and filter gateways with online/offline status, last-seen, and lat/lng
 - [x] **GW-02**: Admin can create / edit / delete a gateway via dialogs, with regulator-aware region picker
 - [x] **GW-03**: User can view per-gateway RX/TX statistics (packet counts, success rate)
-- [x] **GW-04**: Gateways appear as pins on the map view with health indicators
+- [ ] **GW-04**: Gateways appear as pins on the map view with health indicators
 
 ### Devices & Meters
 
@@ -246,7 +246,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | GW-01 | Phase 3 | Complete |
 | GW-02 | Phase 3 | Complete |
 | GW-03 | Phase 3 | Complete |
-| GW-04 | Phase 3 | Complete |
+| GW-04 | Phase 3 | Pending |
 | DEV-01 | Phase 3 | Complete |
 | DEV-02 | Phase 3 | Complete |
 | DEV-03 | Phase 3 | Complete |
@@ -341,7 +341,25 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 
 ---
 *Requirements defined: 2026-04-27*
-*Last updated: 2026-05-04 — Phase 2 gap-closure reconciliation (Plan 02-15). All 13 Phase 2 requirements (SITE-01, DATA-01..10, AUDIT-01, CHIRP-04) verified Complete with shipping evidence after gap-closure plans 02-11..14 landed. Evidence trail per requirement:*
+*Last updated: 2026-05-11 — Phase 3 closure (Plan 03-10). All 14 actively-Complete Phase 3 requirements (GW-01..03, DEV-01..04, DEV-06..09, CHIRP-05, CHIRP-06, UX-03) verified Complete with shipping evidence; GW-04 ships partial (backend lat/lng + numeric inputs landed; map pin deferred to Phase 5 MAP-01..04). DEV-05 re-mapped to Phase 2 (delivered via `internal/profile/`). Evidence trail per Phase 3 requirement:*
+*- GW-01 → `internal/api/gateways_handler_test.go::TestListGatewaysHandler` + `web/src/routes/gateways/index.test.tsx::TestGatewaysList_Render` + Playwright `gateway-crud.spec.ts`*
+*- GW-02 → `internal/api/gateways_handler_test.go::TestCreateGatewayHandler_RegionDefault` + `TestUpdateGatewayHandler` + `web/src/routes/gateways/add-gateway-dialog.test.tsx` + `decommission-gateway-dialog.test.tsx` + Playwright `gateway-crud.spec.ts`*
+*- GW-03 → `internal/chirpstack/gateway_metrics_cache_test.go::TestMetricsCache_TTL + _SingleFlight` + `web/src/routes/gateways/index.test.tsx::TestGatewaysList_SparklineUsesCSSVars`*
+*- GW-04 → **PARTIAL** — backend lat/lng columns landed + frontend numeric inputs + disabled "Pick on map" placeholder. Map pin (Leaflet/MapLibre integration) deferred to Phase 5 (MAP-01..04). Status remains Pending → Phase 5.*
+*- DEV-01 → `internal/api/devices_list_test.go::TestListDevicesFiltered_*` + `web/src/routes/devices/search-params.test.ts::TestZodSchema_*` + `web/src/routes/devices/index.test.tsx` + Playwright `devices-filters-deeplink.spec.ts`*
+*- DEV-02 → Phase 2 add device + Phase 3 `internal/api/devices_bulk_decommission_test.go::TestBulkDecommissionDevices_PartialSuccess` + `web/src/routes/devices/bulk-decommission-dialog.test.tsx`*
+*- DEV-03 → Phase 2 `internal/device/deveui_test.go::TestParseDevEUI` (reused for gateway_id paste-parser; extended as `ParseEUI64` alias) + `web/src/routes/devices/deveui-parser.test.tsx`*
+*- DEV-04 → `internal/api/devices_add_test.go::TestAddDevice_OTAA + TestAddDevice_ABP + TestAddDevice_ABP_FCntCarryOver` + `web/src/routes/devices/add-device-dialog.test.tsx::TestAddDevice_Step3_OTAA_DefaultSelected + TestAddDevice_Step3_ABPRadio_SwitchesStep4` + Playwright `device-add-otaa.spec.ts` + `device-add-abp.spec.ts`*
+*- DEV-05 → Re-mapped to Phase 2; delivered via `internal/profile/` (editor + handlers + seed) + `web/src/routes/profiles/mapping-editor.test.tsx`. Phase 3 traceability table row stays Phase 2.*
+*- DEV-06 → `internal/import/parser_xlsx_test.go + parser_csv_test.go + dryrun_test.go + commit_test.go + template_test.go` + `web/src/routes/devices/bulk-import-dialog.test.tsx` + `web/src/routes/admin/imports/index.test.tsx + $jobId.test.tsx` + Playwright `bulk-import.spec.ts`*
+*- DEV-07 → `internal/import/commit_test.go::TestCommit_Idempotent` + Playwright `bulk-import.spec.ts` re-upload assertion (`already_exists` outcomes)*
+*- DEV-08 → `internal/import/template_test.go::TestGenerateTemplate_Headers + _DevEUITextFormat + _ActivationDropdown + _RoundTrip`*
+*- DEV-09 → `internal/api/devices_reveal_test.go::TestRevealSecrets_AdminOTAA + _AdminABP + _Viewer403 + _AuditNoSecretMaterial` + `web/src/routes/devices/reveal-keys-dialog.test.tsx::TestRevealKeys_403 + _NoCacheTime (gcTime:0)` + `web/src/routes/devices/$id.test.tsx::TestDeviceDetail_RevealButtonAdminOnly_Viewer` + Playwright `reveal-secrets-rbac.spec.ts` (viewer 403 + admin Cache-Control:no-store + admin 200)*
+*- CHIRP-05 → 5-step Add Device dialog (Plan 03-07) + Bulk import 3-step dialog (Plan 03-09) + Add Gateway single dialog (Plan 03-08) + Reveal Keys dialog (Plan 03-10) — every multi-step ChirpStack flow collapsed to one user action*
+*- CHIRP-06 → UX-03 vocabulary audit zero user-facing matches across `web/src/`; gateway management surface complete (Plan 03-08); reveal-keys + add-device flows mean operator never needs ChirpStack admin UI for daily work*
+*- UX-03 → Vocabulary audit grep zero user-facing matches across `web/src/` (only doc comments + test assertions reference the forbidden words). Two Phase 3 leaks remediated in Plan 03-10 (`mapping-editor.tsx` 503 copy: "tenant not bootstrapped" → "not connected"; `add-device-dialog.tsx` ABP step 4 label: "Application Session Key" → "AppSKey").*
+
+*Phase 2 closure (2026-05-04) — Plan 02-15 reconciliation. All 13 Phase 2 requirements (SITE-01, DATA-01..10, AUDIT-01, CHIRP-04) verified Complete with shipping evidence after gap-closure plans 02-11..14 landed. Evidence trail per requirement:*
 *- SITE-01 → `internal/site/handlers_test.go` + `web/src/routes/sites/create-site-dialog.test.tsx`*
 *- DATA-01 → `internal/db/migrations/0015_measurement.up.sql` invariant + `internal/resolver/cache_test.go` + `TestServe_FullBoot_MQTTUplinkPersists`*
 *- DATA-02 → `internal/db/migrations/0014_binding.up.sql` btree_gist EXCLUDE + `internal/resolver/cache_test.go`*

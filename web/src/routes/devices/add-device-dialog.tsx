@@ -616,7 +616,7 @@ export function AddDeviceDialog({
 
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="app-s-key" className="text-sm font-semibold">
-                    Application Session Key
+                    AppSKey
                   </Label>
                   <div className="flex items-center gap-2">
                     <Input
