@@ -24,8 +24,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -129,6 +131,19 @@ func RegisterRoutes(r chi.Router, deps Deps) {
 		r.Group(func(rt chi.Router) {
 			rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionDeviceDecommission))
 			rt.Post("/{id}/decommission", decommissionDevice(deps))
+			// Phase 3 D-17: bulk decommission (per-row atomic). Max 200 ids per
+			// request. Lives next to per-device decommission so RBAC + audit
+			// vocabulary share the same gate.
+			rt.Post("/bulk-decommission", bulkDecommissionDevices(deps))
+		})
+		// Phase 3 D-26 / D-27 / D-28: reveal endpoint. Admin-only via the
+		// dedicated ActionDeviceRevealSecrets bundle entry (viewer absent =
+		// 403 fail-closed). POST-only by design (T-3-52); chi's default 405
+		// covers GET. Mounted under /api/devices/{eui}/keys so the URL is
+		// keyed by the LoRaWAN canonical identifier, not Shifter UUID.
+		r.Group(func(rt chi.Router) {
+			rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionDeviceRevealSecrets))
+			rt.Post("/{eui}/keys", revealSecrets(deps))
 		})
 	})
 }
@@ -159,19 +174,258 @@ type ParseDevEUIRequest struct {
 
 // ----- handlers -----------------------------------------------------------
 
+// listDevices is the Phase 3 D-12..D-18 server-side filter/sort/paginated
+// list of devices. It REPLACES the Phase 2 minimal `LIMIT 100 OFFSET 0`
+// implementation; the wire shape changes from a bare JSON array to a paged
+// envelope `{total_count, page_count, page, per_page, rows: [...]}` so the
+// frontend can render the page/total badges directly.
+//
+// Query params (all optional; defaults match D-14 — sort=-last_seen):
+//
+//	site=<uuid>     repeat to multi-select (D-12 site multi-select)
+//	status=         '' | active | inactive | never_joined (D-12 activation status)
+//	last_seen=      '' | 24h | 7d | 30d | all (D-12 last-seen window)
+//	q=              substring on name OR dev_eui (D-12 text search)
+//	sort=           name | -name | dev_eui | -dev_eui | site | -site |
+//	                last_seen | -last_seen | created_at | -created_at
+//	page=           1-based; defaults to 1
+//	per_page=       25 | 50 | 100; defaults to 50; any other value → 400
+//
+// DEV-09 invariant: the per-row JSON has NO `app_key` / `nwk_s_key` /
+// `app_s_key` / `nwk_key` keys — the device schema simply has no such
+// columns (structural enforcement per Phase 2 D-22). Only the dedicated
+// reveal endpoint (POST /api/devices/{eui}/keys) surfaces key material.
 func listDevices(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		q := sqlc.New(deps.Pool)
-		// Phase 2 minimal pagination: hardcoded LIMIT/OFFSET via query params.
-		rows, err := q.ListActiveDevices(r.Context(), sqlc.ListActiveDevicesParams{
-			Limit: 100, Offset: 0,
-		})
-		if err != nil {
-			internalError(deps.Log, w, "list devices", err)
+		params, errResp := parseListDevicesParams(r)
+		if errResp != nil {
+			writeJSON(w, errResp.status, errResp.body)
 			return
 		}
-		writeJSON(w, http.StatusOK, devicesToJSON(rows))
+
+		q := sqlc.New(deps.Pool)
+		total, err := q.CountDevicesFiltered(r.Context(), sqlc.CountDevicesFilteredParams{
+			Column1: params.siteIDs,
+			Column2: params.status,
+			Column3: params.lastSeenCutoff,
+			Column4: params.textQ,
+		})
+		if err != nil {
+			internalError(deps.Log, w, "count devices filtered", err)
+			return
+		}
+		rows, err := q.ListDevicesFiltered(r.Context(), sqlc.ListDevicesFilteredParams{
+			Column1: params.siteIDs,
+			Column2: params.status,
+			Column3: params.lastSeenCutoff,
+			Column4: params.textQ,
+			Column5: params.sortCol,
+			Column6: params.sortDesc,
+			Limit:   params.perPage,
+			Offset:  (params.page - 1) * params.perPage,
+		})
+		if err != nil {
+			internalError(deps.Log, w, "list devices filtered", err)
+			return
+		}
+
+		pageCount := int32(0)
+		if total > 0 {
+			pageCount = int32(math.Ceil(float64(total) / float64(params.perPage)))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total_count": total,
+			"page_count":  pageCount,
+			"page":        params.page,
+			"per_page":    params.perPage,
+			"rows":        filteredDevicesToJSON(rows),
+		})
 	}
+}
+
+// listDevicesParams holds the validated/normalised query params for the
+// Phase 3 listDevices handler. siteIDs is the multi-select; an empty slice
+// means "no site filter". textQ / status are empty strings when absent.
+type listDevicesParams struct {
+	siteIDs        []pgtype.UUID
+	status         string
+	lastSeenCutoff pgtype.Timestamptz
+	textQ          string
+	sortCol        string
+	sortDesc       bool
+	page           int32
+	perPage        int32
+}
+
+type listDevicesErr struct {
+	status int
+	body   errorResp
+}
+
+// parseListDevicesParams parses and validates the query-string for D-12..D-18.
+// Returns a non-nil error response value when validation fails (400).
+func parseListDevicesParams(r *http.Request) (listDevicesParams, *listDevicesErr) {
+	qv := r.URL.Query()
+
+	// per_page restricted to {25,50,100}. D-13.
+	perPage := int32(50)
+	if raw := qv.Get("per_page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || (n != 25 && n != 50 && n != 100) {
+			return listDevicesParams{}, &listDevicesErr{
+				status: http.StatusBadRequest,
+				body: errorResp{
+					Error:  "invalid_per_page",
+					Detail: "per_page must be one of 25, 50, 100",
+				},
+			}
+		}
+		perPage = int32(n)
+	}
+
+	// page 1-based.
+	page := int32(1)
+	if raw := qv.Get("page"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			return listDevicesParams{}, &listDevicesErr{
+				status: http.StatusBadRequest,
+				body:   errorResp{Error: "invalid_page", Detail: "page must be >= 1"},
+			}
+		}
+		page = int32(n)
+	}
+
+	// sort — default '-last_seen'.
+	sortCol, sortDesc, ok := parseSortParam(qv.Get("sort"))
+	if !ok {
+		return listDevicesParams{}, &listDevicesErr{
+			status: http.StatusBadRequest,
+			body: errorResp{
+				Error:  "invalid_sort",
+				Detail: "sort must be one of name|dev_eui|site|last_seen|created_at (prefix '-' for desc)",
+			},
+		}
+	}
+
+	// status — allowed set.
+	status := qv.Get("status")
+	switch status {
+	case "", "active", "inactive", "never_joined":
+		// ok
+	default:
+		return listDevicesParams{}, &listDevicesErr{
+			status: http.StatusBadRequest,
+			body: errorResp{
+				Error:  "invalid_status",
+				Detail: "status must be one of active|inactive|never_joined",
+			},
+		}
+	}
+
+	// last_seen window → timestamp cutoff.
+	lastSeenCutoff := pgtype.Timestamptz{} // Valid=false → NULL
+	switch qv.Get("last_seen") {
+	case "", "all":
+		// no filter
+	case "24h":
+		lastSeenCutoff = pgtype.Timestamptz{Time: time.Now().UTC().Add(-24 * time.Hour), Valid: true}
+	case "7d":
+		lastSeenCutoff = pgtype.Timestamptz{Time: time.Now().UTC().Add(-7 * 24 * time.Hour), Valid: true}
+	case "30d":
+		lastSeenCutoff = pgtype.Timestamptz{Time: time.Now().UTC().Add(-30 * 24 * time.Hour), Valid: true}
+	default:
+		return listDevicesParams{}, &listDevicesErr{
+			status: http.StatusBadRequest,
+			body: errorResp{
+				Error:  "invalid_last_seen",
+				Detail: "last_seen must be one of 24h|7d|30d|all",
+			},
+		}
+	}
+
+	// site multi-select.
+	rawSites := qv["site"]
+	siteIDs := make([]pgtype.UUID, 0, len(rawSites))
+	for _, s := range rawSites {
+		if s == "" {
+			continue
+		}
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return listDevicesParams{}, &listDevicesErr{
+				status: http.StatusBadRequest,
+				body:   errorResp{Error: "invalid_site_id", Detail: s},
+			}
+		}
+		siteIDs = append(siteIDs, pgUUID(id))
+	}
+
+	textQ := strings.TrimSpace(qv.Get("q"))
+
+	return listDevicesParams{
+		siteIDs:        siteIDs,
+		status:         status,
+		lastSeenCutoff: lastSeenCutoff,
+		textQ:          textQ,
+		sortCol:        sortCol,
+		sortDesc:       sortDesc,
+		page:           page,
+		perPage:        perPage,
+	}, nil
+}
+
+// parseSortParam normalises the `sort` query parameter into (column, desc, ok).
+// Empty input maps to the default '-last_seen'. Unknown column names → ok=false.
+func parseSortParam(raw string) (col string, desc bool, ok bool) {
+	if raw == "" {
+		return "last_seen", true, true
+	}
+	desc = false
+	col = raw
+	if strings.HasPrefix(raw, "-") {
+		desc = true
+		col = raw[1:]
+	}
+	switch col {
+	case "name", "dev_eui", "site", "last_seen", "created_at":
+		return col, desc, true
+	}
+	return "", false, false
+}
+
+// filteredDevicesToJSON projects the filter/sort row shape to the API JSON
+// envelope used by the Devices list page. The current_site_{id,name} fields
+// are only set when the device has an active binding; null otherwise.
+//
+// DEV-09: no key material appears anywhere in the projection — only the
+// reveal endpoint surfaces secrets.
+func filteredDevicesToJSON(rows []sqlc.ListDevicesFilteredRow) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]any{
+			"id":                uuidString(r.ID),
+			"dev_eui":           r.DevEui,
+			"name":              r.Name,
+			"device_profile_id": uuidString(r.DeviceProfileID),
+			"join_eui":          derefString(r.JoinEui),
+			"description":       derefString(r.Description),
+			"last_seen_at":      timestamptzText(r.LastSeenAt),
+			"decommissioned_at": timestamptzText(r.DecommissionedAt),
+			"created_at":        timestamptzText(r.CreatedAt),
+			"updated_at":        timestamptzText(r.UpdatedAt),
+			"current_site_id":   uuidStringOrNil(r.CurrentSiteID),
+			"current_site_name": derefString(r.CurrentSiteName),
+		})
+	}
+	return out
+}
+
+func uuidStringOrNil(u pgtype.UUID) any {
+	if !u.Valid {
+		return nil
+	}
+	return uuid.UUID(u.Bytes).String()
 }
 
 func searchDevices(deps Deps) http.HandlerFunc {
@@ -662,6 +916,184 @@ func decommissionDevice(deps Deps) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, deviceToJSON(decommissioned))
 	}
+}
+
+// BulkDecommissionRequest is the JSON body of POST /api/devices/bulk-decommission.
+type BulkDecommissionRequest struct {
+	DeviceIDs []string `json:"device_ids"`
+	Reason    string   `json:"reason"`
+}
+
+// bulkDecommissionDevices handles POST /api/devices/bulk-decommission (D-17).
+//
+// Per-row Serializable tx: failure of one device does NOT roll back rows
+// already committed. Each device's CS+PG side effects (CS DeleteDevice +
+// q.DecommissionDevice + close active binding if any + audit row) live in
+// their own short-lived transaction so a partial-success summary is honest.
+//
+// CS DeleteDevice runs on a fresh context (Pitfall 02-05) and CS-not-found is
+// folded into "ok" — the bulk path is idempotent against an already-cleaned
+// CS side. PG-level failures (not_found, already_decommissioned, conflict)
+// produce a per-row "failed" outcome but never abort the loop.
+//
+// Cap: max 200 device_ids per request to bound work and DoS surface
+// (T-3-56). Over-cap → 400.
+//
+// Audit: every successful row gets an audit_log entry with
+// action='decommission' and notes='bulk decommission: <reason>' so the
+// per-row trail is identical in shape to single-device decommission, plus
+// `request_id` from chi middleware groups every row of one bulk call.
+func bulkDecommissionDevices(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := requireAdmin(deps.SessionMgr, w, r, auth.ActionDeviceDecommission)
+		if !ok {
+			return
+		}
+		var body BulkDecommissionRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, errorResp{Error: "bad_request"})
+			return
+		}
+		if len(body.DeviceIDs) == 0 {
+			writeJSON(w, http.StatusBadRequest, errorResp{Error: "no_device_ids"})
+			return
+		}
+		if len(body.DeviceIDs) > 200 {
+			writeJSON(w, http.StatusBadRequest, errorResp{
+				Error:  "too_many_devices",
+				Detail: "max 200 devices per request",
+			})
+			return
+		}
+
+		outcomes := make([]map[string]any, 0, len(body.DeviceIDs))
+		succeeded, failed := 0, 0
+		userUUID := mustParseUUID(user.ID)
+		requestID := middleware.GetReqID(r.Context())
+		notes := "bulk decommission"
+		if strings.TrimSpace(body.Reason) != "" {
+			notes = "bulk decommission: " + strings.TrimSpace(body.Reason)
+		}
+
+		for _, rawID := range body.DeviceIDs {
+			id, err := uuid.Parse(rawID)
+			if err != nil {
+				outcomes = append(outcomes, map[string]any{
+					"id": rawID, "status": "failed", "reason": "invalid_id",
+				})
+				failed++
+				continue
+			}
+			outcome, errRow := bulkDecommissionOne(r.Context(), deps, id, userUUID, requestID, notes)
+			outcomes = append(outcomes, outcome)
+			if errRow != nil {
+				failed++
+			} else {
+				succeeded++
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"succeeded": succeeded,
+			"failed":    failed,
+			"outcomes":  outcomes,
+		})
+	}
+}
+
+// bulkDecommissionOne runs a single device's Per-row Serializable tx for the
+// bulk endpoint. Returns the per-row outcome map AND any error encountered
+// (so the caller can tally succeeded/failed). The map is the same shape used
+// in the bulk response.
+func bulkDecommissionOne(ctx context.Context, deps Deps, id uuid.UUID, userUUID uuid.UUID, requestID, notes string) (map[string]any, error) {
+	tx, err := deps.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "tx_begin"}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := sqlc.New(tx)
+
+	dev, err := q.GetDevice(ctx, pgUUID(id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "not_found"}, err
+	}
+	if err != nil {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "lookup"}, err
+	}
+	if dev.DecommissionedAt.Valid {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "already_decommissioned"}, errors.New("already_decommissioned")
+	}
+
+	// Close active binding if any — mirrors single decommissionDevice flow.
+	var bindingID pgtype.UUID
+	var bindingFound bool
+	err = tx.QueryRow(ctx,
+		`SELECT id FROM binding WHERE device_id = $1 AND valid_to IS NULL LIMIT 1`,
+		dev.ID,
+	).Scan(&bindingID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// no active binding — fine.
+	case err != nil:
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "binding_lookup"}, err
+	default:
+		bindingFound = true
+	}
+	if bindingFound {
+		if _, err := q.CloseBinding(ctx, sqlc.CloseBindingParams{
+			ID:      bindingID,
+			ValidTo: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		}); err != nil {
+			return map[string]any{"id": id.String(), "status": "failed", "reason": "binding_close"}, err
+		}
+	}
+
+	// CS DeleteDevice best-effort with fresh ctx (Pitfall 02-05). CS-not-found
+	// is folded into success so re-running a bulk-decommission against an
+	// already-cleaned CS side is idempotent.
+	if deps.CS != nil {
+		csCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if cerr := deps.CS.DeleteDevice(csCtx, dev.DevEui); cerr != nil &&
+			!errors.Is(cerr, chirpstack.ErrNotFound) && deps.Log != nil {
+			// Log but do NOT roll back — operator's intent is "retire this
+			// device in Shifter"; CS may already be gone or unreachable.
+			deps.Log.Warn("bulk decommission: CS DeleteDevice", "err", cerr, "dev_eui", dev.DevEui)
+		}
+		cancel()
+	}
+
+	decommissioned, err := q.DecommissionDevice(ctx, pgUUID(id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "already_decommissioned"}, err
+	}
+	if err != nil {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "decommission"}, err
+	}
+
+	after := map[string]any{
+		"decommissioned_at": timestamptzText(decommissioned.DecommissionedAt),
+		"closed_binding":    bindingFound,
+	}
+	if bindingFound {
+		after["binding_id"] = uuid.UUID(bindingID.Bytes).String()
+	}
+	if err := audit.WriteEntry(ctx, tx, audit.Entry{
+		UserID:     userUUID,
+		Action:     audit.ActionDecommission,
+		EntityType: audit.EntityTypeDevice,
+		EntityID:   uuid.UUID(decommissioned.ID.Bytes),
+		Before:     map[string]any{"decommissioned_at": nil},
+		After:      after,
+		Notes:      notes,
+		RequestID:  requestID,
+	}); err != nil {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "audit"}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return map[string]any{"id": id.String(), "status": "failed", "reason": "commit"}, err
+	}
+	return map[string]any{"id": id.String(), "status": "decommissioned"}, nil
 }
 
 // ----- helpers ------------------------------------------------------------

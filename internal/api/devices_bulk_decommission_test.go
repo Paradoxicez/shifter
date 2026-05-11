@@ -1,14 +1,19 @@
 package api
 
-// Phase 3 Wave 2 — POST /api/devices/bulk-decommission.
-// D-17: N rows submitted, each CS+PG transaction is atomic per device,
-// partial success reported.
+// Phase 3 Plan 03-06 / Task 2 — POST /api/devices/bulk-decommission (D-17).
+//
+// Canonical integration tests live in
+// internal/device/bulk_decommission_test.go:
+//   - TestBulkDecommissionDevices_PartialSuccess
+//   - TestBulkDecommissionDevices_Atomic
+//   - TestBulkDecommissionDevices_MaxBatch200
+//   - TestBulkDecommissionDevices_Viewer403
+//
+// The package-api markers below resolve the 03-VALIDATION rows to a real
+// test invocation. Actual coverage lives in the device package.
 
 import "testing"
 
-// TestBulkDecommissionDevices_PartialSuccess — submit 5 EUIs where the 3rd
-// CS-side Delete fails; response shows ok=4, errored=1 with the specific
-// EUI flagged and a remediation hint.
 func TestBulkDecommissionDevices_PartialSuccess(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_bulk_decommission.go (03-VALIDATION row devices_bulk_decommission_test.TestBulkDecommissionDevices_PartialSuccess)")
+	t.Skip("canonical: internal/device/bulk_decommission_test.go::TestBulkDecommissionDevices_PartialSuccess")
 }

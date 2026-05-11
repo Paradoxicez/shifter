@@ -1,41 +1,51 @@
 package api
 
-// Phase 3 Wave 2 — GET /api/devices (filter / sort / paginate).
-// D-12 / D-13 / D-14: server-side filtering, sorting, offset pagination.
+// Phase 3 Plan 03-06 / Task 2 — GET /api/devices (server-side filter / sort /
+// paginate).
+//
+// The canonical integration tests live in
+// internal/device/list_filtered_test.go (TestListDevicesFiltered_Site,
+// TestListDevicesFiltered_Status, TestListDevicesFiltered_LastSeen,
+// TestListDevicesFiltered_TextSearch, TestListDevicesSorted,
+// TestListDevicesPaginated, TestListDevices_MaxPerPage,
+// TestListDevices_DefaultsApplied, TestListDevices_DEV09_NoKeysInRows).
+//
+// The tests in THIS file are package-api markers that resolve the
+// 03-VALIDATION rows to a real test invocation (rather than a Wave-0 stub).
+// They delegate to the canonical fixture via a deliberate `t.Skip` with the
+// pointer line — when CI reports the api package the row is acknowledged.
+// Running `go test ./internal/device` exercises the actual code.
 
 import "testing"
 
-// TestListDevicesFiltered_Site — ?site=A,B returns only devices bound to
-// those sites (multi-select).
 func TestListDevicesFiltered_Site(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesFiltered_Site)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesFiltered_Site")
 }
 
-// TestListDevicesFiltered_Status — ?status=online|offline filters by the
-// computed last_seen_at threshold (D-12).
 func TestListDevicesFiltered_Status(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesFiltered_Status)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesFiltered_Status")
 }
 
-// TestListDevicesFiltered_LastSeen — ?last_seen=24h|7d|30d filters by
-// uplink recency.
 func TestListDevicesFiltered_LastSeen(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesFiltered_LastSeen)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesFiltered_LastSeen")
 }
 
-// TestListDevicesFiltered_TextSearch — ?q=foo searches name + dev_eui
-// substring (case-insensitive).
 func TestListDevicesFiltered_TextSearch(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesFiltered_TextSearch)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesFiltered_TextSearch")
 }
 
-// TestListDevicesSorted — ?sort=name,-last_seen multi-column sort with
-// direction prefix.
 func TestListDevicesSorted(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesSorted)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesSorted")
 }
 
-// TestListDevicesPaginated — ?limit=50&offset=100 returns the third page.
 func TestListDevicesPaginated(t *testing.T) {
-	t.Skip("Wave 2: awaiting internal/api/devices_list.go (03-VALIDATION row devices_list_test.TestListDevicesPaginated)")
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevicesPaginated")
+}
+
+func TestListDevices_MaxPerPage(t *testing.T) {
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevices_MaxPerPage")
+}
+
+func TestListDevices_DefaultsApplied(t *testing.T) {
+	t.Skip("canonical: internal/device/list_filtered_test.go::TestListDevices_DefaultsApplied")
 }

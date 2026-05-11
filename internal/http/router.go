@@ -223,6 +223,12 @@ func NewRouter(deps Deps) http.Handler {
 		// only cmd/serve constructs (chirpstack.Client + ConnectionStore
 		// adapter). Routes mount only when DeviceDeps is non-nil so unit
 		// tests of the http router don't need full CS wiring.
+		//
+		// Phase 3 (Plan 03-06) extends the device routes mounted here:
+		//   GET   /api/devices                          — filter / sort / page (D-12..D-18)
+		//   POST  /api/devices/bulk-decommission        — admin only (D-17)
+		//   POST  /api/devices/{eui}/keys               — reveal secrets, admin only
+		//                                                 (D-22 / D-26 / D-27 / D-28)
 		device.RegisterRoutes(r, *deps.DeviceDeps)
 	}
 	if deps.SwapDeps != nil {
