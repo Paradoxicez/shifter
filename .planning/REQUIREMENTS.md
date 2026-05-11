@@ -39,7 +39,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **GW-01**: Admin can list, search, and filter gateways with online/offline status, last-seen, and lat/lng
 - [x] **GW-02**: Admin can create / edit / delete a gateway via dialogs, with regulator-aware region picker
 - [x] **GW-03**: User can view per-gateway RX/TX statistics (packet counts, success rate)
-- [ ] **GW-04**: Gateways appear as pins on the map view with health indicators
+- [x] **GW-04**: Gateways appear as pins on the map view with health indicators
 
 ### Devices & Meters
 
@@ -246,7 +246,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | GW-01 | Phase 3 | Complete |
 | GW-02 | Phase 3 | Complete |
 | GW-03 | Phase 3 | Complete |
-| GW-04 | Phase 3 | Pending |
+| GW-04 | Phase 3 | Complete |
 | DEV-01 | Phase 3 | Pending |
 | DEV-02 | Phase 3 | Pending |
 | DEV-03 | Phase 3 | Pending |
