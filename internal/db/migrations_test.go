@@ -510,16 +510,147 @@ func TestPhase3Migrations_0019_Down(t *testing.T) {
 
 // TestPhase3Migrations_0020_AuditLogVocabulary_Apply — applies 0020 and
 // asserts the audit_log_action_valid + audit_log_entity_type_valid CHECK
-// constraints accept the new Phase 3 values.
+// constraints accept the new Phase 3 values. The constraint names must remain
+// `audit_log_action_valid` and `audit_log_entity_type_valid` (DROP + re-ADD
+// with same name) so dependent diagnostics/observability continue to work.
 func TestPhase3Migrations_0020_AuditLogVocabulary_Apply(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0020_audit_log_vocabulary.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0020_AuditLogVocabulary_Apply)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Constraint names preserved per Plan 03-02 Task 1.
+	for _, name := range []string{"audit_log_action_valid", "audit_log_entity_type_valid"} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = $1)`,
+			name,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "constraint %q must exist after 0020 (DROP+re-ADD preserved name)", name)
+	}
 }
 
 // TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes — INSERT rows
 // using each new action + entity_type combination (`device.bulk_import`,
 // `device.reveal_secrets`, `gateway.create|update|archive|restore`,
-// `import_job`) and verify CHECK constraints pass.
+// `import_job`) and verify CHECK constraints pass. Regression check: at least
+// one Phase 2 vocabulary value still inserts cleanly.
 func TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0020_audit_log_vocabulary.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('vocab@example.com', 'Vocab', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	// Each new Phase 3 action — paired with a sensible entity_type so the
+	// row also exercises the entity_type CHECK.
+	newActions := []struct {
+		action     string
+		entityType string
+	}{
+		{"gateway.create", "gateway"},
+		{"gateway.update", "gateway"},
+		{"gateway.archive", "gateway"},
+		{"gateway.restore", "gateway"},
+		{"device.bulk_import", "import_job"},
+		{"device.reveal_secrets", "device"},
+	}
+	for _, c := range newActions {
+		_, err := pool.Exec(ctx,
+			`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+			 VALUES ($1, $2, $3, gen_random_uuid())`,
+			userID, c.action, c.entityType,
+		)
+		require.NoError(t, err,
+			"INSERT with action=%q entity_type=%q must pass 0020 CHECKs", c.action, c.entityType)
+	}
+
+	// New entity types paired with a Phase 2 action ('create') so the action
+	// CHECK is satisfied while we exercise the entity_type CHECK in isolation.
+	for _, et := range []string{"gateway", "import_job"} {
+		_, err := pool.Exec(ctx,
+			`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+			 VALUES ($1, 'create', $2, gen_random_uuid())`,
+			userID, et,
+		)
+		require.NoError(t, err, "entity_type %q must be admitted by 0020", et)
+	}
+
+	// Regression: a Phase 2 vocab pair (`create` + `site`) STILL inserts.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'create', 'site', gen_random_uuid())`,
+		userID,
+	)
+	require.NoError(t, err, "Phase 2 vocab must still insert after 0020 (regression)")
+
+	// Negative case: a still-unknown action remains rejected.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'frobnicate', 'gateway', gen_random_uuid())`,
+		userID,
+	)
+	require.Error(t, err, "unknown action must still be rejected post-0020")
+	require.Contains(t, err.Error(), "audit_log_action_valid")
+}
+
+// TestPhase3Migrations_0020_Down — applies 0020 up + down and verifies the
+// CHECK vocab has reverted to the Phase 2 set. A row using Phase 3 vocab
+// is rejected post-down; a Phase 2 row still inserts.
+func TestPhase3Migrations_0020_Down(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Roll back 0020 only (one step). 0019/0018 stay applied.
+	require.NoError(t, runMigrateSteps(t, pool, -1))
+
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('vocab_down@example.com', 'VD', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	// Phase 3 action no longer admitted after down.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'gateway.create', 'site', gen_random_uuid())`,
+		userID,
+	)
+	require.Error(t, err, "Phase 3 action must be rejected after 0020 down")
+	require.Contains(t, err.Error(), "audit_log_action_valid")
+
+	// Phase 3 entity_type no longer admitted after down.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'create', 'gateway', gen_random_uuid())`,
+		userID,
+	)
+	require.Error(t, err, "Phase 3 entity_type must be rejected after 0020 down")
+	require.Contains(t, err.Error(), "audit_log_entity_type_valid")
+
+	// Phase 2 vocab still works after down.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO audit_log (user_id, action, entity_type, entity_id)
+		 VALUES ($1, 'create', 'site', gen_random_uuid())`,
+		userID,
+	)
+	require.NoError(t, err, "Phase 2 vocab must still insert after 0020 down")
 }
 

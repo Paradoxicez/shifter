@@ -38,6 +38,24 @@ const (
 	EntityTypeBinding       = "binding"
 )
 
+// Phase 3 — Plan 03-02: gateway CRUD, bulk-import envelope, reveal-secrets
+// audit. These strings MUST exactly mirror the CHECK literals in
+// migration 0020_audit_log_vocabulary.up.sql — any drift = 23514 at write.
+const (
+	ActionGatewayCreate  = "gateway.create"
+	ActionGatewayUpdate  = "gateway.update"
+	ActionGatewayArchive = "gateway.archive"
+	ActionGatewayRestore = "gateway.restore"
+	ActionBulkImport     = "device.bulk_import"
+	ActionRevealSecrets  = "device.reveal_secrets"
+)
+
+// Phase 3 entity types (mirrors 0020 CHECK literals).
+const (
+	EntityTypeGateway   = "gateway"
+	EntityTypeImportJob = "import_job"
+)
+
 // Entry is the value-shape callers fill in when calling WriteEntry. It maps
 // 1:1 onto the audit_log columns minus the DB-defaulted id + time. The 8
 // caller-provided columns (D-22) plus the txn handle make audit calls
