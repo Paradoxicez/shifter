@@ -189,6 +189,8 @@ func TestCreateMP_RejectsDupeNameOnSameSite(t *testing.T) {
 }
 
 // TestGetMPDetail_NoActiveBinding — fresh MP without binding → active_binding null.
+// Updated for Phase 4 detail endpoint shape (DETL-01): metering_point.site_name,
+// active_binding=null, latest_reading=null, online=null (D-22 empty case).
 func TestGetMPDetail_NoActiveBinding(t *testing.T) {
 	f := newMPFixture(t)
 	f.seedRole(t, "admin")
@@ -207,12 +209,12 @@ func TestGetMPDetail_NoActiveBinding(t *testing.T) {
 	res := f.doJSON(t, "GET", "/api/metering-points/"+id, nil)
 	defer res.Body.Close()
 	require.Equal(t, http.StatusOK, res.StatusCode)
-	var got map[string]any
+	var got DetailResponse
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&got))
-	require.Nil(t, got["active_binding"], "fresh MP must have null active_binding")
-	require.Nil(t, got["latest_measurement"], "fresh MP must have null latest_measurement")
-	site := got["site"].(map[string]any)
-	require.Equal(t, "MP Test Site", site["name"])
+	require.Nil(t, got.ActiveBinding, "fresh MP must have null active_binding")
+	require.Nil(t, got.LatestReading, "fresh MP must have null latest_reading")
+	require.Nil(t, got.Online, "fresh MP must have null online flag")
+	require.Equal(t, "MP Test Site", got.MeteringPoint.SiteName)
 }
 
 // TestGetMPDetail_WithActiveBinding — pre-create MP + active binding + device →
@@ -253,14 +255,12 @@ func TestGetMPDetail_WithActiveBinding(t *testing.T) {
 	defer res.Body.Close()
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
-	var got map[string]any
+	// Phase 4 detail endpoint shape (DETL-01): flat active_binding with dev_eui + device_profile_name.
+	var got DetailResponse
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&got))
-	require.NotNil(t, got["active_binding"], "MP with binding must have non-null active_binding")
-	binding := got["active_binding"].(map[string]any)
-	dev := binding["device"].(map[string]any)
-	require.Equal(t, "0102030405060708", dev["dev_eui"])
-	prof := binding["device_profile"].(map[string]any)
-	require.NotEmpty(t, prof["name"])
+	require.NotNil(t, got.ActiveBinding, "MP with binding must have non-null active_binding")
+	require.Equal(t, "0102030405060708", got.ActiveBinding.DevEUI)
+	require.NotEmpty(t, got.ActiveBinding.DeviceProfileName)
 }
 
 // TestArchiveMP_HidesFromList — archive MP; GET /api/metering-points doesn't

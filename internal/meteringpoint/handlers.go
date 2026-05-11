@@ -68,8 +68,14 @@ func RegisterRoutes(r chi.Router, deps Deps) {
 			rt.Get("/", listMPs(deps))
 			rt.Get("/archived", listArchivedMPs(deps))
 			rt.Get("/by-site/{siteID}", listBySite(deps))
-			rt.Get("/{id}", getMPDetail(deps))
+			// Phase 4 detail endpoint (replaces Phase 2 basic getMPDetail).
+			// Serves Normal + Advanced tab data in one call (DETL-01, D-22).
+			rt.Get("/{id}", deps.handleDetail)
 			rt.Get("/{id}/quality", getQualitySummary(deps))
+			// Phase 4 additional MP detail endpoints.
+			rt.Get("/{id}/uplinks", deps.handleUplinks)
+			rt.Get("/{id}/timeseries", deps.handleTimeseries)
+			rt.Get("/{id}/signal-history", deps.handleSignalHistory)
 		})
 		// Mutate groups — admin only.
 		r.Group(func(rt chi.Router) {

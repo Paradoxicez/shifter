@@ -22,11 +22,11 @@ SELECT
     b.valid_from,
     d.dev_eui,
     dp.name AS device_profile_name,
-    -- latest reading via LATERAL
+    -- latest reading via LATERAL (all columns may be NULL when no measurement exists; D-22)
     latest.time AS latest_time,
     latest.cumulative_value,
     latest.instant_value,
-    latest.quality,
+    COALESCE(latest.quality, '') AS quality,
     latest.battery_pct,
     latest.rssi,
     latest.snr,
