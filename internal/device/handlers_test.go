@@ -26,23 +26,31 @@ import (
 	"github.com/shifter-io/shifter/internal/testsupport"
 )
 
-// fakeCSDevice records every Create / CreateKeys / Delete call so assertions
-// can verify CS side effects without driving a real ChirpStack server. The
-// failure-injection queue uses createErrs / keysErrs / deleteErrs in FIFO
-// order so multi-call tests stay deterministic.
+// fakeCSDevice records every Create / CreateKeys / Activate / Delete call so
+// assertions can verify CS side effects without driving a real ChirpStack
+// server. The failure-injection queue uses *Errs in FIFO order so multi-call
+// tests stay deterministic. Phase 3 Plan 03-07 adds the Activate path for the
+// ABP add-device branch — same recording shape (last-input + per-call err
+// queue) as the OTAA Create/Keys pair.
 type fakeCSDevice struct {
 	mu sync.Mutex
 
-	createCalls atomic.Int64
-	keysCalls   atomic.Int64
-	deleteCalls atomic.Int64
+	createCalls   atomic.Int64
+	keysCalls     atomic.Int64
+	activateCalls atomic.Int64
+	deleteCalls   atomic.Int64
 
-	createErrs []error
-	keysErrs   []error
-	deleteErrs []error
+	createErrs   []error
+	keysErrs     []error
+	activateErrs []error
+	deleteErrs   []error
 
 	createdEUIs []string
 	deletedEUIs []string
+
+	// lastActivate is the last ActivateDeviceInput observed (only valid when
+	// activateCalls > 0). Tests assert on this for the ABP path verification.
+	lastActivate chirpstack.ActivateDeviceInput
 }
 
 func (f *fakeCSDevice) CreateDevice(_ context.Context, in chirpstack.CreateDeviceInput) error {
@@ -87,9 +95,29 @@ func (f *fakeCSDevice) DeleteDevice(_ context.Context, devEUI string) error {
 	return nil
 }
 
-func (f *fakeCSDevice) CreateCalls() int64 { return f.createCalls.Load() }
-func (f *fakeCSDevice) KeysCalls() int64   { return f.keysCalls.Load() }
-func (f *fakeCSDevice) DeleteCalls() int64 { return f.deleteCalls.Load() }
+// ActivateDevice is the ABP-branch counterpart of CreateDeviceKeys. Plan 03-07
+// add-device handler invokes this for activation_mode=ABP after CS CreateDevice
+// succeeds. The fake records the last input so tests can assert on field
+// propagation (DevAddr / NwkSKey / AppSKey / FCntUp / FCntDown).
+func (f *fakeCSDevice) ActivateDevice(_ context.Context, in chirpstack.ActivateDeviceInput) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.activateCalls.Add(1)
+	f.lastActivate = in
+	if len(f.activateErrs) > 0 {
+		err := f.activateErrs[0]
+		f.activateErrs = f.activateErrs[1:]
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeCSDevice) CreateCalls() int64   { return f.createCalls.Load() }
+func (f *fakeCSDevice) KeysCalls() int64     { return f.keysCalls.Load() }
+func (f *fakeCSDevice) ActivateCalls() int64 { return f.activateCalls.Load() }
+func (f *fakeCSDevice) DeleteCalls() int64   { return f.deleteCalls.Load() }
 
 // fakeBootstrap satisfies CSBootstrapper with a fixed (tenantID, appID).
 type fakeBootstrap struct {
@@ -691,4 +719,218 @@ func TestSearchDevices_ViewerCanRead(t *testing.T) {
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&got))
 	require.Len(t, got, 1)
 	require.Equal(t, "Searchable", got[0]["name"])
+}
+
+// ============================================================================
+// Phase 3 Plan 03-07 — OTAA / ABP branching in POST /api/devices
+// ============================================================================
+//
+// Backend extension (D-19..D-25): a single POST /api/devices accepts either
+// `activation_mode=OTAA` (Phase 2 path — CS CreateDevice + CreateDeviceKeys)
+// OR `activation_mode=ABP` (new — CS CreateDevice + ActivateDevice). The
+// response body echoes the keys back to the client so the dialog's success
+// state (D-21) can render Copy-keys without a second round-trip. Shifter PG
+// NEVER persists secrets (D-22 / DEV-09 — structural).
+
+// validNwkSKey / validAppSKey / validDevAddr are deterministic ABP fixtures.
+// Pure-hex 32/32/8 byte counts match LoRaWAN 1.0.x wire shape.
+func validNwkSKey() string { return "0102030405060708090a0b0c0d0e0f10" }
+func validAppSKey() string { return "1011121314151617181920212223242a" }
+func validDevAddr() string { return "01020304" }
+
+// TestAddDevice_OTAA — explicit activation_mode=OTAA → CS CreateDevice + CS
+// CreateDeviceKeys + PG row. Response body echoes back keys (D-21 success
+// state contract). Backwards-compat: omitting activation_mode also routes to
+// OTAA (Phase 2 default — no migration burden on existing callers).
+func TestAddDevice_OTAA(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070001"),
+		Name:            "OTAA Dev",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "OTAA",
+		AppKey:          validAppKey(),
+		JoinEUI:         "0000000000000000",
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusCreated, res.StatusCode)
+
+	require.Equal(t, int64(1), f.cs.CreateCalls())
+	require.Equal(t, int64(1), f.cs.KeysCalls(), "OTAA branch invokes CreateDeviceKeys")
+	require.Equal(t, int64(0), f.cs.ActivateCalls(), "OTAA branch must NOT invoke Activate")
+	require.Equal(t, int64(0), f.cs.DeleteCalls())
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "OTAA", body["activation_mode"])
+	require.Equal(t, validAppKey(), body["app_key"], "D-21: success-state echoes AppKey")
+	require.Equal(t, "0000000000000000", body["join_eui"])
+	require.Equal(t, validAppKey(), body["nwk_key"], "1.0.x default: NwkKey=AppKey")
+}
+
+// TestAddDevice_ABP — activation_mode=ABP → CS CreateDevice + CS
+// ActivateDevice (no CreateKeys). Response echoes ABP fields. Verifies
+// ActivateDevice was called with the operator-typed DevAddr / NwkSKey /
+// AppSKey / FCntUp / FCntDown — and that NO secret columns are written to
+// Shifter PG (DEV-09 structural).
+func TestAddDevice_ABP(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070002"),
+		Name:            "ABP Dev",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "ABP",
+		DevAddr:         validDevAddr(),
+		NwkSKey:         validNwkSKey(),
+		AppSKey:         validAppSKey(),
+		FCntUp:          12,
+		FCntDown:        8,
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusCreated, res.StatusCode)
+
+	require.Equal(t, int64(1), f.cs.CreateCalls())
+	require.Equal(t, int64(0), f.cs.KeysCalls(), "ABP branch must NOT invoke CreateDeviceKeys")
+	require.Equal(t, int64(1), f.cs.ActivateCalls(), "ABP branch invokes ActivateDevice")
+	require.Equal(t, int64(0), f.cs.DeleteCalls())
+
+	// Activate payload propagation.
+	got := f.cs.lastActivate
+	require.Equal(t, validDevEUI("070002"), got.DevEUI)
+	require.Equal(t, validDevAddr(), got.DevAddr)
+	require.Equal(t, validNwkSKey(), got.NwkSKey)
+	require.Equal(t, validAppSKey(), got.AppSKey)
+	require.Equal(t, uint32(12), got.FCntUp)
+	require.Equal(t, uint32(8), got.FCntDown)
+
+	// Response echoes operator-typed ABP fields for D-21 success state.
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "ABP", body["activation_mode"])
+	require.Equal(t, validDevAddr(), body["dev_addr"])
+	require.Equal(t, validNwkSKey(), body["nwk_s_key"])
+	require.Equal(t, validAppSKey(), body["app_s_key"])
+	require.EqualValues(t, 12, body["f_cnt_up"])
+	require.EqualValues(t, 8, body["f_cnt_down"])
+
+	// DEV-09 structural — device row has NO secret columns. We sanity-check by
+	// dumping the full row's text representation and asserting no key material
+	// appears (defense beyond the structural schema invariant).
+	var rowDump string
+	require.NoError(t, f.pool.QueryRow(context.Background(),
+		`SELECT row_to_json(device)::text FROM device WHERE dev_eui = $1`, validDevEUI("070002"),
+	).Scan(&rowDump))
+	require.NotContains(t, rowDump, validNwkSKey(),
+		"DEV-09: NwkSKey must NEVER appear in any Shifter row")
+	require.NotContains(t, rowDump, validAppSKey(),
+		"DEV-09: AppSKey must NEVER appear in any Shifter row")
+	require.NotContains(t, rowDump, validDevAddr(),
+		"DEV-09: DevAddr must NEVER appear in any Shifter row")
+}
+
+// TestAddDevice_ABP_FCntCarryOver — D-20: omitting fcnt_up / fcnt_down
+// defaults both to 0 on the ActivateDevice payload.
+func TestAddDevice_ABP_FCntCarryOver(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070003"),
+		Name:            "ABP No FCnt",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "ABP",
+		DevAddr:         validDevAddr(),
+		NwkSKey:         validNwkSKey(),
+		AppSKey:         validAppSKey(),
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusCreated, res.StatusCode)
+
+	require.Equal(t, uint32(0), f.cs.lastActivate.FCntUp)
+	require.Equal(t, uint32(0), f.cs.lastActivate.FCntDown)
+}
+
+// TestAddDevice_ABP_AtomicityCSRollback — PG insert fails (unique conflict)
+// AFTER CS CreateDevice + ActivateDevice succeed → handler invokes
+// best-effort CS DeleteDevice with a fresh ctx. Both CS resources cleaned
+// up, no orphan; HTTP 409 surfaced for the unique violation.
+func TestAddDevice_ABP_AtomicityCSRollback(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	// Pre-insert conflicting device row → forces unique violation on INSERT.
+	_, err := f.pool.Exec(context.Background(),
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ($1, 'pre-existing', $2::uuid)`,
+		validDevEUI("070004"), f.profileID,
+	)
+	require.NoError(t, err)
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070004"),
+		Name:            "ABP Conflict",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "ABP",
+		DevAddr:         validDevAddr(),
+		NwkSKey:         validNwkSKey(),
+		AppSKey:         validAppSKey(),
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusConflict, res.StatusCode)
+
+	require.Equal(t, int64(1), f.cs.CreateCalls())
+	require.Equal(t, int64(1), f.cs.ActivateCalls())
+	require.GreaterOrEqual(t, f.cs.DeleteCalls(), int64(1),
+		"D-16: CS DeleteDevice must be called when Shifter INSERT fails after Activate")
+}
+
+// TestAddDevice_InvalidActivationMode — activation_mode=banana → 400. CS not
+// touched.
+func TestAddDevice_InvalidActivationMode(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070005"),
+		Name:            "Banana",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "banana",
+		AppKey:          validAppKey(),
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "invalid_activation_mode", body["error"])
+
+	require.Equal(t, int64(0), f.cs.CreateCalls(), "bad activation_mode must not reach CS")
+}
+
+// TestAddDevice_MissingABPFields — activation_mode=ABP without nwk_s_key →
+// 400 with operator-readable detail naming the missing field. CS untouched.
+func TestAddDevice_MissingABPFields(t *testing.T) {
+	f := newDeviceFixture(t)
+	f.seedRole(t, "admin")
+
+	res := f.doJSON(t, "POST", "/api/devices", AddDeviceRequest{
+		DevEUI:          validDevEUI("070006"),
+		Name:            "ABP Missing",
+		DeviceProfileID: f.profileID,
+		ActivationMode:  "ABP",
+		DevAddr:         validDevAddr(),
+		AppSKey:         validAppSKey(),
+		// NwkSKey intentionally omitted.
+	})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "invalid_nwk_s_key", body["error"])
+
+	require.Equal(t, int64(0), f.cs.CreateCalls())
 }

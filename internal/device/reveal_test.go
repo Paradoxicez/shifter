@@ -67,12 +67,16 @@ type fakeRevealerCS struct {
 
 // Satisfy CSDeviceClient — never invoked by the reveal flow but the
 // embedding deps.CS field is typed as CSDeviceClient so the methods must
-// be present.
+// be present. Plan 03-07 added ActivateDevice to the interface; the reveal
+// fixture stubs it the same way it stubs the OTAA add-device methods.
 func (f *fakeRevealerCS) CreateDevice(_ context.Context, _ chirpstack.CreateDeviceInput) error {
 	return errors.New("fakeRevealerCS.CreateDevice not implemented")
 }
 func (f *fakeRevealerCS) CreateDeviceKeys(_ context.Context, _ string, _ string) error {
 	return errors.New("fakeRevealerCS.CreateDeviceKeys not implemented")
+}
+func (f *fakeRevealerCS) ActivateDevice(_ context.Context, _ chirpstack.ActivateDeviceInput) error {
+	return errors.New("fakeRevealerCS.ActivateDevice not implemented")
 }
 func (f *fakeRevealerCS) DeleteDevice(_ context.Context, _ string) error { return nil }
 

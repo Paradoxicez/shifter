@@ -48,9 +48,15 @@ import (
 // CSDeviceClient is the narrow ChirpStack contract Add Device + Decommission
 // depend on. *chirpstack.Client structurally satisfies this interface; tests
 // substitute a fakeCSClient without standing up a real CS instance.
+//
+// Phase 3 Plan 03-07 added ActivateDevice for the ABP branch — OTAA still
+// uses CreateDeviceKeys, ABP uses Activate. Both share the same atomic
+// CS+PG transaction shape; the wrapper's input types live in
+// internal/chirpstack/device.go.
 type CSDeviceClient interface {
 	CreateDevice(ctx context.Context, in chirpstack.CreateDeviceInput) error
 	CreateDeviceKeys(ctx context.Context, devEUI, appKey string) error
+	ActivateDevice(ctx context.Context, in chirpstack.ActivateDeviceInput) error
 	DeleteDevice(ctx context.Context, devEUI string) error
 }
 
@@ -152,13 +158,41 @@ func RegisterRoutes(r chi.Router, deps Deps) {
 
 // AddDeviceRequest is the JSON body of POST /api/devices — the CHIRP-04
 // atomic add-device payload.
+//
+// Phase 3 Plan 03-07 (D-19..D-25) extends the Phase 2 OTAA-only shape into a
+// discriminated union keyed by `activation_mode`:
+//
+//   - "OTAA" (default — Phase 2 backwards-compatible): requires AppKey;
+//     optional JoinEUI defaults to "0000000000000000". CS path:
+//     CreateDevice + CreateDeviceKeys.
+//   - "ABP" (new): requires DevAddr (8 hex) + NwkSKey (32 hex) + AppSKey
+//     (32 hex); optional FCntUp / FCntDown default to 0. CS path:
+//     CreateDevice + ActivateDevice.
+//
+// DEV-09 invariant: NONE of the secret fields (AppKey, NwkSKey, AppSKey,
+// DevAddr) are persisted in Shifter PG. They are forwarded to CS and
+// echoed back in the response body once so the dialog's D-21 success state
+// can render Copy keys — never columned.
 type AddDeviceRequest struct {
 	DevEUI          string  `json:"dev_eui"`           // lowercase 16-hex (UI normalizes via parse-deveui)
 	Name            string  `json:"name"`
 	DeviceProfileID string  `json:"device_profile_id"` // UUID string
-	AppKey          string  `json:"app_key"`           // 32 hex; sent to CS, NEVER stored in Shifter
-	JoinEUI         string  `json:"join_eui,omitempty"` // optional; default "0000000000000000"
 	Description     string  `json:"description,omitempty"`
+
+	// ActivationMode — "OTAA" (default — backwards-compat) or "ABP". Phase 3
+	// D-19. Validated server-side; banana → 400.
+	ActivationMode string `json:"activation_mode,omitempty"`
+
+	// --- OTAA branch fields (activation_mode == "OTAA") -------------------
+	AppKey  string `json:"app_key,omitempty"`  // 32 hex; sent to CS, NEVER stored in Shifter
+	JoinEUI string `json:"join_eui,omitempty"` // optional; default "0000000000000000"
+
+	// --- ABP branch fields (activation_mode == "ABP") ---------------------
+	DevAddr  string `json:"dev_addr,omitempty"`  // 8 hex
+	NwkSKey  string `json:"nwk_s_key,omitempty"` // 32 hex (LoRaWAN 1.0.x — wrapper copies to NwkSEnc/SNwkSInt/FNwkSInt)
+	AppSKey  string `json:"app_s_key,omitempty"` // 32 hex
+	FCntUp   uint32 `json:"fcnt_up,omitempty"`   // default 0
+	FCntDown uint32 `json:"fcnt_down,omitempty"` // default 0 (mapped to NFCntDown)
 
 	// MeteringPointID + InitialReading — when set, opens an initial binding
 	// in the same atomic txn (D-10 step 3). MeteringPointID empty = device
@@ -581,26 +615,77 @@ func addDevice(deps Deps) http.HandlerFunc {
 
 		// 1. Server-side validation.
 		in.DevEUI = strings.ToLower(strings.TrimSpace(in.DevEUI))
-		in.AppKey = strings.ToLower(strings.TrimSpace(in.AppKey))
-		in.JoinEUI = strings.ToLower(strings.TrimSpace(in.JoinEUI))
 		if !isHex(in.DevEUI, 16) {
 			writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_dev_eui",
 				Detail: "dev_eui must be 16 lowercase hex chars"})
 			return
 		}
-		if !isHex(in.AppKey, 32) {
-			writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_app_key",
-				Detail: "app_key must be 32 lowercase hex chars"})
+
+		// 1a. activation_mode (Phase 3 D-19). Empty defaults to OTAA for
+		// backwards-compat with Phase 2 callers (the Phase 2 dialog never sent
+		// activation_mode; we route those to OTAA without breaking them).
+		in.ActivationMode = strings.ToUpper(strings.TrimSpace(in.ActivationMode))
+		if in.ActivationMode == "" {
+			in.ActivationMode = "OTAA"
+		}
+		switch in.ActivationMode {
+		case "OTAA", "ABP":
+			// ok
+		default:
+			writeJSON(w, http.StatusBadRequest, errorResp{
+				Error:  "invalid_activation_mode",
+				Detail: "activation_mode must be OTAA or ABP",
+			})
 			return
 		}
-		if in.JoinEUI == "" {
-			in.JoinEUI = "0000000000000000"
+
+		// 1b. mode-specific field validation. Each branch normalises and
+		// length-checks ONLY its own fields; the opposite branch's fields are
+		// left untouched (and not echoed in the response).
+		switch in.ActivationMode {
+		case "OTAA":
+			in.AppKey = strings.ToLower(strings.TrimSpace(in.AppKey))
+			in.JoinEUI = strings.ToLower(strings.TrimSpace(in.JoinEUI))
+			if !isHex(in.AppKey, 32) {
+				writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_app_key",
+					Detail: "app_key must be 32 lowercase hex chars"})
+				return
+			}
+			if in.JoinEUI == "" {
+				in.JoinEUI = "0000000000000000"
+			}
+			if !isHex(in.JoinEUI, 16) {
+				writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_join_eui",
+					Detail: "join_eui must be 16 lowercase hex chars"})
+				return
+			}
+		case "ABP":
+			in.DevAddr = strings.ToLower(strings.TrimSpace(in.DevAddr))
+			in.NwkSKey = strings.ToLower(strings.TrimSpace(in.NwkSKey))
+			in.AppSKey = strings.ToLower(strings.TrimSpace(in.AppSKey))
+			if !isHex(in.DevAddr, 8) {
+				writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_dev_addr",
+					Detail: "dev_addr must be 8 lowercase hex chars"})
+				return
+			}
+			if !isHex(in.NwkSKey, 32) {
+				writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_nwk_s_key",
+					Detail: "nwk_s_key must be 32 lowercase hex chars"})
+				return
+			}
+			if !isHex(in.AppSKey, 32) {
+				writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_app_s_key",
+					Detail: "app_s_key must be 32 lowercase hex chars"})
+				return
+			}
+			// JoinEUI is NOT used for ABP (CS Activate doesn't accept it). We
+			// still write a default into the Shifter PG column for query
+			// consistency — this is metadata, not a secret.
+			if in.JoinEUI == "" {
+				in.JoinEUI = "0000000000000000"
+			}
 		}
-		if !isHex(in.JoinEUI, 16) {
-			writeJSON(w, http.StatusBadRequest, errorResp{Error: "invalid_join_eui",
-				Detail: "join_eui must be 16 lowercase hex chars"})
-			return
-		}
+
 		if strings.TrimSpace(in.Name) == "" {
 			writeJSON(w, http.StatusBadRequest, errorResp{Error: "validation",
 				Detail: "name is required"})
@@ -663,15 +748,18 @@ func addDevice(deps Deps) http.HandlerFunc {
 		defer func() { _ = tx.Rollback(r.Context()) }()
 
 		// 4a. CS CreateDevice.
-		if err := deps.CS.CreateDevice(r.Context(), chirpstack.CreateDeviceInput{
+		csInput := chirpstack.CreateDeviceInput{
 			DevEUI:          in.DevEUI,
 			ApplicationID:   appID,
 			DeviceProfileID: csProfileIDStr,
 			Name:            in.Name,
 			Description:     in.Description,
-			AppKey:          in.AppKey, // forwarded to CS; NEVER persisted in Shifter
 			JoinEUI:         in.JoinEUI,
-		}); err != nil {
+		}
+		if in.ActivationMode == "OTAA" {
+			csInput.AppKey = in.AppKey // forwarded to CS; NEVER persisted in Shifter
+		}
+		if err := deps.CS.CreateDevice(r.Context(), csInput); err != nil {
 			deps.Log.Error("addDevice: CS CreateDevice", "err", err, "dev_eui", in.DevEUI)
 			writeJSON(w, http.StatusBadGateway, errorResp{
 				Error: "cs_create_failed", Detail: err.Error(),
@@ -680,17 +768,39 @@ func addDevice(deps Deps) http.HandlerFunc {
 		}
 		csCreated := true
 
-		// 4b. CS CreateDeviceKeys. CS itself rolls back its own device on keys
-		// failure (CreateDeviceWithKeys does this; calling pair manually here
-		// so the Postgres mutations can interleave).
-		if err := deps.CS.CreateDeviceKeys(r.Context(), in.DevEUI, in.AppKey); err != nil {
-			// CS keys failed — clean up the orphan CS device with a fresh ctx.
-			cleanupCS(deps, in.DevEUI)
-			deps.Log.Error("addDevice: CS CreateDeviceKeys", "err", err, "dev_eui", in.DevEUI)
-			writeJSON(w, http.StatusBadGateway, errorResp{
-				Error: "cs_keys_failed", Detail: err.Error(),
-			})
-			return
+		// 4b. Mode-specific CS provisioning (Phase 3 D-19 branch).
+		//   - OTAA: CreateDeviceKeys — uploads operator's AppKey, CS derives
+		//     session keys at join time. CS itself rolls back its own device
+		//     on keys failure (CreateDeviceWithKeys does this; calling pair
+		//     manually here so the Postgres mutations can interleave).
+		//   - ABP : ActivateDevice — uploads operator-typed session (DevAddr,
+		//     NwkSKey, AppSKey) + frame counters. Same rollback shape.
+		switch in.ActivationMode {
+		case "OTAA":
+			if err := deps.CS.CreateDeviceKeys(r.Context(), in.DevEUI, in.AppKey); err != nil {
+				cleanupCS(deps, in.DevEUI)
+				deps.Log.Error("addDevice: CS CreateDeviceKeys", "err", err, "dev_eui", in.DevEUI)
+				writeJSON(w, http.StatusBadGateway, errorResp{
+					Error: "cs_keys_failed", Detail: err.Error(),
+				})
+				return
+			}
+		case "ABP":
+			if err := deps.CS.ActivateDevice(r.Context(), chirpstack.ActivateDeviceInput{
+				DevEUI:   in.DevEUI,
+				DevAddr:  in.DevAddr,
+				NwkSKey:  in.NwkSKey,
+				AppSKey:  in.AppSKey,
+				FCntUp:   in.FCntUp,
+				FCntDown: in.FCntDown,
+			}); err != nil {
+				cleanupCS(deps, in.DevEUI)
+				deps.Log.Error("addDevice: CS ActivateDevice", "err", err, "dev_eui", in.DevEUI)
+				writeJSON(w, http.StatusBadGateway, errorResp{
+					Error: "cs_activate_failed", Detail: err.Error(),
+				})
+				return
+			}
 		}
 
 		// 4c. INSERT Shifter device row.
@@ -772,12 +882,18 @@ func addDevice(deps Deps) http.HandlerFunc {
 		}
 
 		// 4e. Audit row INSIDE same tx.
+		//
+		// DEV-09 / T-3-70: the audit `after` payload records the activation
+		// mode but NEVER any key material. The mode itself is reconstructable
+		// metadata (already on the CS side); the keys are only ever surfaced
+		// via the dedicated reveal endpoint.
 		after := map[string]any{
 			"dev_eui":           in.DevEUI,
 			"name":              in.Name,
 			"device_profile_id": profileID.String(),
 			"join_eui":          in.JoinEUI,
 			"description":       in.Description,
+			"activation_mode":   in.ActivationMode,
 		}
 		if mpUUID != uuid.Nil {
 			after["initial_binding"] = map[string]any{
@@ -810,8 +926,26 @@ func addDevice(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Success — never delete CS at this point.
-		writeJSON(w, http.StatusCreated, deviceToJSON(dev))
+		// Success — never delete CS at this point. Echo the operator-typed
+		// keys back to the client for the dialog's D-21 success state. Shifter
+		// did NOT persist them; the client renders Copy buttons once and then
+		// the dialog tears down (gcTime:0). To re-reveal later, the operator
+		// calls POST /api/devices/:eui/keys (separate authz boundary).
+		resp := deviceToJSON(dev)
+		resp["activation_mode"] = in.ActivationMode
+		switch in.ActivationMode {
+		case "OTAA":
+			resp["app_key"] = in.AppKey
+			resp["nwk_key"] = in.AppKey // LoRaWAN 1.0.x convention: NwkKey = AppKey
+			resp["join_eui"] = in.JoinEUI
+		case "ABP":
+			resp["dev_addr"] = in.DevAddr
+			resp["nwk_s_key"] = in.NwkSKey
+			resp["app_s_key"] = in.AppSKey
+			resp["f_cnt_up"] = in.FCntUp
+			resp["f_cnt_down"] = in.FCntDown
+		}
+		writeJSON(w, http.StatusCreated, resp)
 	}
 }
 
