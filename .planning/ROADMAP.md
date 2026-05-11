@@ -122,7 +122,7 @@ Plans:
 **Plans**: 10 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Wave 0 test scaffolding: excelize/v2 + golang.org/x/sync + Playwright + testsupport gRPC mock extensions + 18 skeleton test files
+- [x] 03-01-PLAN.md — Wave 0 test scaffolding: excelize/v2 + golang.org/x/sync + Playwright + testsupport gRPC mock extensions + 18 skeleton test files
 - [ ] 03-02-PLAN.md — Migrations 0018 (gateway), 0019 (import_job), 0020 (audit_log Phase 3 vocab) + extend auth.Can() with 6 new actions + audit constants
 - [ ] 03-03-PLAN.md — ChirpStack v4 GatewayService 6 RPC wrappers + GetMetrics 1-min TTL singleflight cache + Device ActivateDevice/GetDeviceKeys/GetDeviceActivation wrappers
 - [ ] 03-04-PLAN.md — Gateway backend: sqlc queries + 6 HTTP handlers + atomic CS+PG + soft-delete + cache refresher
