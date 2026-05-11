@@ -29,6 +29,38 @@ export interface Device {
   decommissioned_at?: string | null
   created_at?: string
   updated_at?: string
+  /** Phase 3 listDevices envelope adds these (active binding context). */
+  current_site_id?: string | null
+  current_site_name?: string | null
+}
+
+/**
+ * Plan 03-09 — filtered list response shape (Plan 03-06 backend envelope).
+ *
+ *   GET /api/devices?site=&status=&last_seen=&q=&sort=&page=&per_page=
+ *     → { total_count, page_count, page, per_page, rows: Device[] }
+ */
+export interface ListDevicesEnvelope {
+  total_count: number
+  page_count: number
+  page: number
+  per_page: number
+  rows: Device[]
+}
+
+export interface ListDevicesFilters {
+  site?: string[]
+  status?: 'active' | 'inactive' | 'never_joined'
+  last_seen?: '24h' | '7d' | '30d' | 'all'
+  q?: string
+  page?: number
+  per_page?: 25 | 50 | 100
+  sort?:
+    | 'name' | '-name'
+    | 'dev_eui' | '-dev_eui'
+    | 'site' | '-site'
+    | 'last_seen' | '-last_seen'
+    | 'created_at' | '-created_at'
 }
 
 export interface DevEUIPreview {
@@ -109,7 +141,40 @@ export type AddDeviceResponse =
       f_cnt_down: number
     })
 
-export const listDevices = () => apiFetch<Device[]>('/api/devices')
+/**
+ * Convenience: fetch a flat Device[] (unwraps the Plan 03-06 envelope).
+ * Defaults to per_page=100 — used by surfaces that need the whole list, not
+ * a filtered/paginated view (e.g. swap-meter-dialog's unbound-device picker).
+ *
+ * For filterable/paginated rendering on /devices, use `listDevicesFiltered`.
+ */
+export const listDevices = async (): Promise<Device[]> => {
+  const env = await apiFetch<ListDevicesEnvelope>('/api/devices?per_page=100')
+  return env.rows ?? []
+}
+
+/**
+ * Plan 03-09 — typed wrapper around the Phase 3 backend filter/sort/page
+ * surface. Multi-site uses URLSearchParams.append per element (NOT
+ * comma-separated). The backend rejects unknown values; this client only
+ * sends well-typed members of `ListDevicesFilters`.
+ */
+export async function listDevicesFiltered(
+  filters: ListDevicesFilters = {},
+): Promise<ListDevicesEnvelope> {
+  const sp = new URLSearchParams()
+  for (const id of filters.site ?? []) sp.append('site', id)
+  if (filters.status) sp.set('status', filters.status)
+  if (filters.last_seen && filters.last_seen !== 'all') {
+    sp.set('last_seen', filters.last_seen)
+  }
+  if (filters.q) sp.set('q', filters.q)
+  if (filters.page !== undefined) sp.set('page', String(filters.page))
+  if (filters.per_page !== undefined) sp.set('per_page', String(filters.per_page))
+  if (filters.sort) sp.set('sort', filters.sort)
+  const qs = sp.toString()
+  return apiFetch<ListDevicesEnvelope>(qs ? `/api/devices?${qs}` : '/api/devices')
+}
 
 export const searchDevices = (q: string) =>
   apiFetch<Device[]>(`/api/devices/search?q=${encodeURIComponent(q)}`)
@@ -136,3 +201,39 @@ export const addDevice = (body: AddDeviceRequest) =>
 
 export const decommissionDevice = (id: string) =>
   apiFetch<Device>(`/api/devices/${id}/decommission`, { method: 'POST', body: '{}' })
+
+/**
+ * Plan 03-09 — bulk decommission (D-17).
+ *
+ * Backend (internal/device/handlers.go bulkDecommissionDevices) runs each
+ * device in its own short-lived Serializable tx — failure of one row does
+ * NOT abort the loop. Operator receives a partial-success summary that the
+ * UI surfaces via toast (success / warning / error tone).
+ *
+ * Cap: 200 device_ids per request (T-3-56). Caller should slice if it
+ * needs more.
+ */
+export interface BulkDecommissionOutcome {
+  id: string
+  status: 'decommissioned' | 'failed'
+  reason?: string
+}
+
+export interface BulkDecommissionResponse {
+  succeeded: number
+  failed: number
+  outcomes: BulkDecommissionOutcome[]
+}
+
+export async function bulkDecommissionDevices(
+  deviceIds: string[],
+  reason: string,
+): Promise<BulkDecommissionResponse> {
+  return apiFetch<BulkDecommissionResponse>('/api/devices/bulk-decommission', {
+    method: 'POST',
+    body: JSON.stringify({
+      device_ids: deviceIds,
+      reason: reason.trim() || 'operator bulk decommission',
+    }),
+  })
+}
