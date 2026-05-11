@@ -52,16 +52,15 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 23 (Plan 04-01 bumped from 20:
-	// 0021 NOTIFY trigger, 0022 install_identity.capabilities,
-	// 0023 device_profile.expected_interval_s).
+	// Reapply. Should succeed back up to 28 (Plan 05-02 bumped from 24:
+	// 0025 CAGG hourly, 0026 CAGG daily, 0027 CAGG monthly, 0028 CAGG yearly).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(23), v)
+	require.Equal(t, uint(28), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int
