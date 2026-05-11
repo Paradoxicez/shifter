@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-last_updated: "2026-05-11T09:58:53.151Z"
+status: Ready to execute
+last_updated: "2026-05-11T13:27:32.953Z"
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 49
-  completed_plans: 49
-  percent: 100
+  total_plans: 59
+  completed_plans: 50
+  percent: 85
 ---
 
 # Project State: Shifter
@@ -20,12 +20,12 @@ progress:
 
 **Core Value:** The operator runs their entire LoRaWAN water/electricity monitoring operation — provisioning, placement, monitoring, reporting — from Shifter alone, and meter swaps never break historical continuity.
 
-**Current Focus:** Phase 03 — provisioning-gateways-devices-bulk-import
+**Current Focus:** Phase 04 — realtime-dashboard
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (realtime-dashboard) — EXECUTING
+Plan: 2 of 10
 
 > **Phase 2 closure (2026-05-04):** Plans 02-11..15 closed every gap surfaced by the Phase 2 verifier:
 > - 02-11: swap + profile HTTP route surface
@@ -48,10 +48,11 @@ Plan: Not started
 | **Plan 04 status** | COMPLETE (2026-05-04). 0015_measurement (TimescaleDB hypertable, chunk_time_interval=1d, full D-02 canonical column set + JSONB extra + raw_payload BYTEA + decoded_object JSONB + quality CHECK with 5 D-26 values; deliberately MP-keyed with NO device_id/dev_eui per DATA-01 invariant; server-side `time` authoritative per DATA-03 + Pitfall 4; 3 indexes incl. GIN(extra) + partial on quality<>'ok'; binding_id forward-compat; NO FK on hypertable per TS caveats) + 0016_audit_log (regular Postgres table NOT hypertable per D-06; 10 D-22 columns; user_id ON DELETE SET NULL; D-22+D-05 action vocabulary CHECK + 5 D-22 entity_type CHECK; 4 browse/filter indexes; **BEFORE UPDATE / BEFORE DELETE triggers raise 'audit_log is INSERT-ONLY'** — T-02-04-02 mitigation). Phase 2 schema is complete (16 migrations total). 3 audit_log regression tests added: TestAuditLog_RejectsUpdate (T-02-04-02), TestAuditLog_RejectsDelete (T-02-04-02), TestAuditLog_AcceptsInsertAndPersistsDiff (D-22 + D-24 happy path + CHECK rejects unknown vocabulary). 2 hypertable assertions added in TestRunMigrations_Clean (Rule 2 — defense-in-depth: is_hypertable=true for measurement, is_hypertable=false for audit_log, chunk_time_interval=1d via timescaledb_information.dimensions). 10 db tests (4 migration + 3 binding + 3 audit_log) + full short suite 176/176 green; vet + build clean. Commits: 48bd892 (Task 1) + fc6192f (Task 2). Container env: Podman socket restarted to recreate `/var/folders/.../podman-machine-default-api.sock` (Rule 3 env-only fix; continuing pattern). |
 | **Plan 03 status** | COMPLETE (2026-05-04). 0012_device + 0013_device_profile_mapping + 0014_binding migrations landed. binding has BOTH per-MP and per-device btree_gist EXCLUDE constraints (Rule 2 — per-device added beyond plan-verbatim to guard against ambiguous resolver dev_eui->MP queries). Half-open `[)` tstzrange semantics codified at schema layer (Open Q #1). 3 regression tests added: TestBinding_NoOverlapPerMP (Pitfall 10 + T-02-03-02), TestBinding_NoOverlapPerDevice (Rule 2 coverage), TestBinding_HalfOpenInterval (Open Q #1). 4 migration tests + 3 binding tests pass; full short suite (145 tests, 22 packages) green; vet + build clean. AppKey deliberately absent from device table (DEV-09). btree_gist extension created in 0014; intentionally NOT dropped in down (may be in use elsewhere). Commits: ed6560a (Task 1) + 6c6c574 (Task 2) + 2fc5ff4 (Task 3). Container env: Podman socket restarted to recreate `/var/folders/.../podman-machine-default-api.sock` (Rule 3 env-only fix; same condition as prior Phase 1 plans). |
 | **Status** | Plans 01–23 complete. Plan 22 shipped OPS-01 hardening at the Caddy edge: `Caddyfile` at repo root with env-driven TLS modes (D-21 acme/byo/internal via `{$CADDY_TLS_BLOCK}` interpolation point — install.sh's `case "${SHIFTER_TLS_MODE:-internal}"` block renders the Caddy `tls` directive before `docker compose up`), 5 OWASP-grade security headers + server-banner strip (Strict-Transport-Security max-age=31536000+includeSubDomains, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, X-Frame-Options DENY, Content-Security-Policy `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'`, `-Server` strip), `@sse path /sse /sse/*` SSE-aware handler with `flush_interval -1` + `read_buffer 0` + `response_header_timeout 0` (PITFALL #7 prophylaxis — Phase 1 has no /sse endpoint but the handler ships now to defuse Phase 4 retrofit risk), explicit `/health` fast-path handle (immune to future root-level header rewrites), root `reverse_proxy shifter:8080` with `header_up X-Forwarded-For {remote_host}` + `header_up X-Real-IP {remote_host}` (consumed by Plan 09 rate-limiter's `clientIP(r)` first-hop XFF helper), reserved `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam for future ZeroSSL-fallback (D-21). Both install scripts (`install/bundled/install.sh`, `install/external/install.sh`) gained the `case` block mapping SHIFTER_TLS_MODE → CADDY_TLS_BLOCK (acme="" / byo="tls /etc/caddy/cert.pem /etc/caddy/key.pem" / internal="tls internal") with explicit error-and-exit-2 on invalid value; both health polls switched from `http://localhost:8080/health` to `https://localhost/health` via `curl -fsk` (tolerating internal CA in default mode). Justfile `compose-smoke-bundled` + `compose-smoke-external` recipes export TLS env (SHIFTER_DOMAIN=localhost, SHIFTER_TLS_MODE=internal, CADDY_TLS_BLOCK="tls internal") then poll Caddy over HTTPS — smoke now validates the FULL edge → backend chain, not just shifter:8080 directly. **Deviations:** (1) X-Forwarded-For + X-Real-IP propagation declared explicitly in root reverse_proxy (Rule 2 — plan must_haves implied but plan-verbatim Caddyfile elided; making the Plan 09 trust-boundary contract visible at the Caddy edge prevents accidental drop in future Caddy upgrades). (2) `{$CADDY_GLOBAL_TLS_BLOCK}` interpolation seam added in global block (Rule 2 — plan must_haves listed it explicitly but verbatim body elided; future ZeroSSL fallback is now an env var change, not a Caddyfile structural edit). **Resume context:** This plan was originally executed 2026-04-28T07:01:04Z; first-pass executor finished all four file edits but disk-full before commit/SUMMARY. Disk freed (74G), this resume executor verified all edits via grep against acceptance criteria, committed Task 1 (76304d8), and wrote SUMMARY.md. **Live verification deferred:** Docker daemon was unresponsive in this session (continuing the Plan 19/20/21 pattern Phase 1 sign-off accepts as Open Todo); `docker compose -f compose/bundled.yml config -q` and `docker compose -f compose/external.yml --env-file install/external/.env.example config -q` BOTH parse cleanly. D-20 + D-21 + D-22 enforced; PITFALL #7 prevented at Phase 1 boundary. |
-| **Progress (plans)** | `[██████████] 39/39 (100%)` (Phase 1: 24/24 + Phase 2: 15/15) |
-| **Progress (phases)** | `[██░░░░░░░░] 2/7 phases (Phase 01 + 02 complete; next: Phase 03 — Provisioning)` |
+| **Plan 04-01 status** | COMPLETE (2026-05-11). Phase 4 schema foundation — 3 SQL migrations (0021/0022/0023) + sqlc regen + chunk-propagation NOTIFY proof. **0021_measurement_inserted_trigger** lands the SSE substrate: AFTER INSERT trigger on `measurement` hypertable emits `pg_notify('measurement_inserted', json_build_object(...))` with the 7-field D-02 payload (metering_point_id, time, cumulative_value, instant_value, quality, battery_pct, rssi). raw_payload + decoded_object DELIBERATELY excluded (8KB pg_notify cap is silent-truncation risk). **0022_install_capabilities** adds `install_identity.capabilities TEXT NOT NULL DEFAULT 'both'` with CHECK water|electricity|both — DASH-01 adaptive-scope flag. **0023_device_profile_expected_interval** adds `device_profile.expected_interval_s INTEGER NOT NULL DEFAULT 3600` + CHECK > 0 + per-vendor backfill (Acrel ADL200/ADW300 → 300s; Axioma W1 keeps 3600s default) — DASH-02 online/offline KPI rule (`device.last_seen_at > now() - 2 * expected_interval_s`). **Chunk-propagation proof:** `TestRunMigrations_MeasurementInsertedNotifyPropagatesToChunks` LISTENs on `measurement_inserted`, INSERTs a row that lands in a TimescaleDB chunk via time=now(), WaitForNotification (2s deadline) — pins the load-bearing TimescaleDB claim that all Phase 4 SSE work depends on. Asserts all 7 D-02 keys present in JSON payload + size <1KB. **Rule 3 deviations (4 total, all blocking-class):** (1) Trigger header comment rewritten to satisfy plan's own grep gate `! grep -qE "raw_payload|decoded_object"` — those strings tripped the gate when used in the documentation. (2) Phase 3 migration-down test step counts bumped (-3→-6, -2→-5, -1→-4) since the chain grew from 20 → 23. (3) Per-profile backfill placed inside 0023 itself rather than `internal/profile/seed.go` (which is the CS-codec syncer with no INSERT logic; actual seed rows are in 0010_seed_profiles.up.sql which cannot reference expected_interval_s before 0023 adds the column). (4) Plan's "Diehl HYDRUS" profile slug doesn't exist; backfill targets the actual seeded slugs (axioma_w1, acrel_adl200, acrel_adw300). 5 task commits: 4a2a090 (Task 1) + 7a69321 (Task 2) + b2419c3 (Task 3) + 184522a (Task 4) + e364f78 (Task 5). 346 short tests pass project-wide (28 packages); full db+profile suite 54/54 pass; sqlc generate clean; go build clean. NO new dependencies. |
+| **Progress (plans)** | `[██████████] 50/59 (85%)` (Phase 1: 24/24 + Phase 2: 15/15 + Phase 3: 10/10 + Phase 4: 1/10) |
+| **Progress (phases)** | `[████░░░░░░] 3/7 phases (Phase 01 + 02 + 03 complete; executing: Phase 04 — Realtime & Dashboard)` |
 
-**Next action:** `/gsd-plan-phase 03` to begin Phase 3 planning (Provisioning: Gateways, Devices, Bulk Import).
+**Next action:** `/gsd-execute-phase 04` to continue with Plan 04-02 (LISTEN/NOTIFY substrate consuming the `measurement_inserted` channel from Plan 04-01).
 
 ## Performance Metrics
 
@@ -86,6 +87,7 @@ Plan: Not started
 | Phase 03-provisioning-gateways-devices-bulk-import P07 | 28 | 2 tasks | 7 files |
 | Phase 03 P09 | 15 min | 3 tasks | 20 files |
 | Phase 03 P10 | 32 min | 3 tasks | 13 files |
+| Phase 04-realtime-dashboard P01 | 18min | 5 tasks | 11 files |
 
 ### Per-plan execution log
 
