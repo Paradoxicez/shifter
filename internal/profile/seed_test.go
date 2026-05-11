@@ -218,6 +218,50 @@ func TestRunSeedSync_StoreReadFails(t *testing.T) {
 	require.Equal(t, int64(0), cs.UpdateCalls())
 }
 
+// TestSeed_ExpectedIntervalS_PerProfile — Plan 04-01 Task 4 (D-07 backfill).
+// Migration 0023 adds device_profile.expected_interval_s and seeds realistic
+// per-vendor values (3600 for water; 300 for electricity). The KPI rule
+// `device.last_seen_at > now() - 2 * expected_interval_s` (D-07) breaks if
+// the per-profile values regress to a uniform default.
+//
+// Asserts:
+//   - axioma_w1     (water Axioma Qalcosonic W1)        → 3600 (default)
+//   - acrel_adl200  (electricity Acrel ADL200)          → 300  (5-minute cadence)
+//   - acrel_adw300  (electricity Acrel ADW300)          → 300  (5-minute cadence)
+func TestSeed_ExpectedIntervalS_PerProfile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	ctx := context.Background()
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(ctx, pool, nopLogger()))
+
+	want := map[string]int32{
+		"axioma_w1":    3600,
+		"acrel_adl200": 300,
+		"acrel_adw300": 300,
+	}
+
+	for slug, expected := range want {
+		var got int32
+		err := pool.QueryRow(ctx,
+			`SELECT expected_interval_s FROM device_profile WHERE slug = $1`,
+			slug,
+		).Scan(&got)
+		require.NoError(t, err, "looking up expected_interval_s for %s", slug)
+		require.Equal(t, expected, got,
+			"expected_interval_s mismatch for %s — D-07 KPI threshold depends on this", slug)
+	}
+
+	// Defensive: every seeded profile must satisfy the > 0 CHECK constraint.
+	var minVal int32
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT min(expected_interval_s) FROM device_profile WHERE archived_at IS NULL`,
+	).Scan(&minVal))
+	require.Greater(t, minVal, int32(0),
+		"every active profile must have positive expected_interval_s (CHECK constraint)")
+}
+
 // TestRunSeedSync_UpdatesAlreadyPushed — pre-pin a fake cs_profile_id on one
 // profile, then clear codec_js_synced_at (simulates a profile editor save
 // that bumped the codec). RunSeedSync MUST take the Update path, not Create.
