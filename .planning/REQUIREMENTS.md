@@ -89,9 +89,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Per-Meter Detail
 
-- [ ] **DETL-01**: Per-meter detail page has zoned sections with a default "normal" view and a collapsible "advanced" view that exposes every parameter the device emits (full decoded JSONB)
-- [ ] **DETL-02**: Detail page shows the last 100–500 uplink events with timestamp, raw payload, decoded object, and signal stats
-- [ ] **DETL-03**: Detail page shows battery and RSSI/SNR sparklines
+- [x] **DETL-01**: Per-meter detail page has zoned sections with a default "normal" view and a collapsible "advanced" view that exposes every parameter the device emits (full decoded JSONB)
+- [x] **DETL-02**: Detail page shows the last 100–500 uplink events with timestamp, raw payload, decoded object, and signal stats
+- [x] **DETL-03**: Detail page shows battery and RSSI/SNR sparklines
 
 ### Map View
 
@@ -281,9 +281,9 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DASH-04 | Phase 4 | Complete |
 | DASH-05 | Phase 4 | Complete |
 | DASH-06 | Phase 4 | Complete |
-| DETL-01 | Phase 4 | Pending |
-| DETL-02 | Phase 4 | Pending |
-| DETL-03 | Phase 4 | Pending |
+| DETL-01 | Phase 4 | Complete |
+| DETL-02 | Phase 4 | Complete |
+| DETL-03 | Phase 4 | Complete |
 | MAP-01 | Phase 5 | Pending |
 | MAP-02 | Phase 5 | Pending |
 | MAP-03 | Phase 5 | Pending |
