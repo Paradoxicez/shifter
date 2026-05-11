@@ -149,7 +149,19 @@ Plans:
   4. Per-meter detail page shows a default "normal" view (cumulative, instantaneous, last-update, alarms) and a collapsible "advanced" view that exposes every parameter the device emits via the JSONB `extra` column.
   5. Per-meter detail page shows the last 100–500 uplink events (timestamp, raw payload, decoded object, signal stats) plus battery and RSSI/SNR sparklines, and time-series charts on dashboard support date-range pickers.
 
-**Plans**: TBD
+**Plans**: 10 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Schema migrations 0021/0022/0023 + sqlc regen + trigger chunk-propagation test (DASH-01, DASH-02 foundation)
+- [ ] 04-02-PLAN.md — `internal/events/` LISTEN measurement_inserted listener + Hub fan-out + load-bearing chunk-propagation integration test
+- [ ] 04-03-PLAN.md — `GET /api/events` SSE handler + subscribe lifecycle + heartbeat + Hub boot wiring
+- [ ] 04-04-PLAN.md — Dashboard REST: `/api/dashboard/scope`, `/snapshot`, `/timeseries` + KPI assembler (D-05/06/07/08/12)
+- [ ] 04-05-PLAN.md — Metering-point detail REST: detail + uplinks (cursor) + timeseries + signal-history (DETL-01/02/03)
+- [ ] 04-06-PLAN.md — `useSSE` hook (D-04 backoff verbatim, D-03 snapshot-on-reconnect) + `useDashboardScope` hook
+- [ ] 04-07-PLAN.md — Dashboard route shell + KpiCard/KpiGrid + EmptyStateOnboarding + LiveChannelBanner + sidebar nav
+- [ ] 04-08-PLAN.md — DateRangePicker (URL-state) + ConsumptionChart + CumulativeChartCard (D-11/12/13/14)
+- [ ] 04-09-PLAN.md — MP detail route: 3-tab layout (Normal/Advanced/Uplinks) + JsonTree + SparklineTriplet + UplinksLogTab (D-15..D-22)
+- [ ] 04-10-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS.md/VALIDATION.md reconciliation (phase closure)
 **UI hint**: yes
 
 ### Phase 5: Aggregates, Reports, Map & Floor Plans
@@ -239,7 +251,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 1. Foundation | 24/24 | Complete | 2026-04-30 |
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 0/10 | Planned | - |
-| 4. Realtime & Dashboard | 0/0 | Not started | - |
+| 4. Realtime & Dashboard | 0/10 | Planned | - |
 | 5. Aggregates, Reports, Map & Floor Plans | 0/0 | Not started | - |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
