@@ -13,9 +13,12 @@
 # CADDY_GLOBAL_TLS_BLOCK is reserved for future ACME-issuer overrides
 # (e.g., ZeroSSL fallback when LE rate-limits per D-21). Empty by default.
 #
-# PITFALL #7 prevention: /sse paths are forwarded with flush_interval -1
-# so SSE responses stream to the browser without buffering.
-# (Phase 1 has no /sse endpoint — block included now for Phase 4 readiness.)
+# PITFALL #7 prevention: /sse paths and the Phase 4 /api/events SSE endpoint
+# are forwarded with flush_interval -1 so SSE responses stream to the browser
+# without buffering (RESEARCH §Pattern 11 / L694 — Caddy buffers SSE by default).
+# Phase 4 amendment (Plan 04-03): @sse matcher extended to cover /api/events
+# and /api/events/* so live measurement updates (DASH-02) work behind Caddy.
+# Verify in a deploy: grep '@sse' Caddyfile — must include /api/events.
 #
 # Production deploy enforced by D-22: plain HTTP (no TLS) is not an option;
 # Caddy redirects :80 → :443 by default when TLS is configured.
@@ -43,7 +46,7 @@
 	{$CADDY_TLS_BLOCK}
 
 	# SSE — must NOT be buffered (PITFALL #7).
-	@sse path /sse /sse/*
+	@sse path /sse /sse/* /api/events /api/events/*
 	handle @sse {
 		reverse_proxy shifter:8080 {
 			flush_interval -1
