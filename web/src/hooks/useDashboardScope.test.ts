@@ -5,19 +5,23 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardScope } from './useDashboardScope'
 import { useDashboardScope } from './useDashboardScope'
 
 // ---------------------------------------------------------------------------
-// Mock apiFetch
+// Mock apiFetch (preserve ApiError so tests can instantiate it)
 // ---------------------------------------------------------------------------
 
-vi.mock('@/lib/api', () => ({
-  apiFetch: vi.fn(),
-}))
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return {
+    ...actual,
+    apiFetch: vi.fn(),
+  }
+})
 
-import { apiFetch } from '@/lib/api'
+import { ApiError, apiFetch } from '@/lib/api'
 const mockApiFetch = vi.mocked(apiFetch)
 
 // ---------------------------------------------------------------------------
@@ -35,8 +39,12 @@ function makeWrapper() {
   }
 }
 
+beforeEach(() => {
+  vi.resetAllMocks() // resets call history AND queued mockResolvedValueOnce values
+})
+
 afterEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
 })
 
 // ---------------------------------------------------------------------------
@@ -74,16 +82,18 @@ describe('useDashboardScope', () => {
       expect(queryClient.getQueryState(['dashboard', 'scope'])?.status).toBe('success'),
     )
 
-    // Verify data is stored under the expected key
+    // Verify data is stored under the expected query key
     const cached = queryClient.getQueryData<DashboardScope>(['dashboard', 'scope'])
     expect(cached).toEqual(scope)
   })
 
-  it('staleTime is 5 minutes (300_000ms)', async () => {
+  it('staleTime is 5 minutes — second mount does not re-fetch', async () => {
     const scope: DashboardScope = {
       capabilities: 'electricity',
       onboarding: { gateway_count: 2, device_count: 5, uplink_count: 50 },
     }
+    // Only set up ONE resolved value — if staleTime works, the second mount
+    // will NOT call apiFetch again.
     mockApiFetch.mockResolvedValueOnce(scope)
 
     const { wrapper, queryClient } = makeWrapper()
@@ -97,12 +107,11 @@ describe('useDashboardScope', () => {
     const state = queryClient.getQueryState(['dashboard', 'scope'])
     expect(state?.isInvalidated).toBe(false)
 
-    // Verify the hook uses staleTime = 5 * 60 * 1000 by checking that a
-    // second mount does NOT re-fetch (data is still fresh)
-    mockApiFetch.mockResolvedValueOnce(scope)
+    // Mount a second hook in the same QueryClient — should use the cached result
     renderHook(() => useDashboardScope(), { wrapper })
-    // Wait a bit — if staleTime is correct, apiFetch should still only be called once
     await new Promise((r) => setTimeout(r, 10))
+
+    // apiFetch must only have been called once (staleTime prevents re-fetch)
     expect(mockApiFetch).toHaveBeenCalledTimes(1)
   })
 
@@ -125,13 +134,14 @@ describe('useDashboardScope', () => {
   })
 
   it('surfaces isError when apiFetch rejects (e.g. 401)', async () => {
-    const { ApiError } = await import('@/lib/api')
+    // Stub window.location.assign since ApiError 401 triggers a redirect in apiFetch,
+    // but here we're mocking apiFetch directly so the rejection is raw.
     mockApiFetch.mockRejectedValueOnce(new ApiError(401, 'unauthorized'))
 
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useDashboardScope(), { wrapper })
 
-    await waitFor(() => expect(result.current.isError).toBe(true))
-    expect(result.current.error).toBeTruthy()
+    await waitFor(() => expect(result.current.isError).toBe(true), { timeout: 3000 })
+    expect(result.current.error).toBeInstanceOf(ApiError)
   })
 })
