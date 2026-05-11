@@ -33,6 +33,16 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] Every state-changing action lands in audit_log inside the same transaction (AUDIT-01)
 - [x] Vendor-agnostic measurement model — wide canonical columns + JSONB `raw` for vendor-specific debug fields (DATA-08, DATA-09)
 
+**Provisioning — gateways, devices, bulk import (Phase 3, 2026-05-11)**
+- [x] Manage gateways from Shifter (no need to log into ChirpStack) — full CRUD, archive/restore, atomic CS+PG transactions (GW-01, GW-02, GW-03)
+- [x] Collapse multi-step ChirpStack flows into single app actions — Add Device dialog supports OTAA + ABP in a 5-step dialog that creates everything in one atomic transaction (DEV-02, DEV-04, CHIRP-05, CHIRP-06)
+- [x] Bulk import devices (CSV / spreadsheet) — XLSX + CSV, dry-run preview, idempotent commit, downloadable template, errors export, 5000-row cap (DEV-07, DEV-08)
+- [x] D-30 verbatim gateway decommission — PG soft-delete + CS DeleteGateway, atomic via tx ordering, best-effort CS re-create on PG failure, restore from archived_snapshot
+- [x] Devices list with server-side filter / sort / pagination + bulk decommission + deeplinkable URL state via useSearchParams + zod (DEV-01, DEV-06)
+- [x] Device-keys reveal endpoint admin-only + structurally hidden from viewers (DEV-09 defended at schema, JSON projection, and audit-row layers)
+- [x] Operator-facing UI free of ChirpStack vocabulary leaks — "tenant / application / object" never reach the operator (UX-03)
+- [x] GW-04 (map pin) PARTIAL: numeric lat/lng inputs ship; "Pick on map" disabled with v5 tooltip — full map UI deferred to Phase 5
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
@@ -40,17 +50,10 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 **Identity & access (Phase 6 finishes admin-managed users)**
 - [ ] Admin can create / edit / disable users from inside the app
 
-**ChirpStack integration**
-- [ ] Manage gateways from Shifter (no need to log into ChirpStack)
-- [ ] Collapse multi-step ChirpStack flows (e.g. device activation) into a single app action — or, if absolutely needed, into a stepped dialog — so the user never context-switches
-
-**Sites & physical layout**
+**Sites & physical layout (Phase 5)**
 - [ ] Support both horizontal (campus / floor) and vertical (building with multiple floors) layouts
 - [ ] Import floor plans / images and drop devices as normalized fractional points (x_frac, y_frac in [0, 1]) on them — resolution-independent, survives image replacement and Retina/mobile DPR
-- [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre)
-
-**Devices & meters**
-- [ ] Bulk import devices (CSV / spreadsheet)
+- [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre) — also delivers GW-04 "Pick on map" for gateways
 
 **Live data & dashboard**
 - [ ] Real-time updates from IoT devices (push to UI, no manual refresh)
@@ -143,4 +146,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-05 — Phase 2 (domain model & canonical schema) complete. Runtime UAT pending in 02-HUMAN-UAT.md.*
+*Last updated: 2026-05-11 — Phase 3 (provisioning — gateways, devices, bulk import) complete. 10/10 plans shipped, verification passed, GatewayDeps + ImportDeps wired into serve.go (boot smoke tests cover /api/gateways + /api/imports reachability).*
