@@ -13,7 +13,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 
 - [ ] **Phase 1: Foundation** - Single Go binary, dual-channel ChirpStack integration, local auth, install wizard, two-flavor compose deploy
 - [x] **Phase 2: Domain Model & Canonical Schema** - Metering point + reading-offset + canonical measurement schema with end-to-end ingest path and meter-swap UI
-- [ ] **Phase 3: Provisioning (Gateways, Devices, Bulk Import)** - Daily-driver provisioning surface so the binary runs at realistic fleet size
+- [x] **Phase 3: Provisioning (Gateways, Devices, Bulk Import)** - Daily-driver provisioning surface so the binary runs at realistic fleet size
 - [ ] **Phase 4: Realtime & Dashboard** - SSE-driven live updates, adaptive dashboard, per-meter detail
 - [ ] **Phase 5: Aggregates, Reports, Map & Floor Plans** - Continuous aggregates, branded exports, OSM map, normalized fractional floor-plan placement
 - [ ] **Phase 6: Alerts, Users, Audit & Operational Hardening** - The "ship to a paying customer" gate (alerts, user mgmt, audit UI, backup/restore, secrets, upgrade runbook)
@@ -131,7 +131,7 @@ Plans:
 - [x] 03-07-PLAN.md — 5-step Add Device dialog (OTAA/ABP) backend + frontend with success-state keys panel
 - [x] 03-08-PLAN.md — Gateway frontend: list with sparkline + Add/Edit single dialog + Decommission AlertDialog + detail page + 3 new shadcn primitives
 - [x] 03-09-PLAN.md — Devices filter URL-state (react-router-dom v7 useSearchParams + zod) + bulk-action bar + Bulk Import 3-step dialog + Imports admin pages
-- [ ] 03-10-PLAN.md — Reveal Keys dialog + device detail page + 6 Playwright E2E specs + UX-03 vocabulary audit + REQUIREMENTS.md + VALIDATION.md reconciliation
+- [x] 03-10-PLAN.md — Reveal Keys dialog + device detail page + 6 Playwright E2E specs + UX-03 vocabulary audit + REQUIREMENTS.md + VALIDATION.md reconciliation
 **UI hint**: yes
 
 ### Phase 4: Realtime & Dashboard
