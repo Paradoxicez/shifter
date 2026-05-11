@@ -75,6 +75,8 @@ type Querier interface {
 	// `quality <> 'ok'` (0015) keeps this fast for the flagged-only branches.
 	CountFlaggedRecent(ctx context.Context, arg CountFlaggedRecentParams) (CountFlaggedRecentRow, error)
 	CountGatewaysActive(ctx context.Context) (int64, error)
+	CountImportJobRows(ctx context.Context, importJobID pgtype.UUID) (int64, error)
+	CountImportJobs(ctx context.Context) (int64, error)
 	// Site detail header badge "N metering points". Used by Plan 02-08 site detail
 	// page; counts only active MPs (D-20 — archived MPs hide from default views).
 	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
@@ -118,6 +120,14 @@ type Querier interface {
 	// adds `measurement.gateway_id` and at that point the count query lands
 	// alongside this file.
 	CreateGateway(ctx context.Context, arg CreateGatewayParams) (Gateway, error)
+	// Bulk-import job state machine + per-row outcomes. Phase 3 D-04..D-11.
+	//
+	// D-11 TTL 1h on preview; D-34 job_id used as audit request_id; D-35 90-day
+	// retention. Per-row raw_payload JSONB preserves the original file for
+	// errors.xlsx round-trip.
+	// Plan 03-05 upload handler: creates the preview job. total_rows + expires_at
+	// supplied by handler (now+1h).
+	CreateImportJob(ctx context.Context, arg CreateImportJobParams) (ImportJob, error)
 	// Metering Point (D-19 + D-20) — the canonical "thing being measured" that
 	// persists across physical meter swaps (DATA-01 invariant). MP is the join
 	// key for telemetry; binding history captures which device fed it when.
@@ -203,6 +213,9 @@ type Querier interface {
 	// Lowercase EUI lookup (matches Phase 2 dev_eui pattern). Caller MUST pass
 	// the lowercase form — the schema CHECK enforces it on storage.
 	GetGatewayByGatewayID(ctx context.Context, gatewayID string) (Gateway, error)
+	GetImportJobByID(ctx context.Context, id pgtype.UUID) (ImportJob, error)
+	// External-facing lookup (paths use the publicly-shared job_id UUID).
+	GetImportJobByJobID(ctx context.Context, jobID pgtype.UUID) (ImportJob, error)
 	GetInstallIdentity(ctx context.Context) (InstallIdentity, error)
 	// Plan 02-08 MP detail page header card "Last reading at <time>". The
 	// (metering_point_id, time DESC) hot-path index makes this an index scan +
@@ -225,6 +238,10 @@ type Querier interface {
 	// Plan 15 install wizard finish — creates the bootstrap admin atomically with
 	// the rest of the wizard commit.
 	InsertAdminUser(ctx context.Context, arg InsertAdminUserParams) (InsertAdminUserRow, error)
+	// Per-row outcome row from dry-run (status ∈ valid|invalid|already_exists).
+	// Commit pass later UPDATEs the row to created|failed via
+	// UpdateImportJobRowOutcome.
+	InsertImportJobRow(ctx context.Context, arg InsertImportJobRowParams) (ImportJobRow, error)
 	// Profile list page + device-create dialog dropdown. Sorted vendor-then-name
 	// so users see Acrel/Axioma grouped.
 	ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile, error)
@@ -273,6 +290,13 @@ type Querier interface {
 	// D-32 "Show archived" toggle. archived rows sorted by archived_at DESC
 	// first, then active rows by created_at DESC.
 	ListGatewaysIncludingArchived(ctx context.Context, arg ListGatewaysIncludingArchivedParams) ([]Gateway, error)
+	// Used by errors.xlsx generator. Returns only invalid + failed rows so the
+	// operator gets back the cells that need fixing plus the reason.
+	ListImportJobErrorRows(ctx context.Context, importJobID pgtype.UUID) ([]ImportJobRow, error)
+	// Paginated job-detail page. Ordered by row_index so the UI shows file order.
+	ListImportJobRows(ctx context.Context, arg ListImportJobRowsParams) ([]ImportJobRow, error)
+	// Phase 3 D-36 "/admin/imports" page. Newest first.
+	ListImportJobs(ctx context.Context, arg ListImportJobsParams) ([]ImportJob, error)
 	// Site detail MP-list section. Active-only by default; site_idx covers the
 	// filter, archived_at NULL is the common case.
 	ListMPsBySite(ctx context.Context, siteID pgtype.UUID) ([]MeteringPoint, error)
@@ -352,6 +376,19 @@ type Querier interface {
 	UpdateGateway(ctx context.Context, arg UpdateGatewayParams) (Gateway, error)
 	// Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
 	UpdateGatewayStatsCache(ctx context.Context, arg UpdateGatewayStatsCacheParams) error
+	// Upload handler bulk-update after dry-run validation runs. Counter values
+	// supplied directly so the handler doesn't have to issue per-status COUNT(*)
+	// queries against import_job_row.
+	UpdateImportJobCounters(ctx context.Context, arg UpdateImportJobCountersParams) (ImportJob, error)
+	// Commit pass writes the final outcome (created / failed) + the
+	// created_device_id pointer so audit-replay can correlate rows to device rows.
+	UpdateImportJobRowOutcome(ctx context.Context, arg UpdateImportJobRowOutcomeParams) (ImportJobRow, error)
+	// Commit-handler terminal state. expires_at cleared so the partial-cleanup
+	// sweeper (Phase 9) doesn't touch committed rows.
+	UpdateImportJobToCommitted(ctx context.Context, arg UpdateImportJobToCommittedParams) (ImportJob, error)
+	// D-11: lazy expiry on read. Only transitions preview→expired when the
+	// expires_at deadline has passed.
+	UpdateImportJobToExpired(ctx context.Context, id pgtype.UUID) (ImportJob, error)
 	// Plan 02-08 MP edit. utility_class IS editable here (operators sometimes
 	// mis-classify; the CHECK constraint still bounds the values to water |
 	// electricity).
