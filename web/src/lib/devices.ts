@@ -203,6 +203,56 @@ export const decommissionDevice = (id: string) =>
   apiFetch<Device>(`/api/devices/${id}/decommission`, { method: 'POST', body: '{}' })
 
 /**
+ * Plan 03-10 — Reveal Keys (DEV-09 / D-22 / D-26..D-28).
+ *
+ * POST /api/devices/:eui/keys returns one of two shapes, discriminated by
+ * `activation_mode`. The backend (Plan 03-06 reveal.go) emits
+ * `Cache-Control: no-store, no-cache, must-revalidate` so browsers + proxies
+ * MUST NOT cache the body. The frontend mutation that wraps this call sets
+ * `gcTime: 0` so TanStack Query never retains the response either — keys
+ * live ONLY in local component state until the dialog closes (T-3-72).
+ *
+ * Endpoint:
+ *   POST /api/devices/:eui/keys
+ *     Auth: admin only (RequireAction `device.reveal_secrets` — viewer 403).
+ *   200 OTAA → { activation_mode:'OTAA', dev_eui, join_eui, app_key, nwk_key }
+ *   200 ABP  → { activation_mode:'ABP',  dev_eui, dev_addr, nwk_s_key,
+ *                app_s_key, f_cnt_up, n_f_cnt_down, a_f_cnt_down }
+ *   400 invalid_dev_eui  | 401 unauthorized  | 403 forbidden
+ *   404 not_found        | 409 no_credentials_in_cs
+ *   502 cs_get_keys_failed | cs_get_activation_failed
+ */
+export interface DeviceKeysOTAA {
+  activation_mode: 'OTAA'
+  dev_eui: string
+  join_eui: string
+  app_key: string
+  nwk_key: string
+}
+
+export interface DeviceKeysABP {
+  activation_mode: 'ABP'
+  dev_eui: string
+  dev_addr: string
+  nwk_s_key: string
+  app_s_key: string
+  f_cnt_up: number
+  n_f_cnt_down: number
+  a_f_cnt_down: number
+}
+
+export type DeviceKeysResponse = DeviceKeysOTAA | DeviceKeysABP
+
+export async function revealDeviceKeys(
+  devEUI: string,
+): Promise<DeviceKeysResponse> {
+  return apiFetch<DeviceKeysResponse>(
+    `/api/devices/${encodeURIComponent(devEUI)}/keys`,
+    { method: 'POST', body: '{}' },
+  )
+}
+
+/**
  * Plan 03-09 — bulk decommission (D-17).
  *
  * Backend (internal/device/handlers.go bulkDecommissionDevices) runs each

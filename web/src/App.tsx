@@ -14,6 +14,7 @@ const LoginScreen = lazy(() => import('@/routes/login'))
 const SitesPage = lazy(() => import('@/routes/sites'))
 const SiteDetailPage = lazy(() => import('@/routes/sites/$id'))
 const DevicesPage = lazy(() => import('@/routes/devices'))
+const DeviceDetailPage = lazy(() => import('@/routes/devices/$id'))
 const GatewaysPage = lazy(() => import('@/routes/gateways'))
 const GatewayDetailPage = lazy(() => import('@/routes/gateways/$id'))
 const MeteringPointDetailPage = lazy(() => import('@/routes/metering-points/$id'))
@@ -89,6 +90,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <DevicesPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'devices/:id',
+        element: (
+          <Suspense fallback={null}>
+            <DeviceDetailPage />
           </Suspense>
         ),
       },
