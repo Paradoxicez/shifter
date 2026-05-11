@@ -270,6 +270,20 @@ type Querier interface {
 	// progress where the previous binding closed and the next hasn't opened).
 	GetMPWithActiveBinding(ctx context.Context, id pgtype.UUID) (GetMPWithActiveBindingRow, error)
 	GetMapping(ctx context.Context, id pgtype.UUID) (DeviceProfileMapping, error)
+	// mp_detail.sql — DETL-01 composite query for the per-MP detail page.
+	//
+	// GetMeteringPointDetail: returns MP + site name + active binding + latest
+	// reading in one round-trip. All binding/measurement joins are LEFT so D-22
+	// (no binding, no uplinks) returns the MP row cleanly — callers set
+	// active_binding=null and latest_reading=null from the null-valued columns.
+	//
+	// MeteringPointOnlineStatus: D-07 online/offline rule. Returns NULL when no
+	// device is bound (D-22 empty case); TRUE when last_seen_at is within
+	// 2 * expected_interval_s of now(); FALSE otherwise.
+	// Composite query: MP + site name + active binding + latest reading.
+	// All bindings/measurements are LEFT JOINs so D-22 (no binding / no uplinks) returns the MP row.
+	// $1 = mp_id
+	GetMeteringPointDetail(ctx context.Context, id pgtype.UUID) (GetMeteringPointDetailRow, error)
 	// Plan 15 reentrant wizard: GET /api/install/state returns the singleton row,
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
@@ -373,10 +387,29 @@ type Querier interface {
 	// is NULL after a SetProfileCodecJS write — the seed routine sets it back
 	// to now() once CS confirms the new codec).
 	ListUnsyncedProfiles(ctx context.Context) ([]DeviceProfile, error)
+	// uplinks.sql — DETL-02 cursor-paginated uplink log for the per-MP uplinks tab.
+	//
+	// ListUplinksByMP uses (metering_point_id, time DESC) index for the no-filter
+	// case and the partial index measurement_quality_flagged_idx for flagged-only
+	// queries. Cursor is on time DESC so result pages are stable even as new rows
+	// insert (unlike OFFSET which shifts under concurrent ingest).
+	//
+	// QualitySummaryByMP computes the D-19 "X of last 100 uplinks flagged" badge:
+	// the inner sub-select limits to 100 rows, the outer groups by quality value.
+	// DETL-02: cursor-paginated, time DESC, optional quality filter.
+	// Index path: measurement_mp_time_idx (metering_point_id, time DESC).
+	// $1 = mp_id, $2 = limit (<=500), $3 = before (nullable timestamptz cursor),
+	// $4 = quality filter (TEXT[]; NULL or empty = no filter).
+	ListUplinksByMP(ctx context.Context, arg ListUplinksByMPParams) ([]ListUplinksByMPRow, error)
 	// Plan 02-08 seed routine — called after a successful CS DeviceProfileService
 	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
 	// next boot's ListUnsyncedProfiles query no longer returns this row.
 	MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error
+	// D-07: online = bound device's last_seen_at within 2 * expected_interval_s.
+	// Returns device_bound=false when no binding (D-22 empty case).
+	// Handler emits online=null when device_bound=false, online=true|false otherwise.
+	// Two non-null booleans avoids sqlc CASE/NULL inference issues with nullable scans.
+	MeteringPointOnlineStatus(ctx context.Context, id pgtype.UUID) (MeteringPointOnlineStatusRow, error)
 	// For per-MP detail page (Plan 05/09 consume).
 	// sqlc.arg(metering_point_id), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
 	MeteringPointTimeseries(ctx context.Context, arg MeteringPointTimeseriesParams) ([]MeteringPointTimeseriesRow, error)
@@ -399,6 +432,9 @@ type Querier interface {
 	// If yesterday window has no data the handler returns period_delta_abs = null.
 	// sqlc.arg(timezone) / sqlc.arg(utility_class)
 	PeriodDeltaByUtility(ctx context.Context, arg PeriodDeltaByUtilityParams) (PeriodDeltaByUtilityRow, error)
+	// D-19: window of last 100 uplinks, grouped by quality.
+	// Returns one row per quality value present in the window.
+	QualitySummaryByMP(ctx context.Context, meteringPointID pgtype.UUID) ([]QualitySummaryByMPRow, error)
 	// Restore reads archived_snapshot and the handler calls
 	// chirpstackClient.CreateGateway with it; this UPDATE clears the archive
 	// columns atomic with the CS recreate.
