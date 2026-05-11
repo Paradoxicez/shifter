@@ -145,6 +145,17 @@ type Querier interface {
 	// target) surfaces as 23505 if the editor lets two rows claim the same
 	// canonical column — handler maps to a friendly error.
 	CreateMapping(ctx context.Context, arg CreateMappingParams) (DeviceProfileMapping, error)
+	// reports.sql
+	// sqlc-annotated queries for the Phase 5 report system (REPT-01..07).
+	// All data queries hit CAGGs (measurement_hourly/daily/monthly/yearly),
+	// NEVER raw measurement (90d+ raw queries are expensive per Phase 4 D-12).
+	//
+	// Range → CAGG mapping (must_haves truth #6):
+	//   range=daily   → measurement_hourly (bucketed to days in query)
+	//   range=monthly → measurement_daily  (bucketed to months in query)
+	//   range=yearly  → measurement_monthly (bucketed to years in query)
+	//-------- REPORT METADATA CRUD ----------
+	CreateReport(ctx context.Context, arg CreateReportParams) (Report, error)
 	// Site (D-17 + D-20) — physical/logical hierarchy anchor for metering points
 	// and devices. Soft-deleted via archived_at; hard delete blocked by FKs from
 	// metering_point and (transitively) binding.
@@ -287,6 +298,7 @@ type Querier interface {
 	// Plan 15 reentrant wizard: GET /api/install/state returns the singleton row,
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
+	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
 	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.
@@ -353,6 +365,7 @@ type Querier interface {
 	//   $7 = limit_n INT
 	//   $8 = offset_n INT
 	ListDevicesFiltered(ctx context.Context, arg ListDevicesFilteredParams) ([]ListDevicesFilteredRow, error)
+	ListExpiredReports(ctx context.Context) ([]ListExpiredReportsRow, error)
 	// D-32 default view: hides archived rows. Phase 3 ships a stable
 	// created_at DESC ordering (the gateway list is small — ≤200 per page —
 	// and operator workflows expect "newest first"). The handler exposes
@@ -377,6 +390,8 @@ type Querier interface {
 	// deterministic mapping pass order — required when a later mapping references
 	// a value materialized by an earlier one.
 	ListMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) ([]DeviceProfileMapping, error)
+	// Returns metering points in scope (all / site / single) for the meter_rows table.
+	ListMetersInScope(ctx context.Context, arg ListMetersInScopeParams) ([]ListMetersInScopeRow, error)
 	// Plan 02-08 MP detail "recent uplinks" tab + Phase 4 DETL-01 chart preload.
 	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
 	// can't accidentally page through years of telemetry.
@@ -405,6 +420,7 @@ type Querier interface {
 	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
 	// next boot's ListUnsyncedProfiles query no longer returns this row.
 	MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error
+	MarkReportExpired(ctx context.Context, id pgtype.UUID) error
 	// D-07: online = bound device's last_seen_at within 2 * expected_interval_s.
 	// Returns device_bound=false when no binding (D-22 empty case).
 	// Handler emits online=null when device_bound=false, online=true|false otherwise.
@@ -435,6 +451,19 @@ type Querier interface {
 	// D-19: window of last 100 uplinks, grouped by quality.
 	// Returns one row per quality value present in the window.
 	QualitySummaryByMP(ctx context.Context, meteringPointID pgtype.UUID) ([]QualitySummaryByMPRow, error)
+	// Group by metering_point.utility_class (D-04: utility class = water | electricity).
+	ReportDailyByCategory(ctx context.Context, arg ReportDailyByCategoryParams) ([]ReportDailyByCategoryRow, error)
+	//-------- DATA QUERIES ----------
+	// Daily report — sources measurement_hourly, buckets to days.
+	// Returns one row per (day, metering_point_id).
+	ReportDailyByMP(ctx context.Context, arg ReportDailyByMPParams) ([]ReportDailyByMPRow, error)
+	ReportDailyBySite(ctx context.Context, arg ReportDailyBySiteParams) ([]ReportDailyBySiteRow, error)
+	ReportMonthlyByCategory(ctx context.Context, arg ReportMonthlyByCategoryParams) ([]ReportMonthlyByCategoryRow, error)
+	ReportMonthlyByMP(ctx context.Context, arg ReportMonthlyByMPParams) ([]ReportMonthlyByMPRow, error)
+	ReportMonthlyBySite(ctx context.Context, arg ReportMonthlyBySiteParams) ([]ReportMonthlyBySiteRow, error)
+	ReportYearlyByCategory(ctx context.Context, arg ReportYearlyByCategoryParams) ([]ReportYearlyByCategoryRow, error)
+	ReportYearlyByMP(ctx context.Context, arg ReportYearlyByMPParams) ([]ReportYearlyByMPRow, error)
+	ReportYearlyBySite(ctx context.Context, arg ReportYearlyBySiteParams) ([]ReportYearlyBySiteRow, error)
 	// Restore reads archived_snapshot and the handler calls
 	// chirpstackClient.CreateGateway with it; this UPDATE clears the archive
 	// columns atomic with the CS recreate.
@@ -519,6 +548,7 @@ type Querier interface {
 	// mis-classify; the CHECK constraint still bounds the values to water |
 	// electricity).
 	UpdateMP(ctx context.Context, arg UpdateMPParams) (MeteringPoint, error)
+	UpdateReportPDFStatus(ctx context.Context, arg UpdateReportPDFStatusParams) error
 	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
 	// moving a site between parents is a separate "reparent" flow with audit
 	// implications and is deferred to Phase 6.

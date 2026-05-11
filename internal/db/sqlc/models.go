@@ -412,6 +412,62 @@ type Measurement struct {
 	BindingID       pgtype.UUID
 }
 
+type MeasurementDaily struct {
+	Bucket          interface{}
+	MeteringPointID pgtype.UUID
+	CumulativeDelta int64
+	AvgInstant      float64
+	MaxInstant      interface{}
+	MinBattery      interface{}
+	AvgBattery      float64
+	AvgRssi         float64
+	AvgSnr          float64
+	UplinkCount     int64
+	FlaggedCount    int64
+}
+
+type MeasurementHourly struct {
+	Bucket          interface{}
+	MeteringPointID pgtype.UUID
+	CumulativeDelta int32
+	AvgInstant      float64
+	MaxInstant      interface{}
+	MinBattery      interface{}
+	AvgBattery      float64
+	AvgRssi         float64
+	AvgSnr          float64
+	UplinkCount     int64
+	FlaggedCount    int64
+}
+
+type MeasurementMonthly struct {
+	Bucket          interface{}
+	MeteringPointID pgtype.UUID
+	CumulativeDelta int64
+	AvgInstant      float64
+	MaxInstant      interface{}
+	MinBattery      interface{}
+	AvgBattery      float64
+	AvgRssi         float64
+	AvgSnr          float64
+	UplinkCount     int64
+	FlaggedCount    int64
+}
+
+type MeasurementYearly struct {
+	Bucket          interface{}
+	MeteringPointID pgtype.UUID
+	CumulativeDelta int64
+	AvgInstant      float64
+	MaxInstant      interface{}
+	MinBattery      interface{}
+	AvgBattery      float64
+	AvgRssi         float64
+	AvgSnr          float64
+	UplinkCount     int64
+	FlaggedCount    int64
+}
+
 type MeteringPoint struct {
 	ID                  pgtype.UUID
 	SiteID              pgtype.UUID
@@ -421,6 +477,100 @@ type MeteringPoint struct {
 	ArchivedAt          pgtype.Timestamptz
 	CreatedAt           pgtype.Timestamptz
 	UpdatedAt           pgtype.Timestamptz
+}
+
+type Report struct {
+	ID              pgtype.UUID
+	UserID          pgtype.UUID
+	Scope           string
+	SiteID          pgtype.UUID
+	MeteringPointID pgtype.UUID
+	GroupBy         *string
+	RangeKind       string
+	RangeStart      pgtype.Timestamptz
+	RangeEnd        pgtype.Timestamptz
+	ArtifactDir     string
+	PdfStatus       string
+	PdfPath         *string
+	CreatedAt       pgtype.Timestamptz
+	ExpiresAt       pgtype.Timestamptz
+}
+
+// Singleton retention windows for measurement + CAGGs (D-09 / DATA-13). NULL yearly_days = forever.
+type RetentionConfig struct {
+	ID int32
+	// Raw measurement retention in days. UI-SPEC range 30..365. Default 90 (D-09).
+	RawDays int32
+	// measurement_hourly retention. UI-SPEC range 180..1825 (6mo..5y). Default 365 (D-09).
+	HourlyDays int32
+	// measurement_daily retention. UI-SPEC range 365..7300 (1y..20y). Default 1825 (D-09).
+	DailyDays int32
+	// measurement_monthly retention. UI-SPEC range 1825..18250 (5y..50y). Default 7300 (D-09).
+	MonthlyDays int32
+	// measurement_yearly retention. NULL = forever (D-09).
+	YearlyDays *int32
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type RiverClient struct {
+	ID        string
+	CreatedAt pgtype.Timestamptz
+	Metadata  []byte
+	PausedAt  pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type RiverClientQueue struct {
+	RiverClientID    string
+	Name             string
+	CreatedAt        pgtype.Timestamptz
+	MaxWorkers       int64
+	Metadata         []byte
+	NumJobsCompleted int64
+	NumJobsRunning   int64
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type RiverJob struct {
+	ID           int64
+	State        interface{}
+	Attempt      int16
+	MaxAttempts  int16
+	AttemptedAt  pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	FinalizedAt  pgtype.Timestamptz
+	ScheduledAt  pgtype.Timestamptz
+	Priority     int16
+	Args         []byte
+	AttemptedBy  []string
+	Errors       [][]byte
+	Kind         string
+	Metadata     []byte
+	Queue        string
+	Tags         []string
+	UniqueKey    []byte
+	UniqueStates pgtype.Bits
+}
+
+type RiverLeader struct {
+	ElectedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	LeaderID  string
+	Name      string
+}
+
+type RiverMigration struct {
+	Line      string
+	Version   int64
+	CreatedAt pgtype.Timestamptz
+}
+
+type RiverQueue struct {
+	Name      string
+	CreatedAt pgtype.Timestamptz
+	Metadata  []byte
+	PausedAt  pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
 
 type Session struct {
