@@ -53,6 +53,95 @@ func (ns NullChirpstackMode) Value() (driver.Value, error) {
 	return string(ns.ChirpstackMode), nil
 }
 
+type ImportJobRowStatus string
+
+const (
+	ImportJobRowStatusValid         ImportJobRowStatus = "valid"
+	ImportJobRowStatusInvalid       ImportJobRowStatus = "invalid"
+	ImportJobRowStatusAlreadyExists ImportJobRowStatus = "already_exists"
+	ImportJobRowStatusCreated       ImportJobRowStatus = "created"
+	ImportJobRowStatusFailed        ImportJobRowStatus = "failed"
+)
+
+func (e *ImportJobRowStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ImportJobRowStatus(s)
+	case string:
+		*e = ImportJobRowStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ImportJobRowStatus: %T", src)
+	}
+	return nil
+}
+
+type NullImportJobRowStatus struct {
+	ImportJobRowStatus ImportJobRowStatus
+	Valid              bool // Valid is true if ImportJobRowStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullImportJobRowStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ImportJobRowStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ImportJobRowStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullImportJobRowStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ImportJobRowStatus), nil
+}
+
+type ImportJobStatus string
+
+const (
+	ImportJobStatusPreview   ImportJobStatus = "preview"
+	ImportJobStatusCommitted ImportJobStatus = "committed"
+	ImportJobStatusExpired   ImportJobStatus = "expired"
+	ImportJobStatusFailed    ImportJobStatus = "failed"
+)
+
+func (e *ImportJobStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ImportJobStatus(s)
+	case string:
+		*e = ImportJobStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ImportJobStatus: %T", src)
+	}
+	return nil
+}
+
+type NullImportJobStatus struct {
+	ImportJobStatus ImportJobStatus
+	Valid           bool // Valid is true if ImportJobStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullImportJobStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ImportJobStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ImportJobStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullImportJobStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ImportJobStatus), nil
+}
+
 type UnitsSystem string
 
 const (
@@ -219,6 +308,60 @@ type DeviceProfileMapping struct {
 	Position        int32
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type Gateway struct {
+	ID               pgtype.UUID
+	GatewayID        string
+	Name             string
+	Description      *string
+	Region           string
+	Lat              *float64
+	Lng              *float64
+	Altitude         *float64
+	Tags             []byte
+	CsTenantID       *string
+	StatsRefreshedAt pgtype.Timestamptz
+	StatsRx24h       *int64
+	StatsTx24h       *int64
+	StatsTxOk24h     *int64
+	StatsSparkline   []byte
+	ArchivedAt       pgtype.Timestamptz
+	ArchivedReason   *string
+	ArchivedSnapshot []byte
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
+
+type ImportJob struct {
+	ID                 pgtype.UUID
+	JobID              pgtype.UUID
+	OwnerID            pgtype.UUID
+	FileName           string
+	FileFormat         string
+	TotalRows          int32
+	Status             ImportJobStatus
+	ValidCount         int32
+	InvalidCount       int32
+	AlreadyExistsCount int32
+	CreatedCount       int32
+	FailedCount        int32
+	ExpiresAt          pgtype.Timestamptz
+	CommittedAt        pgtype.Timestamptz
+	FailedReason       *string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+type ImportJobRow struct {
+	ID              int64
+	ImportJobID     pgtype.UUID
+	RowIndex        int32
+	RawPayload      []byte
+	Parsed          []byte
+	Status          ImportJobRowStatus
+	Reason          *string
+	CreatedDeviceID pgtype.UUID
 }
 
 type InstallIdentity struct {

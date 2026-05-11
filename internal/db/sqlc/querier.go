@@ -51,6 +51,12 @@ type Querier interface {
 	// (existing devices keep working; archive only hides from the create-device
 	// dropdown).
 	ArchiveDeviceProfile(ctx context.Context, id pgtype.UUID) (DeviceProfile, error)
+	// D-30 verbatim (user decision 2026-05-11): soft-delete in Postgres
+	// (archived_at, archived_reason, archived_snapshot) + ChirpStack
+	// DeleteGateway called by the handler in the SAME transaction. Snapshot
+	// preserves the CS proto (protojson) so RestoreGateway can faithfully
+	// re-create.
+	ArchiveGateway(ctx context.Context, arg ArchiveGatewayParams) (Gateway, error)
 	// D-20 soft-delete. Idempotent guard.
 	ArchiveMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
 	// D-20 soft-delete. Idempotent guard `archived_at IS NULL` — re-archiving an
@@ -68,6 +74,7 @@ type Querier interface {
 	// cheaper than 5 separate aggregate queries. The partial index on
 	// `quality <> 'ok'` (0015) keeps this fast for the flagged-only branches.
 	CountFlaggedRecent(ctx context.Context, arg CountFlaggedRecentParams) (CountFlaggedRecentRow, error)
+	CountGatewaysActive(ctx context.Context) (int64, error)
 	// Site detail header badge "N metering points". Used by Plan 02-08 site detail
 	// page; counts only active MPs (D-20 — archived MPs hide from default views).
 	CountMPsOnSite(ctx context.Context, siteID pgtype.UUID) (int64, error)
@@ -96,6 +103,21 @@ type Querier interface {
 	// seeded profiles cover Phase 2 — operator-authored profiles unlock in
 	// Phase 6). codec_js may be empty at creation; the seed routine fills it.
 	CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfileParams) (DeviceProfile, error)
+	// Gateway CRUD + stats cache + decommission. Phase 3 D-29..D-32.
+	//
+	// D-30 verbatim (user decision 2026-05-11): soft-delete in Postgres (via
+	// archived_at + archived_reason + archived_snapshot) is the PG half of the
+	// atomic decommission tx; the handler issues ChirpStack DeleteGateway in the
+	// same Serializable tx. archived_snapshot stores the CS Gateway proto as
+	// JSON so RestoreGateway can faithfully re-create.
+	//
+	// Phase 3 simplification: the per-gateway "X devices in last 24h" warning
+	// count (D-31) is NOT served from a sqlc query here because the measurement
+	// hypertable (0015_measurement.up.sql) has no `gateway_id` column yet —
+	// D-31 warning copy ships without device count. Phase 4 telemetry ingest
+	// adds `measurement.gateway_id` and at that point the count query lands
+	// alongside this file.
+	CreateGateway(ctx context.Context, arg CreateGatewayParams) (Gateway, error)
 	// Metering Point (D-19 + D-20) — the canonical "thing being measured" that
 	// persists across physical meter swaps (DATA-01 invariant). MP is the join
 	// key for telemetry; binding history captures which device fed it when.
@@ -177,6 +199,10 @@ type Querier interface {
 	// Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
 	// (`/profiles/axioma_w1`).
 	GetDeviceProfileBySlug(ctx context.Context, slug string) (DeviceProfile, error)
+	GetGateway(ctx context.Context, id pgtype.UUID) (Gateway, error)
+	// Lowercase EUI lookup (matches Phase 2 dev_eui pattern). Caller MUST pass
+	// the lowercase form — the schema CHECK enforces it on storage.
+	GetGatewayByGatewayID(ctx context.Context, gatewayID string) (Gateway, error)
 	GetInstallIdentity(ctx context.Context) (InstallIdentity, error)
 	// Plan 02-08 MP detail page header card "Last reading at <time>". The
 	// (metering_point_id, time DESC) hot-path index makes this an index scan +
@@ -238,6 +264,15 @@ type Querier interface {
 	// "device → site" association which is otherwise indirect (devices have no
 	// direct site_id; that's by design — D-15 + DATA-01).
 	ListDevicesBySite(ctx context.Context, siteID pgtype.UUID) ([]Device, error)
+	// D-32 default view: hides archived rows. Phase 3 ships a stable
+	// created_at DESC ordering (the gateway list is small — ≤200 per page —
+	// and operator workflows expect "newest first"). The handler exposes
+	// sort/filter via URL params but currently maps them all to this query;
+	// richer ordering arrives with the Phase 4 gateway dashboard.
+	ListGatewaysActive(ctx context.Context, arg ListGatewaysActiveParams) ([]Gateway, error)
+	// D-32 "Show archived" toggle. archived rows sorted by archived_at DESC
+	// first, then active rows by created_at DESC.
+	ListGatewaysIncludingArchived(ctx context.Context, arg ListGatewaysIncludingArchivedParams) ([]Gateway, error)
 	// Site detail MP-list section. Active-only by default; site_idx covers the
 	// filter, archived_at NULL is the common case.
 	ListMPsBySite(ctx context.Context, siteID pgtype.UUID) ([]MeteringPoint, error)
@@ -271,6 +306,10 @@ type Querier interface {
 	// binding_no_overlap_per_device) make this race-safe — concurrent commits
 	// on the same MP or same device get 23P01 (exclusion_violation).
 	OpenBinding(ctx context.Context, arg OpenBindingParams) (Binding, error)
+	// Restore reads archived_snapshot and the handler calls
+	// chirpstackClient.CreateGateway with it; this UPDATE clears the archive
+	// columns atomic with the CS recreate.
+	RestoreGateway(ctx context.Context, id pgtype.UUID) (Gateway, error)
 	RestoreMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
 	// D-20 restore from archive view. Symmetric guard.
 	RestoreSite(ctx context.Context, id pgtype.UUID) (Site, error)
@@ -310,6 +349,9 @@ type Querier interface {
 	// queries — see device_profile_mappings.sql). cs_profile_id is intentionally
 	// NOT updatable here; only MarkProfileSyncedToChirpStack writes that column.
 	UpdateDeviceProfile(ctx context.Context, arg UpdateDeviceProfileParams) (DeviceProfile, error)
+	UpdateGateway(ctx context.Context, arg UpdateGatewayParams) (Gateway, error)
+	// Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
+	UpdateGatewayStatsCache(ctx context.Context, arg UpdateGatewayStatsCacheParams) error
 	// Plan 02-08 MP edit. utility_class IS editable here (operators sometimes
 	// mis-classify; the CHECK constraint still bounds the values to water |
 	// electricity).
