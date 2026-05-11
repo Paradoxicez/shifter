@@ -114,7 +114,7 @@ function ElectricityTiles({ kpi, instantOverride }: { kpi: UtilityKPI; instantOv
 
 export function KpiGrid({ capabilities, kpis, instantOverride }: KpiGridProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
+    <div data-kpi-grid className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
       {(capabilities === 'water' || capabilities === 'both') && kpis.water && (
         <WaterTiles kpi={kpis.water} instantOverride={instantOverride?.water} />
       )}

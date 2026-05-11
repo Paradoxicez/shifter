@@ -37,6 +37,8 @@ export interface KpiCardProps {
   deltaPct?: number | null
   /** online variant only — total device count */
   total?: number
+  /** E2E selector — data-kpi="today|instant|delta|online" */
+  'data-kpi'?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -136,13 +138,13 @@ function OnlineFooter({ value, total }: OnlineFooterProps) {
 // KpiCard
 // ---------------------------------------------------------------------------
 
-export function KpiCard({ label, utility, variant, value, unit, deltaAbs, deltaPct, total }: KpiCardProps) {
+export function KpiCard({ label, utility, variant, value, unit, deltaAbs, deltaPct, total, 'data-kpi': dataKpi }: KpiCardProps) {
   const displayValue = value !== null && value !== undefined
     ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
     : '—'
 
   return (
-    <Card className="gap-3">
+    <Card className="gap-3" data-kpi={dataKpi ?? variant}>
       <CardHeader className="pb-0">
         <CardTitle className="text-sm font-semibold text-muted-foreground">{label}</CardTitle>
       </CardHeader>
