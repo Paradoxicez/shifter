@@ -41,7 +41,9 @@ import (
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 	"github.com/shifter-io/shifter/internal/device"
+	"github.com/shifter-io/shifter/internal/gateway"
 	httpapi "github.com/shifter-io/shifter/internal/http"
+	importpkg "github.com/shifter-io/shifter/internal/import"
 	"github.com/shifter-io/shifter/internal/ingest"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/logging"
@@ -213,18 +215,22 @@ var serveCmd = &cobra.Command{
 			PingMQTT: chirpstack.PingMQTT,
 		}
 
-		// 8. Phase 2 handler deps — only constructed when CS gRPC client is
-		//    wired. Each pointer is nil-tolerated by Plan 02-11's RegisterRoutes
-		//    nil-guards so a degraded boot (CS unreachable) still serves the
-		//    Phase 1 surface.
+		// 8. Phase 2 + Phase 3 handler deps — only constructed when CS gRPC
+		//    client is wired. Each pointer is nil-tolerated by Plan 02-11's
+		//    RegisterRoutes nil-guards so a degraded boot (CS unreachable)
+		//    still serves the Phase 1 surface.
 		var (
 			deviceDeps  *device.Deps
 			swapDeps    *swap.HTTPDeps
 			profileDeps *profile.HTTPDeps
+			gatewayDeps *gateway.Deps
+			importDeps  *importpkg.Deps
 		)
 		if csClient != nil {
 			// Closure that adapts EnsureTenantAndApplication into the
-			// device.CSBootstrapper 1-method interface.
+			// device.CSBootstrapper 1-method interface. The SAME adapter
+			// satisfies gateway.CSBootstrapper + importpkg.CommitBootstrap
+			// (identical 1-method shape — see Phase 3 SUMMARY 03-04).
 			bootstrapper := bootstrapperFunc(func(c context.Context) (string, string, error) {
 				return chirpstack.EnsureTenantAndApplication(c, csClient, csConnStore, log)
 			})
@@ -259,9 +265,47 @@ var serveCmd = &cobra.Command{
 				CSClient:   csClient,
 				ConnStore:  csConnStore,
 			}
+
+			// 8a. Phase 3 GatewayDeps. Constructs the 1-min TTL metrics cache
+			//     (D-02), an async stats refresher that writes back into PG so
+			//     the next list-page render reads the cached sparkline from
+			//     gateway.stats_sparkline (Plan 03-04 Task 3), and the install
+			//     state region adapter that resolves the create-gateway dialog
+			//     default to chirpstack_connection.region_name (D-03).
+			metricsCache := chirpstack.NewMetricsCache(csClient)
+			cacheRefresher := &gateway.CacheRefresher{
+				Cache:   metricsCache,
+				Queries: sqlc.New(pool),
+				Log:     log,
+			}
+			gatewayDeps = &gateway.Deps{
+				Pool:         pool,
+				SessionMgr:   sm,
+				Log:          log,
+				CS:           csClient,
+				Bootstrap:    bootstrapper,
+				MetricsCache: metricsCache,
+				InstallState: &installStateRegionReader{pool: pool},
+				Refresher:    cacheRefresher,
+			}
+
+			// 8b. Phase 3 ImportDeps. CommitDeps reuses the same CS client +
+			//     bootstrapper as the device handler so a bulk import row that
+			//     creates a device follows the identical CS+PG atomic pattern.
+			importDeps = &importpkg.Deps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log,
+				Commit: &importpkg.CommitDeps{
+					Pool:      pool,
+					CS:        csClient,
+					Bootstrap: bootstrapper,
+					Log:       log,
+				},
+			}
 		}
 
-		// 9. Router with full Phase 2 wiring.
+		// 9. Router with full Phase 2 + Phase 3 wiring.
 		router := httpapi.NewRouter(httpapi.Deps{
 			Pool:         pool,
 			SessionMgr:   sm,
@@ -275,6 +319,8 @@ var serveCmd = &cobra.Command{
 			DeviceDeps:   deviceDeps,
 			SwapDeps:     swapDeps,
 			ProfileDeps:  profileDeps,
+			GatewayDeps:  gatewayDeps,
+			ImportDeps:   importDeps,
 			SPA:          httpapi.SPAHandler(),
 		})
 
@@ -422,8 +468,39 @@ func (l *sqlcResolverLoader) LoadActive(ctx context.Context, devEUI string, at t
 // Used in serve.go's Phase 2 wiring to thread chirpstack.EnsureTenantAnd
 // Application (free-function with extra args) into the 1-method interface
 // device.Deps.Bootstrap expects.
+//
+// The SAME adapter also satisfies gateway.CSBootstrapper +
+// importpkg.CommitBootstrap (identical 1-method shape) — Phase 3 SUMMARY 03-04
+// documents this re-use.
 type bootstrapperFunc func(ctx context.Context) (tenantID, appID string, err error)
 
 func (f bootstrapperFunc) EnsureTenantAndApplication(ctx context.Context) (string, string, error) {
 	return f(ctx)
+}
+
+// installStateRegionReader satisfies gateway.InstallStateReader by querying
+// chirpstack_connection.region_name (the post-install LoRaWAN region). The
+// wizard's install_state row is deleted at finish (D-11) so the gateway
+// create dialog default reads from the persisted chirpstack_connection
+// singleton instead.
+//
+// Behavior:
+//   - pgx.ErrNoRows (pre-install row missing)         → return "" + nil so
+//     gateway.resolveInstallRegion falls back to AS923_2 (D-03 fallback).
+//   - any other error                                  → propagate (handler
+//     also tolerates errors via the fallback).
+type installStateRegionReader struct{ pool *pgxpool.Pool }
+
+func (r *installStateRegionReader) GetLoRaWANRegionDefault(ctx context.Context) (string, error) {
+	var region string
+	err := r.pool.QueryRow(ctx,
+		`SELECT region_name FROM chirpstack_connection WHERE id = 1`,
+	).Scan(&region)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("install_state region reader: %w", err)
+	}
+	return region, nil
 }
