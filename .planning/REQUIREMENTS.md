@@ -31,14 +31,14 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **CHIRP-02**: Backend subscribes to ChirpStack's MQTT integration topic for real-time device uplinks
 - [x] **CHIRP-03**: A "Test connection" action verifies gRPC + MQTT reachability and surfaces a clear error path if either fails
 - [x] **CHIRP-04**: Adding a device is a single user action — Shifter creates / reuses the underlying ChirpStack tenant, application, profile, and device binding behind the scenes
-- [ ] **CHIRP-05**: Any other multi-step ChirpStack flow (e.g. activation, key rotation) is collapsed to one user action; if multiple steps are unavoidable, they live inside one stepped dialog
-- [ ] **CHIRP-06**: Operator never needs to log into ChirpStack to do day-to-day work
+- [x] **CHIRP-05**: Any other multi-step ChirpStack flow (e.g. activation, key rotation) is collapsed to one user action; if multiple steps are unavoidable, they live inside one stepped dialog
+- [x] **CHIRP-06**: Operator never needs to log into ChirpStack to do day-to-day work
 
 ### Gateway Management
 
-- [ ] **GW-01**: Admin can list, search, and filter gateways with online/offline status, last-seen, and lat/lng
-- [ ] **GW-02**: Admin can create / edit / delete a gateway via dialogs, with regulator-aware region picker
-- [ ] **GW-03**: User can view per-gateway RX/TX statistics (packet counts, success rate)
+- [x] **GW-01**: Admin can list, search, and filter gateways with online/offline status, last-seen, and lat/lng
+- [x] **GW-02**: Admin can create / edit / delete a gateway via dialogs, with regulator-aware region picker
+- [x] **GW-03**: User can view per-gateway RX/TX statistics (packet counts, success rate)
 - [ ] **GW-04**: Gateways appear as pins on the map view with health indicators
 
 ### Devices & Meters
@@ -241,11 +241,11 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | CHIRP-02 | Phase 1 | Complete |
 | CHIRP-03 | Phase 1 | Complete |
 | CHIRP-04 | Phase 2 | Complete |
-| CHIRP-05 | Phase 3 | Pending |
-| CHIRP-06 | Phase 3 | Pending |
-| GW-01 | Phase 3 | Pending |
-| GW-02 | Phase 3 | Pending |
-| GW-03 | Phase 3 | Pending |
+| CHIRP-05 | Phase 3 | Complete |
+| CHIRP-06 | Phase 3 | Complete |
+| GW-01 | Phase 3 | Complete |
+| GW-02 | Phase 3 | Complete |
+| GW-03 | Phase 3 | Complete |
 | GW-04 | Phase 3 | Pending |
 | DEV-01 | Phase 3 | Pending |
 | DEV-02 | Phase 3 | Pending |
