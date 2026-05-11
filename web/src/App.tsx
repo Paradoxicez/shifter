@@ -19,6 +19,8 @@ const GatewayDetailPage = lazy(() => import('@/routes/gateways/$id'))
 const MeteringPointDetailPage = lazy(() => import('@/routes/metering-points/$id'))
 const ProfilesPage = lazy(() => import('@/routes/profiles'))
 const ProfileEditorRoute = lazy(() => import('@/routes/profiles/$id'))
+const AdminImportsPage = lazy(() => import('@/routes/admin/imports'))
+const ImportJobDetailPage = lazy(() => import('@/routes/admin/imports/$jobId'))
 
 /**
  * Phase 1 router skeleton.
@@ -52,6 +54,7 @@ const router = createBrowserRouter([
     ],
   },
   {
+    id: 'root',
     path: '/',
     element: <RootLayout />,
     loader: rootLoader,
@@ -134,6 +137,22 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <ProfileEditorRoute />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'admin/imports',
+        element: (
+          <Suspense fallback={null}>
+            <AdminImportsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'admin/imports/:jobId',
+        element: (
+          <Suspense fallback={null}>
+            <ImportJobDetailPage />
           </Suspense>
         ),
       },

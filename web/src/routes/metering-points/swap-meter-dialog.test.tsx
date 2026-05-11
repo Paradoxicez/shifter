@@ -89,7 +89,14 @@ describe('SwapMeterDialog (Plan 02-14 / D-12 + D-13 + D-14)', () => {
     const { apiFetch } = await import('@/lib/api')
     ;(apiFetch as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
       if (path === `/api/metering-points/${MP_ID}`) return Promise.resolve(mockMPDetail)
-      if (path === '/api/devices') return Promise.resolve([mockUnboundDevice])
+      if (path.startsWith('/api/devices'))
+        return Promise.resolve({
+          total_count: 1,
+          page_count: 1,
+          page: 1,
+          per_page: 100,
+          rows: [mockUnboundDevice],
+        })
       return Promise.resolve({})
     })
 
@@ -107,7 +114,14 @@ describe('SwapMeterDialog (Plan 02-14 / D-12 + D-13 + D-14)', () => {
     const { apiFetch } = await import('@/lib/api')
     ;(apiFetch as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
       if (path === `/api/metering-points/${MP_ID}`) return Promise.resolve(mockMPDetail)
-      if (path === '/api/devices') return Promise.resolve([mockUnboundDevice])
+      if (path.startsWith('/api/devices'))
+        return Promise.resolve({
+          total_count: 1,
+          page_count: 1,
+          page: 1,
+          per_page: 100,
+          rows: [mockUnboundDevice],
+        })
       return Promise.resolve({})
     })
 
@@ -128,7 +142,14 @@ describe('SwapMeterDialog (Plan 02-14 / D-12 + D-13 + D-14)', () => {
     const { apiFetch } = await import('@/lib/api')
     ;(apiFetch as ReturnType<typeof vi.fn>).mockImplementation((path: string) => {
       if (path === `/api/metering-points/${MP_ID}`) return Promise.resolve(mockMPDetail)
-      if (path === '/api/devices') return Promise.resolve([mockUnboundDevice])
+      if (path.startsWith('/api/devices'))
+        return Promise.resolve({
+          total_count: 1,
+          page_count: 1,
+          page: 1,
+          per_page: 100,
+          rows: [mockUnboundDevice],
+        })
       return Promise.resolve({})
     })
 
@@ -170,7 +191,14 @@ describe('SwapMeterDialog (Plan 02-14 / D-12 + D-13 + D-14)', () => {
 
     mock.mockImplementation((path: string, init?: RequestInit) => {
       if (path === `/api/metering-points/${MP_ID}`) return Promise.resolve(mockMPDetail)
-      if (path === '/api/devices') return Promise.resolve([mockUnboundDevice])
+      if (path.startsWith('/api/devices'))
+        return Promise.resolve({
+          total_count: 1,
+          page_count: 1,
+          page: 1,
+          per_page: 100,
+          rows: [mockUnboundDevice],
+        })
       if (path === `/api/metering-points/${MP_ID}/swap` && init?.method === 'POST') {
         return Promise.resolve({ binding_id: 'newbinding' })
       }
