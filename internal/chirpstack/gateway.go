@@ -110,6 +110,47 @@ func (c *Client) CreateGateway(ctx context.Context, in CreateGatewayInput) error
 	return wrapCSErr(err)
 }
 
+// CreateGatewayFromProto pushes a previously-snapshotted *api.Gateway back to
+// ChirpStack. Used by the gateway restore handler (D-30 verbatim) to faithfully
+// re-create a decommissioned gateway from its archived_snapshot — the proto
+// carries Location.Source / TenantId / Tags / StatsInterval verbatim so the
+// restored gateway matches its pre-decommission state byte-for-byte.
+//
+// Also used by the archive recovery path: if Postgres commit fails AFTER CS
+// DeleteGateway succeeded, the handler best-effort calls this method with the
+// snapshot it captured pre-delete (fresh ctx — Pitfall 02-05 pattern).
+func (c *Client) CreateGatewayFromProto(ctx context.Context, gw *api.Gateway) error {
+	if gw == nil {
+		return fmt.Errorf("CreateGatewayFromProto: gw is nil")
+	}
+	if gw.GatewayId == "" {
+		return fmt.Errorf("CreateGatewayFromProto: gateway_id is required")
+	}
+	svc := api.NewGatewayServiceClient(c.conn)
+	_, err := svc.Create(ctx, &api.CreateGatewayRequest{Gateway: gw})
+	return wrapCSErr(err)
+}
+
+// GetGatewayProto returns the raw *api.Gateway proto for gatewayID. The
+// archive handler captures this BEFORE issuing DeleteGateway so the snapshot
+// preserves every CS-side field (Location.Source, TenantId, Tags,
+// StatsInterval, Metadata) for faithful restore via CreateGatewayFromProto.
+//
+// Translates codes.NotFound to ErrNotFound; other errors flow through wrapCSErr.
+// Callers serialise with protojson.Marshal before persisting to
+// gateway.archived_snapshot.
+func (c *Client) GetGatewayProto(ctx context.Context, gatewayID string) (*api.Gateway, error) {
+	if gatewayID == "" {
+		return nil, fmt.Errorf("GetGatewayProto: gatewayID is required")
+	}
+	svc := api.NewGatewayServiceClient(c.conn)
+	resp, err := svc.Get(ctx, &api.GetGatewayRequest{GatewayId: gatewayID})
+	if err != nil {
+		return nil, wrapCSErr(err)
+	}
+	return resp.GetGateway(), nil
+}
+
 // GetGateway returns a single gateway by EUI64. Translates codes.NotFound to
 // ErrNotFound; other gRPC errors flow through wrapCSErr.
 func (c *Client) GetGateway(ctx context.Context, gatewayID string) (*Gateway, error) {

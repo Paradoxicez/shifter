@@ -30,6 +30,7 @@ import (
 
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/device"
+	"github.com/shifter-io/shifter/internal/gateway"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
@@ -79,6 +80,11 @@ type Deps struct {
 	// ProfileDeps wires Plan 02-11's /api/device-profiles editor surface.
 	// nil when CS gRPC client + ConnStore are not yet constructed.
 	ProfileDeps *profile.HTTPDeps
+
+	// GatewayDeps wires Plan 03-04's /api/gateways surface (CRUD + archive/
+	// restore + cached metrics). nil when CS gRPC client + metrics cache
+	// are not yet constructed — mirrors DeviceDeps nil-guard pattern.
+	GatewayDeps *gateway.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -223,6 +229,13 @@ func NewRouter(deps Deps) http.Handler {
 		// (Plan 02-11). nil when CS gRPC client + ConnStore are not yet
 		// constructed.
 		profile.RegisterRoutes(r, *deps.ProfileDeps)
+	}
+	if deps.GatewayDeps != nil {
+		// GatewayDeps mounts /api/gateways CRUD + archive/restore + cached
+		// metrics (Plan 03-04). nil-guard mirrors DeviceDeps: when CS gRPC
+		// client + metrics cache are not yet wired, the gateway routes are
+		// simply not mounted (router unit tests stay free of CS deps).
+		gateway.RegisterRoutes(r, *deps.GatewayDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
