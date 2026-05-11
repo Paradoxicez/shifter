@@ -40,15 +40,6 @@ export interface KpiCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatValue(value: number | null): string {
-  if (value === null || value === undefined) return '—'
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
-}
-
-// ---------------------------------------------------------------------------
 // Delta footer
 // ---------------------------------------------------------------------------
 

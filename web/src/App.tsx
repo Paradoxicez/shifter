@@ -6,8 +6,8 @@ import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
 import AuthLayout from '@/routes/_auth'
 import RootLayout, { rootLoader } from '@/routes/_root'
-import IndexRedirect from '@/routes/index-redirect'
 
+const DashboardPage = lazy(() => import('@/routes/dashboard'))
 const InstallWizard = lazy(() => import('@/routes/install'))
 const SettingsPage = lazy(() => import('@/routes/settings'))
 const LoginScreen = lazy(() => import('@/routes/login'))
@@ -60,7 +60,14 @@ const router = createBrowserRouter([
     element: <RootLayout />,
     loader: rootLoader,
     children: [
-      { index: true, element: <IndexRedirect /> },
+      {
+        index: true,
+        element: (
+          <Suspense fallback={null}>
+            <DashboardPage />
+          </Suspense>
+        ),
+      },
       {
         path: 'settings',
         element: (

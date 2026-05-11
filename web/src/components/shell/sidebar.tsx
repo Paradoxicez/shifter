@@ -1,5 +1,6 @@
 import {
   Cpu,
+  LayoutDashboard,
   Layers,
   MapPin,
   Radio,
@@ -16,11 +17,10 @@ import { useCurrentUser } from '@/lib/use-current-user'
  * Plan 03-09 appends admin-only nav under the Admin label:
  *   Imports (`/admin/imports`) — D-36 + T-3-90 mitigation.
  *
- * Gateways sits at the top because in operator mental model the gateway is
- * the network edge — without it, no devices uplink. Phase 4 will insert
- * Dashboard above all; don't pre-reserve that slot.
+ * Dashboard at top — operator's primary surface.
  */
 const NAV = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/gateways', label: 'Gateways', icon: Radio },
   { to: '/sites', label: 'Sites', icon: MapPin },
   { to: '/devices', label: 'Devices', icon: Cpu },
