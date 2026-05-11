@@ -462,3 +462,64 @@ func TestAuditLog_AcceptsInsertAndPersistsDiff(t *testing.T) {
 	require.Contains(t, err.Error(), "audit_log_entity_type_valid")
 }
 
+// =============================================================================
+// Phase 3 migrations (skeleton — Wave 1 implements the SQL)
+// =============================================================================
+//
+// Wave 0 leaves these as t.Skip placeholders. Wave 1's migration plan
+// (03-02-PLAN.md / 03-05-PLAN.md) implements:
+//
+//   - 0018_gateway        — `gateway` table (id, gateway_id, name, region,
+//                            archived_at, ...) + indexes
+//   - 0019_import_jobs    — `import_job` (job_id, status, outcomes JSONB,
+//                            created_at, expires_at) for D-11 1h TTL
+//   - 0020_audit_log_vocabulary — extends audit_log CHECK constraints with
+//                            the new actions/entity_types Phase 3 introduces
+//                            (`device.bulk_import`, `device.reveal_secrets`,
+//                            `gateway.create|update|archive|restore`,
+//                            `import_job`).
+//
+// Each test below verifies one migration applies cleanly and (where
+// applicable) the corresponding down migration rolls back to the prior
+// schema_migrations version with no orphaned tables.
+
+// TestPhase3Migrations_0018_Gateway_Apply — applies 0018 and asserts the
+// `gateway` table exists with the expected columns + unique index on
+// gateway_id (case-insensitive).
+func TestPhase3Migrations_0018_Gateway_Apply(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0018_gateway.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0018_Gateway_Apply)")
+}
+
+// TestPhase3Migrations_0018_Down — 0018 down drops the table cleanly with
+// no dangling FK / index residue.
+func TestPhase3Migrations_0018_Down(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0018_gateway.down.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0018_Down)")
+}
+
+// TestPhase3Migrations_0019_ImportJob_Apply — applies 0019 and asserts the
+// `import_job` table exists with status enum + expires_at default
+// (now() + interval '1 hour').
+func TestPhase3Migrations_0019_ImportJob_Apply(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0019_import_jobs.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0019_ImportJob_Apply)")
+}
+
+// TestPhase3Migrations_0019_Down — 0019 down drops `import_job`.
+func TestPhase3Migrations_0019_Down(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0019_import_jobs.down.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0019_Down)")
+}
+
+// TestPhase3Migrations_0020_AuditLogVocabulary_Apply — applies 0020 and
+// asserts the audit_log_action_valid + audit_log_entity_type_valid CHECK
+// constraints accept the new Phase 3 values.
+func TestPhase3Migrations_0020_AuditLogVocabulary_Apply(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0020_audit_log_vocabulary.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0020_AuditLogVocabulary_Apply)")
+}
+
+// TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes — INSERT rows
+// using each new action + entity_type combination (`device.bulk_import`,
+// `device.reveal_secrets`, `gateway.create|update|archive|restore`,
+// `import_job`) and verify CHECK constraints pass.
+func TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes(t *testing.T) {
+	t.Skip("Wave 1: awaiting db/migrations/0020_audit_log_vocabulary.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0020_AcceptsNewActionsAndEntityTypes)")
+}
+
