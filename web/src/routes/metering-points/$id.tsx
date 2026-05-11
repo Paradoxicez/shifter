@@ -1,40 +1,86 @@
-import { useQuery } from '@tanstack/react-query'
-import { Archive, MoreHorizontal, Pencil, PowerOff, Plus, Replace } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { AddDeviceDialog } from '@/routes/devices/add-device-dialog'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { getMPDetail } from '@/lib/metering-points'
-import { SwapMeterDialog } from './swap-meter-dialog'
-
 /**
- * UI-SPEC §Metering Point detail page (DATA-01..04):
- *   - Header: MP name + breadcrumb "Sites › {site} › {MP}" + Edit + overflow
- *     (Archive, Swap meter, Decommission device).
- *   - Latest reading card: cumulative big number (mono) + unit + last uplink relative.
- *   - Active binding card: Device + DevEUI mono + Profile + Capabilities chips
- *     + Reading offset mono + valid_from + Swap meter primary CTA.
- *   - Empty binding state: "No device bound" + Add device CTA opens AddDeviceDialog
- *     with this MP pre-selected (initialMPId prop).
+ * MeteringPointDetailPage — Plan 04-09 Task 3
+ *
+ * Per-meter detail page replacing Phase 2 minimal page.
+ * 3-tab layout: Normal | Advanced | Uplinks log (D-15).
+ *
+ * URL state:
+ *   ?tab=normal|advanced|uplinks  (default: normal)
+ *   ?quality=ok,decode_fail,...   (uplinks tab quality filter)
+ *   ?range=today|24h|7d|30d|custom + ?start + ?end (per-MP picker)
+ *
+ * SSE wiring:
+ *   Subscribes to topics ['mp:<id>', 'mp:<id>:uplinks'].
+ *   New measurement events set `pendingPayload` state.
+ *   AdvancedTab receives pendingPayload + clearPending (3-prop contract from Task 2).
+ *
+ * D-22 empty case:
+ *   When latest_reading is null, Advanced and Uplinks tabs are disabled
+ *   with tooltip "Available after first uplink".
+ *
+ * Security (T-04-09-01):
+ *   Admin-only CTAs are gated via useCurrentUser() inside child tabs.
  */
+
+import { useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { apiFetch } from '@/lib/api'
+import { useSSE, type MeasurementDelta } from '@/hooks/useSSE'
+import { AdvancedTab } from '@/components/metering-point/AdvancedTab'
+import { NormalTab } from '@/components/metering-point/NormalTab'
+import { UplinksLogTab } from '@/components/metering-point/UplinksLogTab'
+import type { DetailResponse } from '@/components/metering-point/NormalTab'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SignalHistoryResponse {
+  window_start: string
+  window_end: string
+  bucket_interval_seconds: number
+  series: Array<{ bucket: string; battery_pct: number | null; rssi: number | null; snr: number | null }>
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function MeteringPointDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [swapOpen, setSwapOpen] = useState(false)
-  const [addDeviceOpen, setAddDeviceOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') ?? 'normal'
 
-  const detailQuery = useQuery({
-    queryKey: ['mp-detail', id],
-    queryFn: () => getMPDetail(id ?? ''),
-    enabled: Boolean(id),
+  // Fetch detail
+  const detailQuery = useQuery<DetailResponse>({
+    queryKey: ['mp', id, 'detail'],
+    queryFn: () => apiFetch<DetailResponse>(`/api/metering-points/${id}`),
+    enabled: !!id,
+  })
+
+  // Fetch signal history (sparklines) — only when detail has a reading
+  const signalQuery = useQuery<SignalHistoryResponse>({
+    queryKey: ['mp', id, 'signal-history'],
+    queryFn: () => apiFetch<SignalHistoryResponse>(`/api/metering-points/${id}/signal-history`),
+    enabled: !!id && detailQuery.data?.latest_reading != null,
+  })
+
+  // Pending payload for AdvancedTab (forensic-safety — D-20)
+  const [pendingPayload, setPendingPayload] = useState<MeasurementDelta | null>(null)
+
+  // SSE subscription — D-17 live updates
+  useSSE({
+    topics: id ? [`mp:${id}`, `mp:${id}:uplinks`] : [],
+    onMeasurement: (delta: MeasurementDelta) => {
+      if (delta.metering_point_id === id) {
+        // Queue for Advanced tab alert rather than auto-swapping (D-20 forensic-safety)
+        setPendingPayload(delta)
+      }
+    },
   })
 
   const detail = detailQuery.data
@@ -42,158 +88,94 @@ export default function MeteringPointDetailPage() {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
-  const minutesAgo = (() => {
-    if (!detail.latest_measurement?.time) return null
-    const t = new Date(detail.latest_measurement.time).getTime()
-    return Math.max(0, Math.round((Date.now() - t) / 60000))
-  })()
+  const { metering_point: mp, latest_reading } = detail
+  const tabsDisabled = latest_reading == null
 
-  const unit = detail.utility_class === 'water' ? 'm³' : 'kWh'
+  const handleTabChange = (value: string) => {
+    setSearchParams((p) => {
+      p.set('tab', value)
+      return p
+    })
+  }
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <header className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            <Link to="/sites" className="hover:underline">
-              Sites
-            </Link>{' '}
-            ›{' '}
-            <Link to={`/sites/${detail.site.id}`} className="hover:underline">
-              {detail.site.name}
-            </Link>{' '}
-            › {detail.name}
-          </p>
-          <h1 className="text-2xl font-semibold leading-8">{detail.name}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost">
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit metering point
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" aria-label="MP actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setSwapOpen(true)} disabled={!detail.active_binding}>
-                <Replace className="mr-2 h-4 w-4" />
-                Swap meter
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={!detail.active_binding}>
-                <PowerOff className="mr-2 h-4 w-4" />
-                Decommission device
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Archive className="mr-2 h-4 w-4" />
-                Archive metering point
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      {/* Page header */}
+      <header>
+        <h1 className="text-2xl font-semibold leading-8">{mp.name}</h1>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+          <span>{mp.site_name ?? '—'}</span>
+          <span>·</span>
+          <Badge variant="secondary" className="text-xs uppercase">
+            {mp.utility_class}
+          </Badge>
         </div>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Latest reading</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-1">
-          {detail.latest_measurement ? (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-semibold leading-8 font-mono">
-                  {detail.latest_measurement.cumulative_value ?? '—'}
-                </span>
-                <span className="text-sm text-muted-foreground">{unit}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Last uplink: {minutesAgo ?? '?'} min ago
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Awaiting first uplink.</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* 3-tab layout */}
+      <TooltipProvider>
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
+          <TabsList>
+            <TabsTrigger value="normal">Normal</TabsTrigger>
 
-      {detail.active_binding ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Active binding</CardTitle>
-            <Button onClick={() => setSwapOpen(true)}>
-              <Replace className="mr-2 h-4 w-4" />
-              Swap meter
-            </Button>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <div>
-              <span className="font-semibold">Device:</span> {detail.active_binding.device.name}
-            </div>
-            <div>
-              <span className="font-semibold">DevEUI:</span>{' '}
-              <span className="font-mono">{detail.active_binding.device.dev_eui}</span>
-            </div>
-            <div>
-              <span className="font-semibold">Profile:</span>{' '}
-              {detail.active_binding.device_profile.name}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold">Capabilities:</span>
-              {detail.active_binding.device_profile.capabilities.map((c) => (
-                <Badge key={c} variant="secondary" className="text-xs uppercase">
-                  {c}
-                </Badge>
-              ))}
-            </div>
-            <div>
-              <span className="font-semibold">Reading offset:</span>{' '}
-              <span className="font-mono">{detail.active_binding.reading_offset}</span>
-            </div>
-            <div>
-              <span className="font-semibold">Valid from:</span>{' '}
-              <span className="font-mono">{detail.active_binding.valid_from}</span>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Active binding</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm font-semibold">No device bound</p>
-            <p className="text-sm text-muted-foreground">
-              Add a device to start receiving telemetry on this metering point.
-            </p>
-            <Button onClick={() => setAddDeviceOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add device
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            {tabsDisabled ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {/* span wrapper required — disabled button can't receive events */}
+                  <span>
+                    <TabsTrigger value="advanced" disabled>
+                      Advanced
+                    </TabsTrigger>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Available after first uplink</TooltipContent>
+              </Tooltip>
+            ) : (
+              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+            )}
 
-      {detail.latest_measurement?.quality && detail.latest_measurement.quality !== 'ok' ? (
-        <Alert variant="default">
-          <AlertDescription>
-            Latest uplink flagged: {detail.latest_measurement.quality}.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+            {tabsDisabled ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <TabsTrigger value="uplinks" disabled>
+                      Uplinks log
+                    </TabsTrigger>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Available after first uplink</TooltipContent>
+              </Tooltip>
+            ) : (
+              <TabsTrigger value="uplinks">Uplinks log</TabsTrigger>
+            )}
+          </TabsList>
 
-      <SwapMeterDialog
-        open={swapOpen}
-        onOpenChange={setSwapOpen}
-        meteringPointId={detail.id}
-        meteringPointName={detail.name}
-      />
-      <AddDeviceDialog
-        open={addDeviceOpen}
-        onOpenChange={setAddDeviceOpen}
-        initialMPId={detail.id}
-      />
+          {/* Normal tab — always rendered */}
+          <TabsContent value="normal">
+            <NormalTab
+              detail={detail}
+              signalHistory={signalQuery.data}
+              online={detail.online}
+            />
+          </TabsContent>
+
+          {/* Advanced tab — only when reading exists */}
+          <TabsContent value="advanced">
+            {latest_reading && (
+              <AdvancedTab
+                latestReading={latest_reading}
+                pendingPayload={pendingPayload}
+                clearPending={() => setPendingPayload(null)}
+              />
+            )}
+          </TabsContent>
+
+          {/* Uplinks log tab — only when reading exists */}
+          <TabsContent value="uplinks">
+            {id && latest_reading && <UplinksLogTab meteringPointId={id} />}
+          </TabsContent>
+        </Tabs>
+      </TooltipProvider>
     </div>
   )
 }

@@ -18,7 +18,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 // Mock useCurrentUser — default to admin for most tests
 vi.mock('@/lib/use-current-user', () => ({
-  useCurrentUser: vi.fn().mockReturnValue({ role: 'admin', email: 'admin@test.com' }),
+  useCurrentUser: vi.fn().mockReturnValue({ id: 'admin-id', role: 'admin', email: 'admin@test.com', must_change_password: false }),
 }))
 
 function makeQueryClient() {
@@ -82,7 +82,7 @@ describe('NormalTab', () => {
     vi.resetAllMocks()
     // Re-setup useCurrentUser after reset
     const { useCurrentUser } = await import('@/lib/use-current-user')
-    vi.mocked(useCurrentUser).mockReturnValue({ role: 'admin', email: 'admin@test.com' })
+    vi.mocked(useCurrentUser).mockReturnValue({ id: 'admin-id', role: 'admin', email: 'admin@test.com', must_change_password: false })
   })
 
   it('renders MP name', () => {
