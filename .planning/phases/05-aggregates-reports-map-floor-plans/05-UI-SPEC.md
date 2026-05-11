@@ -1,10 +1,13 @@
 ---
 phase: 5
 slug: aggregates-reports-map-floor-plans
-status: draft
+status: approved
 shadcn_initialized: true
 preset: new-york / slate / custom navy OKLCH
 created: 2026-05-12
+reviewed_at: 2026-05-12
+checker_verdict: 5/6 PASS, 1 FLAG (non-blocking — Dim 2 Visuals; see note below)
+checker_flag_note: "Declare primary focal point for /reports config-panel initial state (suggested: 'Generate report' button anchors the eye after scope radio group)."
 ---
 
 # Phase 5 — UI Design Contract
