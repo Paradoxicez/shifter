@@ -1,12 +1,13 @@
 /**
- * DashboardPage — Plan 04-07 Task 2
+ * DashboardPage — Plan 04-07 Task 2 + Plan 04-08 Task 2
  *
  * The operator's primary surface. Mounted at `/` (replaces IndexRedirect → /settings).
  *
  * Layout:
  *  - LiveChannelBanner (when SSE is not 'open')
- *  - Heading "Dashboard" (when real data available)
+ *  - Heading "Dashboard" + DateRangePicker (right)
  *  - KpiGrid (capability-gated; hidden while empty-state is showing)
+ *  - CumulativeChartCard(s) — 1 for water/electricity; 2 (water above electricity) for both
  *  - EmptyStateOnboarding (when uplink_count === 0)
  *
  * Live recomputation (D-06):
@@ -21,6 +22,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { CumulativeChartCard } from '@/components/dashboard/CumulativeChartCard'
+import { DateRangePicker } from '@/components/dashboard/DateRangePicker'
 import { EmptyStateOnboarding } from '@/components/dashboard/EmptyStateOnboarding'
 import { KpiGrid, type KpiSnapshot } from '@/components/dashboard/KpiGrid'
 import { LiveChannelBanner } from '@/components/dashboard/LiveChannelBanner'
@@ -146,7 +149,7 @@ export default function DashboardPage() {
 
       <div className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold leading-8">Dashboard</h1>
-        {/* Plan 08 inserts DateRangePicker here */}
+        <DateRangePicker mode="shared-url" />
       </div>
 
       {snapshot.data && (
@@ -157,7 +160,25 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Plan 08 inserts ConsumptionChart cards here */}
+      {/* Consumption chart cards — water above electricity for 'both' capability */}
+      {(() => {
+        const waterCount = snapshot.data
+          ? snapshot.data.latest_readings.filter((r) => r.utility_class === 'water').length
+          : 0
+        const electricityCount = snapshot.data
+          ? snapshot.data.latest_readings.filter((r) => r.utility_class === 'electricity').length
+          : 0
+        return (
+          <>
+            {capabilities !== 'electricity' && (
+              <CumulativeChartCard utility="water" meteringPointCount={waterCount} />
+            )}
+            {capabilities !== 'water' && (
+              <CumulativeChartCard utility="electricity" meteringPointCount={electricityCount} />
+            )}
+          </>
+        )
+      })()}
     </div>
   )
 }
