@@ -49,14 +49,14 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 17.
+	// Reapply. Should succeed back up to 20 (Phase 3 Plan 03-02 bumped from 17).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(17), v)
+	require.Equal(t, uint(20), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int

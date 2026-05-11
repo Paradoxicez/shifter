@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/shifter-io/shifter/internal/testsupport"
@@ -68,12 +69,13 @@ func TestRunMigrations_Clean(t *testing.T) {
 	}
 
 	// schema_migrations must be at the highest migration version, not dirty.
-	// Bumped from 16 to 17 in plan 02-07 Task 1 (added 0017_binding_changed_trigger).
+	// Bumped from 17 to 20 in plan 03-02 Task 1+2 (added 0018_gateway,
+	// 0019_import_job, 0020_audit_log_vocabulary).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 17, version, "expected schema_migrations.version = 17 (latest after plan 02-07 Task 1)")
+	require.Equal(t, 20, version, "expected schema_migrations.version = 20 (latest after plan 03-02)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
@@ -131,7 +133,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 17, version)
+	require.Equal(t, 20, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -483,29 +485,299 @@ func TestAuditLog_AcceptsInsertAndPersistsDiff(t *testing.T) {
 // applicable) the corresponding down migration rolls back to the prior
 // schema_migrations version with no orphaned tables.
 
-// TestPhase3Migrations_0018_Gateway_Apply — applies 0018 and asserts the
-// `gateway` table exists with the expected columns + unique index on
-// gateway_id (case-insensitive).
+// TestPhase3Migrations_0018_Gateway_Apply — applies all migrations through
+// 0020 and verifies the `gateway` table exists with the required columns,
+// CHECK constraints (lowercase hex16 gateway_id, lat/lng ranges, name
+// non-empty), soft-delete columns, stats cache columns, partial indexes,
+// and the touch_updated_at trigger. Negative cases exercise each CHECK.
 func TestPhase3Migrations_0018_Gateway_Apply(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0018_gateway.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0018_Gateway_Apply)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// All required columns must exist (Plan 03-02 Task 2 enumerates these).
+	wantCols := []string{
+		"id", "gateway_id", "name", "description", "region",
+		"lat", "lng", "altitude", "tags", "cs_tenant_id",
+		"stats_refreshed_at", "stats_rx_24h", "stats_tx_24h",
+		"stats_tx_ok_24h", "stats_sparkline",
+		"archived_at", "archived_reason", "archived_snapshot",
+		"created_at", "updated_at",
+	}
+	for _, col := range wantCols {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM information_schema.columns
+			               WHERE table_name = 'gateway' AND column_name = $1)`,
+			col,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "gateway.%s column must exist", col)
+	}
+
+	// Required CHECK constraints by name (defense — name them so error
+	// messages on violation reference the constraint cleanly).
+	wantConstraints := []string{
+		"gateway_eui_lower", "gateway_eui_hex16",
+		"gateway_name_not_empty",
+		"gateway_lat_range", "gateway_lng_range",
+	}
+	for _, name := range wantConstraints {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = $1)`,
+			name,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "constraint %q must exist on gateway", name)
+	}
+
+	// Partial indexes (gated on archived_at IS NULL).
+	for _, idx := range []string{"gateway_archived_idx", "gateway_region_idx"} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM pg_indexes
+			               WHERE tablename = 'gateway' AND indexname = $1)`,
+			idx,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "index %q must exist on gateway", idx)
+	}
+
+	// Happy path: valid lowercase hex16 EUI inserts, archived_snapshot JSONB.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region, lat, lng, archived_snapshot)
+		 VALUES ('0123456789abcdef', 'gw-1', 'eu868', 12.34, -56.78,
+		         '{"name":"gw-1"}'::jsonb)`,
+	)
+	require.NoError(t, err, "valid gateway row must insert")
+
+	// Uppercase EUI → CHECK violation (either gateway_eui_lower OR
+	// gateway_eui_hex16 — Postgres picks one of the violated CHECKs to
+	// report; both correctly reject the row).
+	_, err = pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region)
+		 VALUES ('0123456789ABCDEF', 'gw-bad-upper', 'eu868')`,
+	)
+	require.Error(t, err)
+	require.True(t,
+		strings.Contains(err.Error(), "gateway_eui_lower") ||
+			strings.Contains(err.Error(), "gateway_eui_hex16"),
+		"uppercase EUI must violate one of the EUI CHECKs, got: %v", err)
+
+	// 15-char EUI → CHECK violation (gateway_eui_hex16).
+	_, err = pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region)
+		 VALUES ('0123456789abcde', 'gw-bad-short', 'eu868')`,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway_eui_hex16")
+
+	// lat=91 → CHECK violation (gateway_lat_range).
+	_, err = pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region, lat)
+		 VALUES ('1111111111111111', 'gw-bad-lat', 'eu868', 91.0)`,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway_lat_range")
+
+	// lng=181 → CHECK violation (gateway_lng_range).
+	_, err = pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region, lng)
+		 VALUES ('2222222222222222', 'gw-bad-lng', 'eu868', 181.0)`,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway_lng_range")
+
+	// Empty name → CHECK violation (gateway_name_not_empty).
+	_, err = pool.Exec(ctx,
+		`INSERT INTO gateway (gateway_id, name, region)
+		 VALUES ('3333333333333333', '', 'eu868')`,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "gateway_name_not_empty")
+
+	// touch_updated_at trigger: UPDATE bumps updated_at.
+	var beforeTS, afterTS string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT updated_at::text FROM gateway WHERE gateway_id = '0123456789abcdef'`,
+	).Scan(&beforeTS))
+	_, err = pool.Exec(ctx,
+		`UPDATE gateway SET description = 'touched' WHERE gateway_id = '0123456789abcdef'`,
+	)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT updated_at::text FROM gateway WHERE gateway_id = '0123456789abcdef'`,
+	).Scan(&afterTS))
+	require.NotEqual(t, beforeTS, afterTS, "touch_updated_at trigger must bump updated_at")
 }
 
-// TestPhase3Migrations_0018_Down — 0018 down drops the table cleanly with
-// no dangling FK / index residue.
+// TestPhase3Migrations_0018_Down — applies all migrations then rolls back
+// 0020, 0019, 0018 (three steps). gateway table must disappear.
 func TestPhase3Migrations_0018_Down(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0018_gateway.down.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0018_Down)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Roll back three steps: 0020 → 0019 → 0018.
+	require.NoError(t, runMigrateSteps(t, pool, -3))
+
+	var exists bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'gateway')`,
+	).Scan(&exists))
+	require.False(t, exists, "gateway table must be dropped after 0018 down")
+
+	// Re-up — schema should land cleanly on the latest version again.
+	require.NoError(t, RunMigrations(ctx, pool, log))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'gateway')`,
+	).Scan(&exists))
+	require.True(t, exists, "gateway table must reappear after re-up")
 }
 
 // TestPhase3Migrations_0019_ImportJob_Apply — applies 0019 and asserts the
-// `import_job` table exists with status enum + expires_at default
-// (now() + interval '1 hour').
+// `import_job` + `import_job_row` tables exist with the right enums,
+// file_format CHECK, partial preview-status index, and ON DELETE CASCADE.
 func TestPhase3Migrations_0019_ImportJob_Apply(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0019_import_jobs.up.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0019_ImportJob_Apply)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Enums.
+	for _, typ := range []string{"import_job_status", "import_job_row_status"} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = $1)`,
+			typ,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "type %q must exist", typ)
+	}
+
+	// Tables.
+	for _, table := range []string{"import_job", "import_job_row"} {
+		var exists bool
+		err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+			table,
+		).Scan(&exists)
+		require.NoError(t, err)
+		require.True(t, exists, "table %q must exist", table)
+	}
+
+	// Seed a user (owner_id FK target).
+	var userID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('importer@example.com', 'Importer', 'x', 'admin') RETURNING id`,
+	).Scan(&userID))
+
+	// Happy path: insert a preview job + 5 rows, then verify cascade delete.
+	var jobID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO import_job (owner_id, file_name, file_format, total_rows, expires_at)
+		 VALUES ($1, 'devices.xlsx', 'xlsx', 5, now() + interval '1 hour')
+		 RETURNING id`,
+		userID,
+	).Scan(&jobID))
+
+	for i := 0; i < 5; i++ {
+		_, err := pool.Exec(ctx,
+			`INSERT INTO import_job_row (import_job_id, row_index, raw_payload, status)
+			 VALUES ($1, $2, '{"dev_eui":"aa"}'::jsonb, 'valid')`,
+			jobID, i,
+		)
+		require.NoError(t, err, "import_job_row insert %d must succeed", i)
+	}
+
+	var rowCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM import_job_row WHERE import_job_id = $1`, jobID,
+	).Scan(&rowCount))
+	require.Equal(t, 5, rowCount)
+
+	// Negative: invalid file_format rejected by CHECK.
+	_, err := pool.Exec(ctx,
+		`INSERT INTO import_job (owner_id, file_name, file_format)
+		 VALUES ($1, 'bad.txt', 'txt')`,
+		userID,
+	)
+	require.Error(t, err, "file_format outside ('xlsx','csv') must be rejected")
+
+	// Negative: duplicate (import_job_id, row_index) — UNIQUE constraint.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO import_job_row (import_job_id, row_index, raw_payload)
+		 VALUES ($1, 0, '{"dup":true}'::jsonb)`,
+		jobID,
+	)
+	require.Error(t, err, "duplicate (import_job_id, row_index) must be rejected")
+
+	// ON DELETE CASCADE — deleting the parent removes child rows.
+	_, err = pool.Exec(ctx, `DELETE FROM import_job WHERE id = $1`, jobID)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM import_job_row WHERE import_job_id = $1`, jobID,
+	).Scan(&rowCount))
+	require.Equal(t, 0, rowCount, "ON DELETE CASCADE must remove child rows")
+
+	// Partial preview-status index exists.
+	var idxExists bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM pg_indexes
+		               WHERE tablename = 'import_job' AND indexname = 'import_job_status_idx')`,
+	).Scan(&idxExists))
+	require.True(t, idxExists)
 }
 
-// TestPhase3Migrations_0019_Down — 0019 down drops `import_job`.
+// TestPhase3Migrations_0019_Down — roll back 0020 + 0019; import_job and
+// import_job_row + both enums must be dropped.
 func TestPhase3Migrations_0019_Down(t *testing.T) {
-	t.Skip("Wave 1: awaiting db/migrations/0019_import_jobs.down.sql (03-VALIDATION row migrations_test.TestPhase3Migrations_0019_Down)")
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Roll back 0020 + 0019 (two steps). 0018 (gateway) stays.
+	require.NoError(t, runMigrateSteps(t, pool, -2))
+
+	for _, table := range []string{"import_job", "import_job_row"} {
+		var exists bool
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+			table,
+		).Scan(&exists))
+		require.False(t, exists, "table %q must be dropped after 0019 down", table)
+	}
+	for _, typ := range []string{"import_job_status", "import_job_row_status"} {
+		var exists bool
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM pg_type WHERE typname = $1)`, typ,
+		).Scan(&exists))
+		require.False(t, exists, "type %q must be dropped after 0019 down", typ)
+	}
+
+	// Gateway table from 0018 should still exist.
+	var gwExists bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'gateway')`,
+	).Scan(&gwExists))
+	require.True(t, gwExists, "gateway must remain after rolling back only 0020+0019")
 }
 
 // TestPhase3Migrations_0020_AuditLogVocabulary_Apply — applies 0020 and
