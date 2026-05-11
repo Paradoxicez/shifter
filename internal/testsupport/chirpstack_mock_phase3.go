@@ -309,11 +309,17 @@ func (f *fakeDevice) SeedDeviceKeys(devEUI string, keys *api.DeviceKeys) {
 	f.keys[devEUI] = keys
 }
 
-// GetDeviceKeys returns the previously-CreateKeys'd OTAA material, or
+// GetKeys returns the previously-CreateKeys'd OTAA material, or
 // codes.NotFound if no keys are recorded. Mirrors CS v4 behaviour: a device
 // with no keys returns NotFound, which the production wrapper maps to 409
 // no_credentials (D-27).
-func (f *fakeDevice) GetDeviceKeys(_ context.Context, req *api.GetDeviceKeysRequest) (*api.GetDeviceKeysResponse, error) {
+//
+// Method name MUST be GetKeys (NOT GetDeviceKeys) — the proto method on
+// DeviceService is `GetKeys`. The Phase 2 method name typo would have
+// silently fallen through to the embedded Unimplemented*Server and produced
+// codes.Unimplemented on every call. Fixed here as a Wave 2 blocking
+// dependency (deviation Rule 3).
+func (f *fakeDevice) GetKeys(_ context.Context, req *api.GetDeviceKeysRequest) (*api.GetDeviceKeysResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	keys, ok := f.keys[req.GetDevEui()]
@@ -328,16 +334,50 @@ func (f *fakeDevice) GetDeviceKeys(_ context.Context, req *api.GetDeviceKeysRequ
 	}, nil
 }
 
-// GetDeviceActivation returns the ABP activation seeded via
-// SeedDeviceActivation, or codes.NotFound otherwise. CS v4 returns NotFound
-// for an OTAA device that has never joined; D-27 surfaces that as 409
-// no_credentials.
-func (f *fakeDevice) GetDeviceActivation(_ context.Context, req *api.GetDeviceActivationRequest) (*api.GetDeviceActivationResponse, error) {
+// GetActivation returns the ABP activation seeded via SeedDeviceActivation,
+// or codes.NotFound otherwise. CS v4 returns NotFound for an OTAA device
+// that has never joined; D-27 surfaces that as 409 no_credentials.
+//
+// Method name MUST be GetActivation (NOT GetDeviceActivation) — same proto-
+// vs-Go-name mismatch fix as GetKeys above.
+func (f *fakeDevice) GetActivation(_ context.Context, req *api.GetDeviceActivationRequest) (*api.GetDeviceActivationResponse, error) {
 	act, ok := deviceRevealState.getActivation(req.GetDevEui())
 	if !ok {
 		return nil, status.Error(codes.NotFound, "device activation not found")
 	}
 	return &api.GetDeviceActivationResponse{DeviceActivation: act}, nil
+}
+
+// Activate stores the ABP activation payload so a follow-up GetActivation
+// returns it. Records nothing if the underlying device row is missing — CS
+// rejects with NotFound in that case. Plan 03-XX add-device ABP flow
+// exercises this path.
+func (f *fakeDevice) Activate(_ context.Context, req *api.ActivateDeviceRequest) (*emptypb.Empty, error) {
+	if req.GetDeviceActivation() == nil || req.GetDeviceActivation().DevEui == "" {
+		return nil, status.Error(codes.InvalidArgument, "device_activation.dev_eui is required")
+	}
+	devEUI := req.GetDeviceActivation().DevEui
+	f.mu.Lock()
+	if _, ok := f.devices[devEUI]; !ok {
+		f.mu.Unlock()
+		return nil, status.Error(codes.NotFound, "device not found for activation")
+	}
+	f.mu.Unlock()
+	// Defensive copy so subsequent test mutations of the request don't bleed
+	// back into the stored activation.
+	src := req.GetDeviceActivation()
+	deviceRevealState.seedActivation(devEUI, &api.DeviceActivation{
+		DevEui:      src.DevEui,
+		DevAddr:     src.DevAddr,
+		AppSKey:     src.AppSKey,
+		NwkSEncKey:  src.NwkSEncKey,
+		SNwkSIntKey: src.SNwkSIntKey,
+		FNwkSIntKey: src.FNwkSIntKey,
+		FCntUp:      src.FCntUp,
+		NFCntDown:   src.NFCntDown,
+		AFCntDown:   src.AFCntDown,
+	})
+	return &emptypb.Empty{}, nil
 }
 
 // ChirpStackMockPhase3Handles is the Phase 3 superset of

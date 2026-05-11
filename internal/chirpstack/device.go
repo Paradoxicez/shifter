@@ -141,3 +141,137 @@ func (c *Client) GetDevice(ctx context.Context, devEUI string) (*api.Device, err
 	}
 	return resp.GetDevice(), nil
 }
+
+// ActivateDeviceInput is the ABP activation payload (Plan 03-XX add-device
+// ABP path). NwkSKey is copied into NwkSEncKey, SNwkSIntKey, and FNwkSIntKey
+// for LoRaWAN 1.0.x compatibility — see device.pb.go lines 1178-1185: CS
+// stores the three separate keys natively for 1.1.x but for 1.0.x devices
+// (the only profile Shifter targets in v1) all three MUST equal NwkSKey.
+//
+// FCntUp / FCntDown are the operator-typed frame counters (typically 0 for a
+// fresh ABP device); NFCntDown maps to FCntDown — see DeviceActivation proto
+// for the asymmetric naming. AFCntDown defaults to 0 since 1.0.x devices use
+// a single downlink counter.
+type ActivateDeviceInput struct {
+	DevEUI   string // lowercase 16-hex
+	DevAddr  string // 8-hex
+	NwkSKey  string // 32-hex (LoRaWAN 1.0.x — also used for NwkSEnc/SNwkSInt/FNwkSInt)
+	AppSKey  string // 32-hex
+	FCntUp   uint32
+	FCntDown uint32 // mapped to NFCntDown on the wire
+}
+
+// ActivateDevice calls api.DeviceService/Activate (ABP path). For 1.0.x
+// devices the wrapper sets NwkSEncKey = SNwkSIntKey = FNwkSIntKey = NwkSKey
+// (canonical 1.0.x compat copy). Returns ErrNotFound if the underlying
+// device doesn't exist in CS — handlers should branch on errors.Is.
+func (c *Client) ActivateDevice(ctx context.Context, in ActivateDeviceInput) error {
+	if in.DevEUI == "" {
+		return fmt.Errorf("ActivateDevice: DevEUI is required")
+	}
+	if in.DevAddr == "" {
+		return fmt.Errorf("ActivateDevice: DevAddr is required")
+	}
+	if in.NwkSKey == "" {
+		return fmt.Errorf("ActivateDevice: NwkSKey is required")
+	}
+	if in.AppSKey == "" {
+		return fmt.Errorf("ActivateDevice: AppSKey is required")
+	}
+	svc := api.NewDeviceServiceClient(c.conn)
+	_, err := svc.Activate(ctx, &api.ActivateDeviceRequest{
+		DeviceActivation: &api.DeviceActivation{
+			DevEui:      in.DevEUI,
+			DevAddr:     in.DevAddr,
+			AppSKey:     in.AppSKey,
+			NwkSEncKey:  in.NwkSKey, // 1.0.x copy
+			SNwkSIntKey: in.NwkSKey, // 1.0.x copy
+			FNwkSIntKey: in.NwkSKey, // 1.0.x copy
+			FCntUp:      in.FCntUp,
+			NFCntDown:   in.FCntDown,
+			AFCntDown:   0,
+		},
+	})
+	return wrapCSErr(err)
+}
+
+// DeviceKeys is the OTAA key reveal payload (D-27 reveal-secrets endpoint
+// consumes this). Mirrors api.DeviceKeys but in domain-package shape so
+// handlers don't import api.*. JoinNonce is intentionally NOT exposed —
+// proto v4.17 doesn't carry it on DeviceKeys (verified at proto level).
+type DeviceKeys struct {
+	DevEUI string
+	AppKey string // 32-hex
+	NwkKey string // 32-hex (= AppKey for 1.0.x per CreateDeviceKeys invariant)
+}
+
+// GetDeviceKeys calls api.DeviceService/GetKeys. Returns ErrNotFound when CS
+// has no recorded OTAA keys for the DevEUI (typical for ABP-only devices) —
+// the reveal handler (D-27) maps this to HTTP 409 no_credentials.
+func (c *Client) GetDeviceKeys(ctx context.Context, devEUI string) (*DeviceKeys, error) {
+	if devEUI == "" {
+		return nil, fmt.Errorf("GetDeviceKeys: devEUI is required")
+	}
+	svc := api.NewDeviceServiceClient(c.conn)
+	resp, err := svc.GetKeys(ctx, &api.GetDeviceKeysRequest{DevEui: devEUI})
+	if err != nil {
+		return nil, wrapCSErr(err)
+	}
+	k := resp.GetDeviceKeys()
+	if k == nil {
+		return nil, ErrNotFound
+	}
+	return &DeviceKeys{
+		DevEUI: k.GetDevEui(),
+		AppKey: k.GetAppKey(),
+		NwkKey: k.GetNwkKey(),
+	}, nil
+}
+
+// DeviceActivation is the ABP session reveal payload (D-27). NwkSKey surfaces
+// the NwkSEncKey field for 1.0.x devices (the wrapper does not re-validate
+// the 3-key copy invariant since that's CS's responsibility post-Activate).
+type DeviceActivation struct {
+	DevEUI    string
+	DevAddr   string
+	NwkSKey   string // surfaced from NwkSEncKey for 1.0.x devices
+	AppSKey   string
+	FCntUp    uint32
+	NFCntDown uint32
+	AFCntDown uint32
+}
+
+// GetDeviceActivation calls api.DeviceService/GetActivation. Two distinct
+// "no activation" surfaces are normalised to ErrNotFound:
+//
+//  1. CS returns codes.NotFound (the canonical case for OTAA-only devices
+//     that haven't joined yet).
+//  2. CS returns OK but DeviceActivation == nil or DevAddr == "" (the
+//     edge case for a device row that exists but has no session — observed
+//     in CS v4 when the join-server hasn't acked the device yet).
+//
+// Both surfaces represent "no credentials available" to the handler, so
+// folding them is correct for the reveal-secrets endpoint.
+func (c *Client) GetDeviceActivation(ctx context.Context, devEUI string) (*DeviceActivation, error) {
+	if devEUI == "" {
+		return nil, fmt.Errorf("GetDeviceActivation: devEUI is required")
+	}
+	svc := api.NewDeviceServiceClient(c.conn)
+	resp, err := svc.GetActivation(ctx, &api.GetDeviceActivationRequest{DevEui: devEUI})
+	if err != nil {
+		return nil, wrapCSErr(err)
+	}
+	act := resp.GetDeviceActivation()
+	if act == nil || act.GetDevAddr() == "" {
+		return nil, ErrNotFound
+	}
+	return &DeviceActivation{
+		DevEUI:    act.GetDevEui(),
+		DevAddr:   act.GetDevAddr(),
+		NwkSKey:   act.GetNwkSEncKey(), // surface as NwkSKey for 1.0.x
+		AppSKey:   act.GetAppSKey(),
+		FCntUp:    act.GetFCntUp(),
+		NFCntDown: act.GetNFCntDown(),
+		AFCntDown: act.GetAFCntDown(),
+	}, nil
+}
