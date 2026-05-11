@@ -44,9 +44,9 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Devices & Meters
 
 - [ ] **DEV-01**: User can list, search, and filter devices with last-seen, battery, RSSI/SNR, and current site/metering-point assignment
-- [ ] **DEV-02**: Admin can create / edit / soft-delete a device via dialogs
+- [x] **DEV-02**: Admin can create / edit / soft-delete a device via dialogs
 - [x] **DEV-03**: Admin can paste a DevEUI from a vendor sticker — the parser handles both endiannesses and shows a preview before commit
-- [ ] **DEV-04**: System defaults to OTAA activation; ABP is supported but flagged as not recommended
+- [x] **DEV-04**: System defaults to OTAA activation; ABP is supported but flagged as not recommended
 - [ ] **DEV-05**: Admin can manage device profiles, including custom JS payload codec — codec runs inside ChirpStack's QuickJS sandbox, never inside Shifter
 - [x] **DEV-06**: Admin can bulk-import devices from a CSV — phase 1 is dry-run validation with a per-row error report; phase 2 is commit-all with a per-row outcome log
 - [x] **DEV-07**: A bulk import re-run with the same CSV is idempotent (no duplicates, no spurious creates)
@@ -248,9 +248,9 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | GW-03 | Phase 3 | Complete |
 | GW-04 | Phase 3 | Complete |
 | DEV-01 | Phase 3 | Pending |
-| DEV-02 | Phase 3 | Pending |
+| DEV-02 | Phase 3 | Complete |
 | DEV-03 | Phase 3 | Complete |
-| DEV-04 | Phase 3 | Pending |
+| DEV-04 | Phase 3 | Complete |
 | DEV-05 | Phase 2 | Pending |
 | DEV-06 | Phase 3 | Complete |
 | DEV-07 | Phase 3 | Complete |
