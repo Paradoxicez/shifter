@@ -41,6 +41,7 @@ import (
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 	"github.com/shifter-io/shifter/internal/device"
+	"github.com/shifter-io/shifter/internal/events"
 	"github.com/shifter-io/shifter/internal/gateway"
 	httpapi "github.com/shifter-io/shifter/internal/http"
 	importpkg "github.com/shifter-io/shifter/internal/import"
@@ -176,6 +177,14 @@ var serveCmd = &cobra.Command{
 		res := resolver.New(&sqlcResolverLoader{pool: pool})
 		go res.Run(ctx, pool, log)
 
+		// 6c-sse. Events Hub — in-process fan-out of measurement_inserted
+		//     NOTIFY payloads to SSE subscribers (Plan 04-03). Hub.Run
+		//     mirrors resolver's listener shape: outer reconnect loop + inner
+		//     WaitForNotification loop. Started here alongside resolver so
+		//     the SSE endpoint is live from the first request after boot.
+		eventsHub := events.NewHub(log.With("component", "events"))
+		go eventsHub.Run(ctx, pool, log.With("component", "events.listener"))
+
 		// 6d. Ingest pipeline binding — production MQTT messages route through
 		//     the full decode → resolve → normalize → persist pipeline. Without
 		//     this the binary would log uplinks via the Phase 1 default handler
@@ -305,7 +314,7 @@ var serveCmd = &cobra.Command{
 			}
 		}
 
-		// 9. Router with full Phase 2 + Phase 3 wiring.
+		// 9. Router with full Phase 2 + Phase 3 + Phase 4 wiring.
 		router := httpapi.NewRouter(httpapi.Deps{
 			Pool:         pool,
 			SessionMgr:   sm,
@@ -321,7 +330,11 @@ var serveCmd = &cobra.Command{
 			ProfileDeps:  profileDeps,
 			GatewayDeps:  gatewayDeps,
 			ImportDeps:   importDeps,
-			SPA:          httpapi.SPAHandler(),
+			EventsDeps: &events.Deps{
+				Hub:    eventsHub,
+				Logger: log.With("component", "events.handler"),
+			},
+			SPA: httpapi.SPAHandler(),
 		})
 
 		// 9. HTTP server.
