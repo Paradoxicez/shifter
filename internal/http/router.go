@@ -30,6 +30,7 @@ import (
 
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/device"
+	"github.com/shifter-io/shifter/internal/events"
 	"github.com/shifter-io/shifter/internal/gateway"
 	importpkg "github.com/shifter-io/shifter/internal/import"
 	"github.com/shifter-io/shifter/internal/install"
@@ -92,6 +93,12 @@ type Deps struct {
 	// not yet constructed — mirrors DeviceDeps nil-guard pattern so router
 	// unit tests can run without CS wiring.
 	ImportDeps *importpkg.Deps
+
+	// EventsDeps wires Plan 04-03's GET /api/events SSE endpoint. nil when
+	// the Hub has not been started (router unit tests stay free of Hub deps).
+	// Mounted under the authenticated group so both admin and viewer roles
+	// can subscribe (D-23). No admin-only guard — see plan §design_notes.
+	EventsDeps *events.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -256,6 +263,12 @@ func NewRouter(deps Deps) http.Handler {
 		// CS client + bootstrap are not yet constructed so router unit tests
 		// stay free of CS deps.
 		importpkg.RegisterRoutes(r, *deps.ImportDeps)
+	}
+	if deps.EventsDeps != nil {
+		// EventsDeps mounts GET /api/events SSE endpoint (Plan 04-03). Mounted
+		// here (authenticated group, any role) so both admin and viewer can
+		// connect (D-23). No admin-only sub-group needed.
+		events.RegisterRoutes(r, *deps.EventsDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
