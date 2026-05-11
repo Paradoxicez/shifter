@@ -16,7 +16,9 @@
     "format": "biome format --write ./src",
     "test": "vitest",
     "test:run": "vitest --run",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
+    "test:e2e:list": "playwright test --list"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
