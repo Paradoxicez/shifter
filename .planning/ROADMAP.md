@@ -183,7 +183,7 @@ Plans:
 
 Plans:
 - [x] 05-01-wave-0-deps-skeletons-PLAN.md — Wave 0: install maroto/river/leaflet/pdfjs, embed River schema as migration 0024, skeleton tests, pdfjs worker shim, cumulative_delta pre-check
-- [ ] 05-02-cagg-hierarchy-retention-PLAN.md — 4-level CAGG hierarchy (hourly→daily→monthly→yearly) + retention_config table + FinishSetup seed (DATA-11/12/13)
+- [x] 05-02-cagg-hierarchy-retention-PLAN.md — 4-level CAGG hierarchy (hourly→daily→monthly→yearly) + retention_config table + FinishSetup seed (DATA-11/12/13)
 - [ ] 05-03-reports-backend-csv-excel-PLAN.md — sqlc queries against CAGGs + Report assembler + delta math (D-03 silent fallback) + CSV (UTF-8 BOM) + Excel (3 sheets) writers + POST /api/reports/generate handler (REPT-01..04, REPT-07)
 - [ ] 05-04-map-backend-PLAN.md — /api/map/data endpoint with capability-gated rollups (MAP-01, MAP-04)
 - [ ] 05-05-floor-plan-schema-upload-PLAN.md — Migrations 0031 (floor_plan) + 0032 (placement) + image upload validator (MIME sniff + dim probe + 10MB cap) + compose volume mount (SITE-02, SITE-03)
@@ -267,7 +267,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
-| 5. Aggregates, Reports, Map & Floor Plans | 1/12 | In Progress|  |
+| 5. Aggregates, Reports, Map & Floor Plans | 2/12 | In Progress|  |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
