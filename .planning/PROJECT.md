@@ -43,6 +43,13 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] Operator-facing UI free of ChirpStack vocabulary leaks — "tenant / application / object" never reach the operator (UX-03)
 - [x] GW-04 (map pin) PARTIAL: numeric lat/lng inputs ship; "Pick on map" disabled with v5 tooltip — full map UI deferred to Phase 5
 
+**Realtime & dashboard (Phase 4, 2026-05-11 — runtime UAT pending in 04-HUMAN-UAT.md)**
+- [x] Real-time updates from IoT devices (push to UI, no manual refresh) — Postgres LISTEN/NOTIFY → in-process Hub → SSE `/api/events` → `useSSE` hook with D-04 exponential backoff + jitter, Caddy `@sse` matcher with `flush_interval -1` (DASH-02, DASH-03)
+- [x] Per-customer dashboard scoped to what they actually use — capability-gated `KpiGrid` driven by `/api/dashboard/scope`, omits inactive utility tiles entirely (DASH-01 D-09)
+- [x] Per-meter detail view with two density levels — 3-tab page (Normal / Advanced / Uplinks log), Normal auto-updates from SSE while Advanced surfaces "Newer payload available" banner per D-20 forensic-safety rule, custom recursive `JsonTree` (no third-party JSON viewer) (DETL-01, DETL-02, DETL-03)
+- [x] Date-range picker drives consumption charts with URL-state (mirrors Phase 3 D-15) — Recharts `AreaChart` with D-12 server-mirrored bucket schedule, D-13 live-mode pulse marker on Today/24h only (DASH-04, DASH-05)
+- [x] Empty-state progressive onboarding when no devices yet — D-21 3-stage cards link to `/gateways` and `/devices`; live-channel banner reflects SSE connection state (DASH-06)
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
@@ -56,9 +63,6 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre) — also delivers GW-04 "Pick on map" for gateways
 
 **Live data & dashboard**
-- [ ] Real-time updates from IoT devices (push to UI, no manual refresh)
-- [ ] Per-customer dashboard scoped to what they actually use — water-only customers see a water dashboard; electricity-only see electricity; both see both
-- [ ] Per-meter detail view with two density levels: a default "normal" view and a collapsible "advanced" view that exposes every parameter the device emits
 - [ ] Map view of sites and devices
 
 **Reporting**
@@ -146,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-11 — Phase 3 (provisioning — gateways, devices, bulk import) complete. 10/10 plans shipped, verification passed, GatewayDeps + ImportDeps wired into serve.go (boot smoke tests cover /api/gateways + /api/imports reachability).*
+*Last updated: 2026-05-11 — Phase 4 (realtime & dashboard) complete. 10/10 plans shipped, automated verification passed (5/5 must-haves, 9/9 requirements), 4 real-stack UAT items pending in 04-HUMAN-UAT.md (SSE round-trip, Playwright fixture regen, Caddy in production, mobile reconnect).*
