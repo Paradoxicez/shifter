@@ -161,7 +161,7 @@ Plans:
 - [x] 04-07-PLAN.md — Dashboard route shell + KpiCard/KpiGrid + EmptyStateOnboarding + LiveChannelBanner + sidebar nav
 - [x] 04-08-PLAN.md — DateRangePicker (URL-state) + ConsumptionChart + CumulativeChartCard (D-11/12/13/14)
 - [x] 04-09-PLAN.md — MP detail route: 3-tab layout (Normal/Advanced/Uplinks) + JsonTree + SparklineTriplet + UplinksLogTab (D-15..D-22)
-- [ ] 04-10-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS.md/VALIDATION.md reconciliation (phase closure)
+- [x] 04-10-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS.md/VALIDATION.md reconciliation (phase closure)
 **UI hint**: yes
 
 ### Phase 5: Aggregates, Reports, Map & Floor Plans
