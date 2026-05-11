@@ -72,13 +72,28 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// Bumped 17 → 20 in plan 03-02 (0018_gateway / 0019_import_job /
 	// 0020_audit_log_vocabulary). Bumped 20 → 23 in plan 04-01
 	// (0021_measurement_inserted_trigger / 0022_install_capabilities /
-	// 0023_device_profile_expected_interval).
+	// 0023_device_profile_expected_interval). Bumped 23 → 24 in plan 05-01
+	// (0024_river_tables — River v0.36.0 job-queue schema).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 23, version, "expected schema_migrations.version = 23 (latest after plan 04-01)")
+	require.Equal(t, 24, version, "expected schema_migrations.version = 24 (latest after plan 05-01)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
+
+	// 0024 River tables: verify river_migration row exists with line='main', version=6.
+	var riverVersion int64
+	err = pool.QueryRow(ctx, `SELECT MAX(version) FROM river_migration WHERE line = 'main'`).Scan(&riverVersion)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), riverVersion, "river_migration must have line='main' version=6 (v0.36 schema)")
+
+	// 0024 River tables: river_job table must exist.
+	var riverJobExists bool
+	err = pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'river_job')`,
+	).Scan(&riverJobExists)
+	require.NoError(t, err)
+	require.True(t, riverJobExists, "0024 must create river_job table")
 
 	// 0014 enables btree_gist for the binding non-overlap EXCLUDE constraints.
 	var btreeGistExists bool
@@ -135,7 +150,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 23, version)
+	require.Equal(t, 24, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -931,5 +946,58 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 		userID,
 	)
 	require.NoError(t, err, "Phase 2 vocab must still insert after 0020 down")
+}
+
+// TestRunMigrations_RiverDownUpClean — 0024_river_tables round-trip test.
+// Applies all migrations (up to 24), rolls back 1 step (down 0024), asserts
+// river_job does NOT exist, then re-applies (up 1 step), asserts it does.
+// This pins the Pitfall #8 mitigation: River schema is managed by golang-migrate
+// so the install script does NOT need a separate `river migrate-up` step.
+func TestRunMigrations_RiverDownUpClean(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+
+	// Apply all migrations up to 24.
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Verify river_job exists before rollback.
+	var existsBefore bool
+	err := pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM to_regclass('river_job') WHERE to_regclass IS NOT NULL)`,
+	).Scan(&existsBefore)
+	require.NoError(t, err)
+	require.True(t, existsBefore, "river_job must exist after 0024 up")
+
+	// Roll back 0024 (1 step down).
+	require.NoError(t, runMigrateSteps(t, pool, -1))
+
+	// river_job must NOT exist after 0024 down.
+	var existsAfterDown bool
+	err = pool.QueryRow(ctx,
+		`SELECT to_regclass('river_job') IS NOT NULL`,
+	).Scan(&existsAfterDown)
+	require.NoError(t, err)
+	require.False(t, existsAfterDown, "river_job must not exist after 0024 down")
+
+	// Re-apply 0024 (1 step up).
+	require.NoError(t, runMigrateSteps(t, pool, 1))
+
+	// river_job must exist again after re-applying 0024.
+	var existsAfterUp bool
+	err = pool.QueryRow(ctx,
+		`SELECT to_regclass('river_job') IS NOT NULL`,
+	).Scan(&existsAfterUp)
+	require.NoError(t, err)
+	require.True(t, existsAfterUp, "river_job must exist after 0024 re-applied")
+
+	// river_migration must also be re-populated with version=6.
+	var riverVersion int64
+	err = pool.QueryRow(ctx, `SELECT MAX(version) FROM river_migration WHERE line = 'main'`).Scan(&riverVersion)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), riverVersion, "river_migration must have version=6 after re-apply")
 }
 
