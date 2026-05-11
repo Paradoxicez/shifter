@@ -45,13 +45,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **DEV-01**: User can list, search, and filter devices with last-seen, battery, RSSI/SNR, and current site/metering-point assignment
 - [ ] **DEV-02**: Admin can create / edit / soft-delete a device via dialogs
-- [ ] **DEV-03**: Admin can paste a DevEUI from a vendor sticker — the parser handles both endiannesses and shows a preview before commit
+- [x] **DEV-03**: Admin can paste a DevEUI from a vendor sticker — the parser handles both endiannesses and shows a preview before commit
 - [ ] **DEV-04**: System defaults to OTAA activation; ABP is supported but flagged as not recommended
 - [ ] **DEV-05**: Admin can manage device profiles, including custom JS payload codec — codec runs inside ChirpStack's QuickJS sandbox, never inside Shifter
-- [ ] **DEV-06**: Admin can bulk-import devices from a CSV — phase 1 is dry-run validation with a per-row error report; phase 2 is commit-all with a per-row outcome log
-- [ ] **DEV-07**: A bulk import re-run with the same CSV is idempotent (no duplicates, no spurious creates)
-- [ ] **DEV-08**: System provides a downloadable CSV template for bulk import
-- [ ] **DEV-09**: Viewer cannot see secret fields like AppKey on any device record (server-side enforced, not just hidden in UI)
+- [x] **DEV-06**: Admin can bulk-import devices from a CSV — phase 1 is dry-run validation with a per-row error report; phase 2 is commit-all with a per-row outcome log
+- [x] **DEV-07**: A bulk import re-run with the same CSV is idempotent (no duplicates, no spurious creates)
+- [x] **DEV-08**: System provides a downloadable CSV template for bulk import
+- [x] **DEV-09**: Viewer cannot see secret fields like AppKey on any device record (server-side enforced, not just hidden in UI)
 
 ### Sites & Physical Layout
 
@@ -161,7 +161,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **UX-01**: All create / edit / delete flows happen in dialogs — no separate full-page CRUD screens
 - [x] **UX-02**: UI uses shadcn/ui components, blue/navy palette, modern minimal aesthetic, English-only copy
-- [ ] **UX-03**: Operator never sees ChirpStack-native terminology in the day-to-day UI (no "tenant", "application" — Shifter speaks in customer/site/device language)
+- [x] **UX-03**: Operator never sees ChirpStack-native terminology in the day-to-day UI (no "tenant", "application" — Shifter speaks in customer/site/device language)
 
 ## v2 Requirements
 
@@ -249,13 +249,13 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | GW-04 | Phase 3 | Complete |
 | DEV-01 | Phase 3 | Pending |
 | DEV-02 | Phase 3 | Pending |
-| DEV-03 | Phase 3 | Pending |
+| DEV-03 | Phase 3 | Complete |
 | DEV-04 | Phase 3 | Pending |
 | DEV-05 | Phase 2 | Pending |
-| DEV-06 | Phase 3 | Pending |
-| DEV-07 | Phase 3 | Pending |
-| DEV-08 | Phase 3 | Pending |
-| DEV-09 | Phase 3 | Pending |
+| DEV-06 | Phase 3 | Complete |
+| DEV-07 | Phase 3 | Complete |
+| DEV-08 | Phase 3 | Complete |
+| DEV-09 | Phase 3 | Complete |
 | SITE-01 | Phase 2 | Complete |
 | SITE-02 | Phase 5 | Pending |
 | SITE-03 | Phase 5 | Pending |
@@ -323,7 +323,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | OPS-08 | Phase 6 | Pending |
 | UX-01 | Phase 1 | Complete |
 | UX-02 | Phase 1 | Complete |
-| UX-03 | Phase 3 | Pending |
+| UX-03 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 99 total

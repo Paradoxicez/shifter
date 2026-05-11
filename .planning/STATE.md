@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-05-11T07:07:32.850Z"
+last_updated: "2026-05-11T07:41:10.930Z"
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 49
-  completed_plans: 43
-  percent: 88
+  completed_plans: 44
+  percent: 90
 ---
 
 # Project State: Shifter
@@ -25,7 +25,7 @@ progress:
 ## Current Position
 
 Phase: 03 (provisioning-gateways-devices-bulk-import) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 
 > **Phase 2 closure (2026-05-04):** Plans 02-11..15 closed every gap surfaced by the Phase 2 verifier:
 > - 02-11: swap + profile HTTP route surface
@@ -81,6 +81,7 @@ Plan: 4 of 10
 | Phase 03 P01 | 25min | 3 tasks | 30 files |
 | Phase 03 P03 | 7 min | 3 tasks | 9 files |
 | Phase 03 P04 | 22min | 3 tasks | 13 files |
+| Phase 03 P05 | 45min | 4 tasks | 22 files |
 
 ### Per-plan execution log
 
@@ -315,6 +316,17 @@ Plan: 4 of 10
 - **Plan 02-07 — `pgtype.Numeric.Scan(string)` is the lossless big.Float → pgtype.Numeric encoding path.** Avoids the `*big.Rat` ceremony. Centralized as `numericFromBigFloat` in swap/commit.go; future code that needs to write big.Float to a NUMERIC column SHOULD reuse this helper.
 - **Plan 02-07 — TestCommitSwap_RolledBack exercises EXCLUDE-violation rollback, not fake-audit-injection.** Pre-seed an overlapping active binding for the incoming device on a different MP, then call CommitSwap; the per-device EXCLUDE fires inside OpenBinding; rollback assertions hold. Realistic failure mode (matches what a real concurrent swap would produce) without dependency injection just to test rollback. Future tests SHOULD prefer realistic constraint violations over hook-injected failures.
 - **Plan 02-07 — No new dependencies.** Implementation is pure stdlib (math/big, sync/atomic, log/slog, encoding/json, reflect, strings, time) + Phase 1's go.mod (jackc/pgx/v5/{pgxpool,pgtype}, google/uuid, stretchr/testify). Phase 2 CLAUDE.md tech-stack spec held — no Bun, no GORM, no JWT, no Redis.
+
+### Phase 03 Execution Decisions
+
+- **Plan 03-05 — Per-row commit failure isolation.** A ChirpStack error on row N marks that single row `failed` (with reason text) and proceeds to row N+1. The job's envelope audit row always lands with the failed count, so the operator gets a complete summary regardless. Best-effort `cleanupCS` runs with a fresh context (Phase 2 D-16 pattern). Future bulk operations that touch external systems MUST follow the same isolation pattern; never abort the whole job on one row's external failure.
+- **Plan 03-05 — Lazy TTL via ExpireIfStale on read.** Preview jobs transition `preview → expired` only when a handler reads them past their `expires_at`. No background worker in Phase 3; Phase 9's retention cron handles 90-day `import_job` purge separately. Future TTL'd entities SHOULD prefer lazy expiry over scheduled sweepers when read-traffic is sufficient to drain the queue (avoids a Phase 3 worker dependency).
+- **Plan 03-05 — Audit envelope + per-device with `request_id = job_id` (D-33/D-34).** One bulk import emits exactly N+1 audit rows that share `request_id = job_id.String()`. The envelope row is `action='device.bulk_import'`, `entity_type='import_job'`, `entity_id=job_id`; per-device rows are `action='create'`, `entity_type='device'`, `notes='bulk_import'`. Single-query reconstruction via `SELECT * FROM audit_log WHERE request_id = $1`. Phase 6 audit-browse query reuses this shape. Future bulk mutations that touch multiple entity rows MUST use this envelope+per-entity audit pattern.
+- **Plan 03-05 — Multipart upload guard chain.** `http.MaxBytesReader` wraps `r.Body` BEFORE `ParseMultipartForm` so the body cap fires with `http.MaxBytesError` (mapped to 413). Then: extension sniff (`.xlsm` reject = 400 `xlsm_not_allowed`), format-routed parse (`.xlsx` → ParseXLSX, `.csv` → ParseCSV), row count cap (5000) after parse. Each cap fires with its own error code so the operator gets a precise remediation message. Future file-upload endpoints SHOULD layer the guards in this exact order.
+- **Plan 03-05 — `audit_test` (external) package for cross-package envelope tests.** `internal/audit/bulk_import_envelope_test.go` uses `package audit_test` so it can import the future `importpkg` consumer without creating a cycle through `internal/audit`. Future "consumer-shape" tests on a low-level package SHOULD use the `_test` external package pattern.
+- **Plan 03-05 — `isNoRows` substring check in dryrun.go avoids importing pgx.** The dryrun validator does only sqlc reads (no transaction ownership), so importing `pgx.ErrNoRows` would pull the pgx surface into a layer that doesn't need it. `strings.Contains(err.Error(), "no rows in result set")` is the substring sentinel. Future read-only validators MAY use this pattern when the consumer is otherwise pgx-free.
+- **Plan 03-05 — `tags` column deferred for device.** The bulk-import schema accepts `tags` in the file (operator-pasted) but currently drops it because `device` has no `tags` column. Phase 7 (vendor catalog) will add the column + surface it. Decision documented to forestall future scope expansion of Phase 3's device schema.
+- **Plan 03-05 — `ImportDeps` nil-guard parallels `GatewayDeps`.** Both gateway routes (Plan 03-04) and import routes (Plan 03-05) mount only when their full CS+bootstrap wiring is present. `serve.go` does not yet construct either; Plan 03-10 (or equivalent cmd-wiring catch-up) lands the CS-client construction that both surfaces need.
 
 ### Open Blockers
 
