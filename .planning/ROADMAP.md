@@ -130,7 +130,7 @@ Plans:
 - [x] 03-06-PLAN.md — Devices list filter/sort/page sqlc + handlers + bulk decommission + reveal-secrets endpoint (admin-only, no secret in audit)
 - [x] 03-07-PLAN.md — 5-step Add Device dialog (OTAA/ABP) backend + frontend with success-state keys panel
 - [x] 03-08-PLAN.md — Gateway frontend: list with sparkline + Add/Edit single dialog + Decommission AlertDialog + detail page + 3 new shadcn primitives
-- [ ] 03-09-PLAN.md — Devices filter URL-state (react-router-dom v7 useSearchParams + zod) + bulk-action bar + Bulk Import 3-step dialog + Imports admin pages
+- [x] 03-09-PLAN.md — Devices filter URL-state (react-router-dom v7 useSearchParams + zod) + bulk-action bar + Bulk Import 3-step dialog + Imports admin pages
 - [ ] 03-10-PLAN.md — Reveal Keys dialog + device detail page + 6 Playwright E2E specs + UX-03 vocabulary audit + REQUIREMENTS.md + VALIDATION.md reconciliation
 **UI hint**: yes
 

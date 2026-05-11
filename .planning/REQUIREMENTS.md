@@ -43,7 +43,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Devices & Meters
 
-- [ ] **DEV-01**: User can list, search, and filter devices with last-seen, battery, RSSI/SNR, and current site/metering-point assignment
+- [x] **DEV-01**: User can list, search, and filter devices with last-seen, battery, RSSI/SNR, and current site/metering-point assignment
 - [x] **DEV-02**: Admin can create / edit / soft-delete a device via dialogs
 - [x] **DEV-03**: Admin can paste a DevEUI from a vendor sticker — the parser handles both endiannesses and shows a preview before commit
 - [x] **DEV-04**: System defaults to OTAA activation; ABP is supported but flagged as not recommended
@@ -247,7 +247,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | GW-02 | Phase 3 | Complete |
 | GW-03 | Phase 3 | Complete |
 | GW-04 | Phase 3 | Complete |
-| DEV-01 | Phase 3 | Pending |
+| DEV-01 | Phase 3 | Complete |
 | DEV-02 | Phase 3 | Complete |
 | DEV-03 | Phase 3 | Complete |
 | DEV-04 | Phase 3 | Complete |
