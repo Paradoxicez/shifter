@@ -45,16 +45,69 @@ export interface PreflightResult {
   mqtt_detail?: string
 }
 
-export interface AddDeviceRequest {
+/**
+ * Plan 03-07 D-19..D-25: discriminated-union add-device payload.
+ *
+ *   - OTAA branch — operator provides AppKey + (optional) JoinEUI;
+ *     backend → CS CreateDevice + CreateDeviceKeys. Phase 2 baseline.
+ *   - ABP branch — operator provides DevAddr + NwkSKey + AppSKey +
+ *     (optional) FCntUp / FCntDown; backend → CS CreateDevice +
+ *     ActivateDevice.
+ *
+ * DEV-09: keys flow client → Shifter API → ChirpStack. They are NEVER
+ * persisted in Shifter PG and never appear in any list/detail response.
+ * The POST response body echoes them back ONCE for the dialog's D-21
+ * success state ("Copy keys" panel); after Done is clicked the local
+ * React state is dropped and the mutation cache is configured with
+ * gcTime:0 so TanStack Query never retains the response.
+ */
+export interface AddDeviceBase {
   dev_eui: string
   name: string
   device_profile_id: string
-  app_key: string
-  join_eui?: string
   description?: string
   metering_point_id?: string
   initial_reading?: string
 }
+
+export interface AddDeviceOTAA extends AddDeviceBase {
+  activation_mode: 'OTAA'
+  app_key: string
+  join_eui?: string
+  /** Optional in the v1.0.x flow; backend defaults NwkKey to AppKey. */
+  nwk_key?: string
+}
+
+export interface AddDeviceABP extends AddDeviceBase {
+  activation_mode: 'ABP'
+  dev_addr: string
+  nwk_s_key: string
+  app_s_key: string
+  fcnt_up?: number
+  fcnt_down?: number
+}
+
+export type AddDeviceRequest = AddDeviceOTAA | AddDeviceABP
+
+/**
+ * Plan 03-07 success-state response shape (D-21). The keys field set is
+ * disjoint between OTAA and ABP — discriminated by activation_mode.
+ */
+export type AddDeviceResponse =
+  | (Device & {
+      activation_mode: 'OTAA'
+      app_key: string
+      nwk_key: string
+      join_eui: string
+    })
+  | (Device & {
+      activation_mode: 'ABP'
+      dev_addr: string
+      nwk_s_key: string
+      app_s_key: string
+      f_cnt_up: number
+      f_cnt_down: number
+    })
 
 export const listDevices = () => apiFetch<Device[]>('/api/devices')
 
@@ -76,7 +129,10 @@ export const preflight = () =>
   apiFetch<PreflightResult>('/api/devices/preflight', { method: 'POST', body: '{}' })
 
 export const addDevice = (body: AddDeviceRequest) =>
-  apiFetch<Device>('/api/devices', { method: 'POST', body: JSON.stringify(body) })
+  apiFetch<AddDeviceResponse>('/api/devices', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 
 export const decommissionDevice = (id: string) =>
   apiFetch<Device>(`/api/devices/${id}/decommission`, { method: 'POST', body: '{}' })
