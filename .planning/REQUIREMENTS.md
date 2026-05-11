@@ -82,7 +82,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **DASH-01**: Dashboard adapts to install scope — water-only customers see water KPIs, electricity-only customers see electricity, both see both
 - [x] **DASH-02**: Live KPIs include today's consumption, current flow / instantaneous draw, period delta, and online/offline device count
-- [ ] **DASH-03**: Dashboard receives real-time measurement updates via SSE driven off Postgres `LISTEN/NOTIFY` from a hypertable insert trigger — UI only ever sees persisted data
+- [x] **DASH-03**: Dashboard receives real-time measurement updates via SSE driven off Postgres `LISTEN/NOTIFY` from a hypertable insert trigger — UI only ever sees persisted data
 - [ ] **DASH-04**: SSE client reconnects automatically with exponential backoff and jitter; reconnects deliver a fresh snapshot rather than relying on cached deltas
 - [ ] **DASH-05**: Dashboard renders time-series charts (shadcn-charts) with date-range pickers
 - [ ] **DASH-06**: Web UI is fully usable on mobile-sized viewports (responsive, no native app in v1)
@@ -277,7 +277,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | DATA-13 | Phase 5 | Pending |
 | DASH-01 | Phase 4 | Complete |
 | DASH-02 | Phase 4 | Complete |
-| DASH-03 | Phase 4 | Pending |
+| DASH-03 | Phase 4 | Complete |
 | DASH-04 | Phase 4 | Pending |
 | DASH-05 | Phase 4 | Pending |
 | DASH-06 | Phase 4 | Pending |
