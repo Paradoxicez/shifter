@@ -116,6 +116,25 @@ const (
 	ActionAuditRead Action = "audit.read"
 )
 
+// Phase 3 — Plan 03-02: gateway CRUD + bulk-import + secret reveal.
+// All mutating actions admin-only; viewer denied via fail-closed default.
+// ActionGatewayRead is the single exception viewers retain (mirrors
+// ActionSiteRead / ActionDeviceRead in Phase 2).
+//
+// T-3-10 mitigation: every action below is explicitly listed in
+// roleBundles[RoleAdmin]; only ActionGatewayRead is listed in
+// roleBundles[RoleViewer]. TestCan_AnonymousDeniedAllPhase3 proves nil-user
+// is denied for every action regardless of role.
+const (
+	ActionGatewayCreate       Action = "gateway.create"
+	ActionGatewayUpdate       Action = "gateway.update"
+	ActionGatewayArchive      Action = "gateway.archive"
+	ActionGatewayRestore      Action = "gateway.restore"
+	ActionGatewayRead         Action = "gateway.read"
+	ActionDeviceBulkImport    Action = "device.bulk_import"
+	ActionDeviceRevealSecrets Action = "device.reveal_secrets"
+)
+
 // Role is the typed role identifier mirroring the Postgres user_role enum.
 type Role string
 
@@ -169,6 +188,16 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionDeviceProfileRead:    true,
 		ActionMeterSwap:            true,
 		ActionAuditRead:            true,
+
+		// Phase 3 — Plan 03-02: gateway CRUD + bulk-import + reveal secrets.
+		// Admin can perform every Phase 3 mutating action and read gateways.
+		ActionGatewayCreate:       true,
+		ActionGatewayUpdate:       true,
+		ActionGatewayArchive:      true,
+		ActionGatewayRestore:      true,
+		ActionGatewayRead:         true,
+		ActionDeviceBulkImport:    true,
+		ActionDeviceRevealSecrets: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -186,6 +215,11 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionDeviceRead:        true,
 		ActionDeviceProfileRead: true,
 		ActionAuditRead:         true,
+
+		// Phase 3 — Plan 03-02: viewers can ONLY read gateways. Mutating
+		// actions (create/update/archive/restore), bulk_import, and
+		// reveal_secrets are all intentionally absent — fail-closed.
+		ActionGatewayRead: true,
 	},
 }
 
