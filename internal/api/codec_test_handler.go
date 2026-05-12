@@ -179,7 +179,9 @@ func CodecTestHandler(deps CodecTestDeps) http.HandlerFunc {
 
 		// If decode succeeded, derive canonical Layer1 mapping.
 		if result.ErrorMessage == "" && result.DecodedJSON != nil && len(mappings) > 0 {
-			layer1, normErr := ingest.NormalizeMeasurement(result.DecodedJSON, mappings)
+			// battery_curve is not available in the test-codec context (no binding),
+			// so pass "" — linear_pct passthrough semantics, codec's own battery_pct wins.
+			layer1, normErr := ingest.NormalizeMeasurement(result.DecodedJSON, mappings, "")
 			if normErr == nil {
 				result.CanonicalMapping = layer1
 			}

@@ -26,7 +26,8 @@ SELECT b.id, b.metering_point_id, b.device_id, b.valid_from, b.valid_to,
        b.reading_offset, b.last_raw_value,
        d.dev_eui,
        dp.id AS device_profile_id,
-       dp.counter_modulus
+       dp.counter_modulus,
+       dp.battery_curve
 FROM binding b
 JOIN device          d  ON d.id = b.device_id
 JOIN device_profile  dp ON dp.id = d.device_profile_id

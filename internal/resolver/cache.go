@@ -34,6 +34,11 @@ type Binding struct {
 
 	ValidFrom time.Time // half-open [valid_from, valid_to)
 	ValidTo   time.Time // zero value means "still active"
+
+	// BatteryCurve is device_profile.battery_curve (D-44 enum). Carried here so
+	// the ingest pipeline can pass it to NormalizeMeasurement without an extra
+	// DB round-trip. "" is safe — NormalizeMeasurement treats it as passthrough.
+	BatteryCurve string
 }
 
 // Loader is the interface Resolver uses to fetch a binding from Postgres on

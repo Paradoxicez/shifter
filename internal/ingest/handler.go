@@ -132,7 +132,7 @@ func UplinkHandler(deps Deps) chirpstack.UplinkHandler {
 			return
 		}
 
-		normalized, normErr := NormalizeMeasurement(ev.DecodedObject, mappings)
+		normalized, normErr := NormalizeMeasurement(ev.DecodedObject, mappings, binding.BatteryCurve)
 		quality := QualityOK
 		if normErr != nil {
 			quality = QualityMissingCanonical

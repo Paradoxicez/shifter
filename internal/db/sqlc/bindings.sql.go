@@ -65,7 +65,8 @@ SELECT b.id, b.metering_point_id, b.device_id, b.valid_from, b.valid_to,
        b.reading_offset, b.last_raw_value,
        d.dev_eui,
        dp.id AS device_profile_id,
-       dp.counter_modulus
+       dp.counter_modulus,
+       dp.battery_curve
 FROM binding b
 JOIN device          d  ON d.id = b.device_id
 JOIN device_profile  dp ON dp.id = d.device_profile_id
@@ -91,6 +92,7 @@ type GetActiveBindingByDevEUIRow struct {
 	DevEui          string
 	DeviceProfileID pgtype.UUID
 	CounterModulus  int64
+	BatteryCurve    string
 }
 
 // Binding (DATA-02 + D-14 + D-15 + D-25). Each device-to-MP binding has a
@@ -129,6 +131,7 @@ func (q *Queries) GetActiveBindingByDevEUI(ctx context.Context, arg GetActiveBin
 		&i.DevEui,
 		&i.DeviceProfileID,
 		&i.CounterModulus,
+		&i.BatteryCurve,
 	)
 	return i, err
 }

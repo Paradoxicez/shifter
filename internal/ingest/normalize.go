@@ -75,6 +75,12 @@ var canonicalTargets = map[string]bool{
 //   - Scale (*big.Float; nil → identity)
 //   - DataType ("numeric" | "int" | "bool" | "text")
 //
+// batteryCurve is the device_profile.battery_curve value from the catalog
+// (e.g. "li_socl2_3v6"). After the mapping pass, if batteryCurve is set and
+// Extra["battery_v"] contains a float64 voltage, ApplyBatteryCurve converts
+// it to a BatteryPct. Pass "" or "linear_pct" to keep the codec's own
+// battery_pct (if any) unchanged.
+//
 // Per CONTEXT D-01 + D-08 + DATA-09 + Anti-Pattern "no decoders.ts":
 // this function CONTAINS NO VENDOR SWITCH. The mapping table is the only
 // configuration. Adding a vendor = adding a profile + its mappings. If
@@ -85,7 +91,7 @@ var canonicalTargets = map[string]bool{
 // populated; the populated Layer1 is returned regardless so the caller can
 // still persist whatever was extracted (battery, rssi, etc.) alongside the
 // raw payload.
-func NormalizeMeasurement(decoded map[string]any, mappings []profile.Mapping) (Layer1, error) {
+func NormalizeMeasurement(decoded map[string]any, mappings []profile.Mapping, batteryCurve string) (Layer1, error) {
 	out := Layer1{Extra: map[string]any{}}
 
 	// Sort mappings by Position so the pass order is deterministic — D-08
@@ -128,10 +134,48 @@ func NormalizeMeasurement(decoded map[string]any, mappings []profile.Mapping) (L
 		assignToLayer1(&out, m.Target, scaled)
 	}
 
+	// Battery curve application (D-44): after the mapping pass, if the profile
+	// declares a voltage-based battery curve and Extra["battery_v"] was populated
+	// by a mapping, convert the voltage to a BatteryPct.
+	//
+	// This runs AFTER the mapping pass so the codec's own battery_pct (via a
+	// "battery_pct" target mapping) is written first. ApplyBatteryCurve returns
+	// ok=false for "linear_pct" and "none", leaving any codec-supplied BatteryPct
+	// intact. For voltage-based curves (li_socl2_3v6, li_mnox_3v0, alkaline_3v0),
+	// the curve result overrides whatever the mapping pass may have set.
+	if v, ok := extraFloat64(out.Extra, "battery_v"); ok {
+		if pct, curveOK := ApplyBatteryCurve(batteryCurve, v); curveOK {
+			out.BatteryPct = &pct
+		}
+	}
+
 	if out.RawValue == nil && out.InstantValue == nil {
 		return out, ErrNoCanonicalValue
 	}
 	return out, nil
+}
+
+// extraFloat64 extracts a float64 from Extra["battery_v"] (or any key).
+// The value may be a raw float64 (from JSON decode) or a *big.Float
+// (if a mapping with data_type=numeric landed it in Extra).
+func extraFloat64(extra map[string]any, key string) (float64, bool) {
+	if extra == nil {
+		return 0, false
+	}
+	v, ok := extra[key]
+	if !ok {
+		return 0, false
+	}
+	switch val := v.(type) {
+	case float64:
+		return val, true
+	case *big.Float:
+		f, _ := val.Float64()
+		return f, true
+	case float32:
+		return float64(val), true
+	}
+	return 0, false
 }
 
 // coerce converts a JSON-decoded value (any) to the data_type the mapping

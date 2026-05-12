@@ -64,6 +64,7 @@ func (l *cliSqlcLoader) LoadActive(ctx context.Context, devEUI string, at time.T
 		DeviceID:        uuid.UUID(row.DeviceID.Bytes),
 		DeviceProfileID: uuid.UUID(row.DeviceProfileID.Bytes),
 		CounterModulus:  row.CounterModulus,
+		BatteryCurve:    row.BatteryCurve,
 	}
 	if row.ValidFrom.Valid {
 		b.ValidFrom = row.ValidFrom.Time

@@ -786,6 +786,7 @@ func (l *sqlcResolverLoader) LoadActive(ctx context.Context, devEUI string, at t
 		ReadingOffset:   offset,
 		LastRawValue:    ingest.BigFloatFromNumericNullable(row.LastRawValue),
 		CounterModulus:  row.CounterModulus,
+		BatteryCurve:    row.BatteryCurve,
 	}
 	if row.ValidFrom.Valid {
 		b.ValidFrom = row.ValidFrom.Time
