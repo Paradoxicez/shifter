@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shifter-io/shifter/internal/alert"
+	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/device"
@@ -139,6 +140,12 @@ type Deps struct {
 	// that don't need user-mgmt routes (router test fixture can keep its
 	// minimal Deps shape).
 	UserDeps *user.Deps
+
+	// AuditDeps wires Plan 06-07's /api/audit browse + export endpoints.
+	// All routes are admin-only (D-31): ActionAuditRead gates browse, count,
+	// distincts; ActionAuditExport gates export + export-async (D-35).
+	// nil in early-boot / router unit tests that don't need audit routes.
+	AuditDeps *audit.Deps
 
 	// AlertDeps wires Plan 06-04's /api/alerts + /api/alerts/rules +
 	// /api/anomaly-roster + /api/metering-points/{id}/anomaly-state surfaces.
@@ -445,6 +452,24 @@ func NewRouter(deps Deps) http.Handler {
 		r.Group(func(g chi.Router) {
 			g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
 			g.Patch("/api/metering-points/{id}/anomaly-rules/{kind}", alert.ToggleMPAnomalyHandler(alertDeps))
+		})
+	}
+
+	if deps.AuditDeps != nil {
+		// AuditDeps mounts Plan 06-07's audit browse + export routes. All
+		// routes are admin-only:
+		//   GET  /api/audit                 — ActionAuditRead (admin)
+		//   GET  /api/audit/count           — ActionAuditRead (admin)
+		//   GET  /api/audit/distincts       — ActionAuditRead (admin)
+		//   GET  /api/audit/export          — ActionAuditExport (admin)
+		//   POST /api/audit/export-async    — ActionAuditExport (admin)
+		auditDeps := *deps.AuditDeps
+		r.Route("/api/audit", func(rt chi.Router) {
+			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditRead)).Get("/", audit.ListHandler(auditDeps))
+			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditRead)).Get("/count", audit.CountHandler(auditDeps))
+			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditRead)).Get("/distincts", audit.DistinctsHandler(auditDeps))
+			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditExport)).Get("/export", audit.ExportHandler(auditDeps))
+			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditExport)).Post("/export-async", audit.ExportAsyncHandler(auditDeps))
 		})
 	}
 

@@ -45,7 +45,7 @@ func setupLogin(t *testing.T) *loginFixture {
 
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/auth/login", LoginHandler(deps))
-	mux.Handle("POST /api/auth/logout", LogoutHandler(sm))
+	mux.Handle("POST /api/auth/logout", LogoutHandlerWithAudit(sm, store))
 	mux.Handle("GET /api/account/me", AccountInfoHandler(deps))
 	mux.Handle("GET /me", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, ok := GetUser(r.Context(), sm)

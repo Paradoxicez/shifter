@@ -79,12 +79,15 @@ func TestCan_Phase2_AdminAllowsEveryAction(t *testing.T) {
 // TestCan_Phase2_ViewerMutationsDenied — viewer can READ Phase 2 entities
 // but every mutating action is rejected (defense-in-depth on top of
 // RequireAction middleware).
+//
+// Plan 06-07 D-31 update: ActionAuditRead removed from the viewer-reads-allowed
+// list (audit browse is admin-only; it contains PII and operator action history).
 func TestCan_Phase2_ViewerMutationsDenied(t *testing.T) {
 	viewer := &User{ID: "u2", Role: "viewer"}
-	// Reads allowed.
+	// Reads allowed (audit log intentionally absent — admin-only per D-31).
 	for _, a := range []Action{
 		ActionSiteRead, ActionMeteringPointRead, ActionDeviceRead,
-		ActionDeviceProfileRead, ActionAuditRead,
+		ActionDeviceProfileRead,
 	} {
 		require.True(t, Can(viewer, a, nil), "viewer must be able to %s", a)
 	}
@@ -95,9 +98,25 @@ func TestCan_Phase2_ViewerMutationsDenied(t *testing.T) {
 		ActionDeviceAdd, ActionDeviceDecommission,
 		ActionDeviceProfileCreate, ActionDeviceProfileUpdate, ActionDeviceProfileArchive,
 		ActionMeterSwap,
+		// D-31 (Plan 06-07): audit browse and export are admin-only.
+		ActionAuditRead, ActionAuditExport,
 	} {
 		require.False(t, Can(viewer, a, nil), "viewer must NOT be able to %s", a)
 	}
+}
+
+// TestCan_Phase6_AuditBrowseAdminOnly — D-31 (Plan 06-07): audit browse and
+// export are admin-only. Both ActionAuditRead and ActionAuditExport must be
+// denied for viewer (T-06-07-01 mitigation).
+func TestCan_Phase6_AuditBrowseAdminOnly(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	viewer := &User{ID: "u2", Role: "viewer"}
+	// Admin can browse and export.
+	require.True(t, Can(admin, ActionAuditRead, nil), "admin must be able to audit.read")
+	require.True(t, Can(admin, ActionAuditExport, nil), "admin must be able to audit.export")
+	// Viewer denied both (T-06-07-01).
+	require.False(t, Can(viewer, ActionAuditRead, nil), "viewer must NOT be able to audit.read (D-31)")
+	require.False(t, Can(viewer, ActionAuditExport, nil), "viewer must NOT be able to audit.export (D-31)")
 }
 
 // TestCan_Phase6_UserMgmt_AdminEverything — admin can perform every fine-

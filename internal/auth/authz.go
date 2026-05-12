@@ -112,8 +112,13 @@ const (
 	// Meter swap (D-13 + D-14) — admin only.
 	ActionMeterSwap Action = "meter.swap"
 
-	// Audit read — admin AND viewer (read-only access to the audit trail).
+	// ActionAuditRead gates the audit browse surface (GET /api/audit/*).
+	// Phase 6 Plan 06-07 D-31: admin-only. Removed from RoleViewer bundle.
 	ActionAuditRead Action = "audit.read"
+
+	// ActionAuditExport gates CSV export (GET /api/audit/export + POST /api/audit/export-async).
+	// D-35: admin-only (exported data contains PII — user emails, entity states).
+	ActionAuditExport Action = "audit.export"
 )
 
 // Phase 5 — Plan 05-11: settings update (data retention). Admin-only.
@@ -233,8 +238,9 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionDeviceProfileUpdate:  true,
 		ActionDeviceProfileArchive: true,
 		ActionDeviceProfileRead:    true,
-		ActionMeterSwap:            true,
-		ActionAuditRead:            true,
+		ActionMeterSwap:   true,
+		ActionAuditRead:   true,
+		ActionAuditExport: true,
 
 		// Phase 3 — Plan 03-02: gateway CRUD + bulk-import + reveal secrets.
 		// Admin can perform every Phase 3 mutating action and read gateways.
@@ -287,11 +293,15 @@ var roleBundles = map[Role]map[Action]bool{
 		// Phase 2 — Plan 02-10: viewer can READ every Phase 2 entity but
 		// CANNOT mutate. Every mutation action is intentionally absent —
 		// fail-closed default in Can() means viewer mutation attempts 403.
+		//
+		// ActionAuditRead is intentionally absent from RoleViewer (D-31 from
+		// Plan 06-07): the audit log browse is admin-only because it surfaces
+		// PII (user emails), action history, and before/after diffs for every
+		// operator mutation. Viewers are redirected to / at the route level.
 		ActionSiteRead:          true,
 		ActionMeteringPointRead: true,
 		ActionDeviceRead:        true,
 		ActionDeviceProfileRead: true,
-		ActionAuditRead:         true,
 
 		// Phase 3 — Plan 03-02: viewers can ONLY read gateways. Mutating
 		// actions (create/update/archive/restore), bulk_import, and
