@@ -9,7 +9,8 @@ import (
 
 // rootCmd is the canonical Cobra root for the `shifter` binary. Subcommands
 // (serve, migrate, version, create-admin, config-check, healthcheck,
-// test-harness) are registered in Execute(). D-12 + D-27.
+// test-harness, backup, restore, doctor) are registered in Execute().
+// D-12 + D-27 + Plan 06-11.
 var rootCmd = &cobra.Command{
 	Use:   "shifter",
 	Short: "Shifter — self-hosted LoRaWAN water/electricity monitoring",
@@ -24,7 +25,10 @@ dashboard SPA. Subcommands:
   create-admin  Create or reset an admin user (recovery — D-14)
   config-check  Validate config syntax and probe endpoints (D-07)
   healthcheck   Localhost HTTP GET /health (D-15, Docker HEALTHCHECK)
-  test-harness  Publish synthetic DATA-06 scenarios to the broker (D-27)`,
+  test-harness  Publish synthetic DATA-06 scenarios to the broker (D-27)
+  backup        Create a pg_dump-based backup tarball (OPS-02)
+  restore       Restore from a backup tarball (OPS-04)
+  doctor        Print a redacted diagnostic bundle for support (D-50)`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -47,6 +51,7 @@ func Execute() error {
 		TestHarnessCmd,
 		backupCmd,
 		restoreCmd,
+		doctorCmd,
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
