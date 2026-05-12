@@ -536,3 +536,37 @@
 - Bulk user import / SSO group sync → V2-AUTH-01
 - Encrypted backups at rest → v1.x (operator's responsibility for now via FS encryption)
 - Backup retention / rotation inside Shifter → v1.x
+
+---
+
+## Research Addendum (2026-05-12, post research-phase)
+
+After spawning `gsd-phase-researcher` (06-RESEARCH.md, 129KB) and reviewing its findings, four follow-up resolutions were made and folded into CONTEXT.md:
+
+### Addendum Q1: How should the audit_log retention prune work around the migration 0016 INSERT-ONLY trigger?
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| SECURITY DEFINER function bypassing trigger (recommended, researcher's pick) | Migration adds `admin_prune_audit_rows()` with SECURITY DEFINER; `SET LOCAL session_replication_role = 'replica'` disables triggers for that tx only; DELETE; resets. Owned by dedicated non-superuser role. Function writes a meta `audit.prune` row before returning for trail traceability. | ✓ |
+| Refine the trigger to allow DELETE via session GUC | More invasive; weakens Phase 1 invariant globally. | |
+| Soft-delete column + view (no actual DELETE) | Cleanest immutability; storage still grows; retention toggle becomes cosmetic. | |
+| Skip prune entirely — audit_log retains forever | Drops D-38; ~500MB-10GB over 5y on self-hosted. | |
+
+**User's choice:** Option 1 (SECURITY DEFINER function) — recorded as new decision **D-51** in CONTEXT.md. Trigger invariant preserved at table level; documented escape hatch named in migration; compliance-reviewer-friendly meta-event row.
+
+### Addendum resolutions from researcher findings (no user input needed; CONTEXT.md amended)
+
+**D-40 resolved (was: research-flag):** `timescaledb-backup` helper tool was **archived by TigerData Feb 2022** with an explicit "use raw pg_dump/pg_restore instead" directive. Phase 6 ships raw `pg_dump --format=custom` + `timescaledb_pre_restore()` / `timescaledb_post_restore()` hooks. Exact CLI invocations now in D-40.
+
+**D-43 resolved (was: planner discretion):** Cron sidecar = **`mcuadros/ofelia:v0.3.22`** (April 2026 release, actively maintained, single-binary Go scheduler with `--docker` mode + label-driven config). Two alternatives (willfarrell/crontab, tini+crond-on-Alpine) evaluated and rejected.
+
+**D-45 resolved (was: "researcher should evaluate"):** Phase 6 ships **same-version round-trip CI test only**. Cross-version restore (vN backup → vN+1 schema) defers to **v1.1** — requires release-management coupling (tagged release artifacts at CI time) v1.0 doesn't yet have. Manifest `db_schema_version` field is the forward-compat hook.
+
+**D-50 resolved (was: "if available via Docker socket"):** Log tail via Docker socket dep **deferred to v1.x**. Pulling `docker/docker` (~15 MB transitive graph) into v1 binary for `docker logs` access isn't worth it; doctor output instead instructs operators to attach `docker compose logs --since 1h shifter` manually.
+
+**D-30 scoped (was: ambiguous):** Auth-event audit retrofit scope = **operator-visible events only** (login_success, login_failed, logout, password_change, etc. — explicit user/admin actions). Silent SCS session refreshes / per-request session reads are NOT audited (too volume-heavy, no operator value).
+
+### Other researcher discoveries (CONTEXT.md unchanged but worth noting)
+
+- **CONTEXT.md inaccuracy spotted:** D-24 said "DELETE all SCS session rows where `user_id = $1`" via JSONB query. The SCS pgxstore `data` column is BYTEA gob-encoded, not JSONB. Implementation will use `scs.Iterate` (the existing `internal/auth/account.go::iterateAndRevoke` helper Phase 1 shipped). Functional behavior unchanged; implementation note for planner.
+- **Suggested plan count: 14** — Wave 0 (2: test infra + migrations + Dockerfile) → Alert engine (3: threshold / offline+gateway / anomaly) → Alert center UI (1) → User mgmt (2: backend + UI) → Audit retrofit + browse (2) → Backup/restore (2: runner+CLI / Settings card+sidecar) → Doctor + runbook + OPS verification (1) → Phase closure (1).
