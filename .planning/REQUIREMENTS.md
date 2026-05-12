@@ -121,7 +121,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **ALERT-01**: Admin can configure threshold alerts per meter or per site (daily/hourly/instantaneous limits, high and low)
 - [x] **ALERT-02**: System raises a device-offline alert only when N≥3 consecutive expected uplinks are missed (per-profile expected interval), with a hysteresis grace period
 - [x] **ALERT-03**: When a gateway is offline, device-offline alerts for devices behind that gateway are suppressed — one gateway-down alert, not 200 false device alerts
-- [ ] **ALERT-04**: System raises anomaly / leak-detection alerts using statistical rules (P95 of trailing 30 days, IQR outliers, quiet-hour flow); requires ≥21 days of history per metering point before activation, and silently warms up new meters for the first 24 hours
+- [x] **ALERT-04**: System raises anomaly / leak-detection alerts using statistical rules (P95 of trailing 30 days, IQR outliers, quiet-hour flow); requires ≥21 days of history per metering point before activation, and silently warms up new meters for the first 24 hours
 - [x] **ALERT-05**: In-app alert center shows unread badge, lets user acknowledge with notes, and supports snooze/mute states
 - [x] **ALERT-06**: Alert center distinguishes categories (threshold, anomaly, offline) and severities by color
 
@@ -298,7 +298,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | ALERT-01 | Phase 6 | Complete |
 | ALERT-02 | Phase 6 | Complete |
 | ALERT-03 | Phase 6 | Complete |
-| ALERT-04 | Phase 6 | Pending |
+| ALERT-04 | Phase 6 | Complete |
 | ALERT-05 | Phase 6 | Complete |
 | ALERT-06 | Phase 6 | Complete |
 | SETT-01 | Phase 6 | Complete |
