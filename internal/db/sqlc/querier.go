@@ -397,6 +397,13 @@ type Querier interface {
 	// SELECT column set matches the table 1:1; otherwise it generates a
 	// per-query row alias that breaks downstream code expecting the table type.
 	GetRetentionConfig(ctx context.Context) (GetRetentionConfigRow, error)
+	// D-46: Returns the latest extra->>'reverse_flow_m3' value for the MP and the
+	// value at window_secs seconds ago. The JSONB vendor-extension field `extra`
+	// stores reverse_flow_m3 from Itron+KINMY uplinks. Both NULLs are coalesced
+	// to 0.0 so callers get a clean float delta without special-casing.
+	// Parameters: metering_point_id, window_secs (integer seconds for the lookback
+	// window, e.g. 7*86400 for 7 days).
+	GetReverseFlowDelta(ctx context.Context, arg GetReverseFlowDeltaParams) (GetReverseFlowDeltaRow, error)
 	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.

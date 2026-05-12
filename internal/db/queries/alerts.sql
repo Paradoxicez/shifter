@@ -284,6 +284,32 @@ ORDER BY
     a.fired_at DESC
 LIMIT 10;
 
+-- name: GetReverseFlowDelta :one
+-- D-46: Returns the latest extra->>'reverse_flow_m3' value for the MP and the
+-- value at window_secs seconds ago. The JSONB vendor-extension field `extra`
+-- stores reverse_flow_m3 from Itron+KINMY uplinks. Both NULLs are coalesced
+-- to 0.0 so callers get a clean float delta without special-casing.
+-- Parameters: metering_point_id, window_secs (integer seconds for the lookback
+-- window, e.g. 7*86400 for 7 days).
+SELECT
+    COALESCE(
+        (SELECT (extra->>'reverse_flow_m3')::DOUBLE PRECISION
+         FROM measurement
+         WHERE metering_point_id = sqlc.arg(metering_point_id)::UUID
+           AND extra ? 'reverse_flow_m3'
+         ORDER BY time DESC LIMIT 1),
+        0.0
+    ) AS now_value,
+    COALESCE(
+        (SELECT (extra->>'reverse_flow_m3')::DOUBLE PRECISION
+         FROM measurement
+         WHERE metering_point_id = sqlc.arg(metering_point_id)::UUID
+           AND time <= now() - make_interval(secs => sqlc.arg(window_secs)::FLOAT8)
+           AND extra ? 'reverse_flow_m3'
+         ORDER BY time DESC LIMIT 1),
+        0.0
+    ) AS past_value;
+
 -- name: NonZeroFlowDuringQuietWindow :one
 -- D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
 -- Parameters (named via sqlc.arg so the generated Params struct fields read

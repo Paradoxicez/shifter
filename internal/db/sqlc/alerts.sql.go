@@ -276,6 +276,50 @@ func (q *Queries) GetMeteringPointLabel(ctx context.Context, id pgtype.UUID) (Ge
 	return i, err
 }
 
+const getReverseFlowDelta = `-- name: GetReverseFlowDelta :one
+SELECT
+    COALESCE(
+        (SELECT (extra->>'reverse_flow_m3')::DOUBLE PRECISION
+         FROM measurement
+         WHERE metering_point_id = $1::UUID
+           AND extra ? 'reverse_flow_m3'
+         ORDER BY time DESC LIMIT 1),
+        0.0
+    ) AS now_value,
+    COALESCE(
+        (SELECT (extra->>'reverse_flow_m3')::DOUBLE PRECISION
+         FROM measurement
+         WHERE metering_point_id = $1::UUID
+           AND time <= now() - make_interval(secs => $2::FLOAT8)
+           AND extra ? 'reverse_flow_m3'
+         ORDER BY time DESC LIMIT 1),
+        0.0
+    ) AS past_value
+`
+
+type GetReverseFlowDeltaParams struct {
+	MeteringPointID pgtype.UUID
+	WindowSecs      float64
+}
+
+type GetReverseFlowDeltaRow struct {
+	NowValue  interface{}
+	PastValue interface{}
+}
+
+// D-46: Returns the latest extra->>'reverse_flow_m3' value for the MP and the
+// value at window_secs seconds ago. The JSONB vendor-extension field `extra`
+// stores reverse_flow_m3 from Itron+KINMY uplinks. Both NULLs are coalesced
+// to 0.0 so callers get a clean float delta without special-casing.
+// Parameters: metering_point_id, window_secs (integer seconds for the lookback
+// window, e.g. 7*86400 for 7 days).
+func (q *Queries) GetReverseFlowDelta(ctx context.Context, arg GetReverseFlowDeltaParams) (GetReverseFlowDeltaRow, error) {
+	row := q.db.QueryRow(ctx, getReverseFlowDelta, arg.MeteringPointID, arg.WindowSecs)
+	var i GetReverseFlowDeltaRow
+	err := row.Scan(&i.NowValue, &i.PastValue)
+	return i, err
+}
+
 const iQRBaselineForMP = `-- name: IQRBaselineForMP :one
 SELECT
     percentile_cont(0.25) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION) AS q1,
