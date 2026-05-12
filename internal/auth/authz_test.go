@@ -139,3 +139,42 @@ func TestCan_Phase6_UserMgmt_ViewerOnlyReadSelf(t *testing.T) {
 		require.False(t, Can(viewer, a, nil), "viewer must NOT be able to %s", a)
 	}
 }
+
+// TestAuthz_AlertActionsAdminOnlyExceptRead — Plan 06-04 D-11:
+// RoleAdmin has every alert.* action; RoleViewer has ActionAlertRead only.
+// Mutating actions (ack/snooze/mute/rule_create/update/disable/enable/
+// test_fire) are intentionally absent from the viewer bundle so Can()
+// returns false (fail-closed) — defense-in-depth on top of RequireAction.
+func TestAuthz_AlertActionsAdminOnlyExceptRead(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	for _, a := range []Action{
+		ActionAlertRead,
+		ActionAlertAck,
+		ActionAlertSnooze,
+		ActionAlertMute,
+		ActionAlertRuleCreate,
+		ActionAlertRuleUpdate,
+		ActionAlertRuleDisable,
+		ActionAlertRuleEnable,
+		ActionAlertTestFire,
+	} {
+		require.True(t, Can(admin, a, nil), "admin must be able to %s", a)
+	}
+
+	viewer := &User{ID: "u2", Role: "viewer"}
+	require.True(t, Can(viewer, ActionAlertRead, nil),
+		"viewer must be able to READ alerts (D-11)")
+	for _, a := range []Action{
+		ActionAlertAck,
+		ActionAlertSnooze,
+		ActionAlertMute,
+		ActionAlertRuleCreate,
+		ActionAlertRuleUpdate,
+		ActionAlertRuleDisable,
+		ActionAlertRuleEnable,
+		ActionAlertTestFire,
+	} {
+		require.False(t, Can(viewer, a, nil),
+			"viewer must NOT be able to %s (D-11 read-only)", a)
+	}
+}

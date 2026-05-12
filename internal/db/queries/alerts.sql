@@ -230,6 +230,35 @@ WHERE metering_point_id = $1
 ORDER BY time DESC
 LIMIT 1;
 
+-- ============================================================================
+-- Phase 6 Plan 06-04 — alert center HTTP handlers (list / detail / bell
+-- counts / drawer recent).
+-- ============================================================================
+
+-- name: CountAlertsUnreadBySeverity :one
+-- Powers the bell badge — returns one row with critical/warning/info counts
+-- of unread (firing|snoozed) non-muted alerts. The ListHandler returns this
+-- alongside the page rows to save a second round-trip from the UI.
+SELECT
+    count(*) FILTER (WHERE severity = 'critical' AND state IN ('firing','snoozed')) AS critical_count,
+    count(*) FILTER (WHERE severity = 'warning'  AND state IN ('firing','snoozed')) AS warning_count,
+    count(*) FILTER (WHERE severity = 'info'     AND state IN ('firing','snoozed')) AS info_count
+FROM alert
+WHERE muted = FALSE;
+
+-- name: ListRecentAlertsForDrawer :many
+-- Top 10 currently-active alerts for the slide-over drawer (UI-SPEC §Surface 1).
+-- Sort: critical > warning > info, then most-recent first within each tier.
+SELECT a.id, a.rule_id, a.rule_kind, a.severity, a.state, a.payload, a.fired_at,
+       a.target_entity_type, a.target_entity_id, a.is_test
+FROM alert a
+WHERE a.state IN ('firing','acknowledged','snoozed')
+  AND a.muted = FALSE
+ORDER BY
+    CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END ASC,
+    a.fired_at DESC
+LIMIT 10;
+
 -- name: NonZeroFlowDuringQuietWindow :one
 -- D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
 -- Parameters (named via sqlc.arg so the generated Params struct fields read

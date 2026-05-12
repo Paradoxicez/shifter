@@ -58,16 +58,17 @@ const (
 	maxTopicsPerConnection = 64
 )
 
-// topicRegex matches the three canonical topic shapes defined in Plan 04-02:
+// topicRegex matches the canonical topic shapes:
 //
 //	dashboard:global           — every uplink
 //	mp:<uuid>                  — per metering-point deltas
 //	mp:<uuid>:uplinks          — per metering-point, Uplinks log tab
+//	alert                      — Plan 06-04 alert center fan-out
 //
 // The regex is anchored (^ and $) and the UUID portion is bounded to
 // [0-9a-f-]{36} so an attacker cannot craft a topic that triggers catastrophic
 // backtracking (T-04-03-04).
-var topicRegex = regexp.MustCompile(`^(dashboard:global|mp:[0-9a-f-]{36}(:uplinks)?)$`)
+var topicRegex = regexp.MustCompile(`^(dashboard:global|mp:[0-9a-f-]{36}(:uplinks)?|alert)$`)
 
 // Deps groups the dependencies the SSE handler needs. It is constructed in
 // cmd/shifter/serve.go (Task 3) and registered via RegisterRoutes (Task 2).

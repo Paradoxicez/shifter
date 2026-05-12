@@ -28,6 +28,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/shifter-io/shifter/internal/alert"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/device"
@@ -138,6 +139,15 @@ type Deps struct {
 	// that don't need user-mgmt routes (router test fixture can keep its
 	// minimal Deps shape).
 	UserDeps *user.Deps
+
+	// AlertDeps wires Plan 06-04's /api/alerts + /api/alerts/rules +
+	// /api/anomaly-roster + /api/metering-points/{id}/anomaly-state surfaces.
+	// nil in early-boot / router unit tests that don't need alert routes.
+	AlertDeps *alert.HTTPDeps
+	// AlertTestFireDeps wires the D-19 test-fire endpoint. Separate from
+	// AlertDeps because it needs a River client closure for the auto-clear
+	// schedule. nil-guarded so non-River tests can still mount AlertDeps.
+	AlertTestFireDeps *alert.TestFireDeps
 
 	// FloorPlanDeps wires Plan 05-05/07's 12 floor-plan endpoints:
 	//   POST   /api/sites/{siteID}/floor-plans              (admin only)
@@ -364,6 +374,78 @@ func NewRouter(deps Deps) http.Handler {
 		// Mounted before SPA fallback (PITFALL #4).
 		// Plan 05-13 gap closure.
 		floorplan.RegisterRoutes(r, *deps.FloorPlanDeps)
+	}
+	if deps.AlertDeps != nil {
+		// Plan 06-04 alert center routes. D-11 viewer read-only enforced
+		// at the RequireAction layer:
+		//   GET    /api/alerts                 — admin + viewer
+		//   GET    /api/alerts/recent          — admin + viewer (bell + drawer)
+		//   GET    /api/alerts/{id}            — admin + viewer
+		//   POST   /api/alerts/{id}/ack        — admin only
+		//   POST   /api/alerts/{id}/snooze     — admin only
+		//   GET    /api/alerts/rules           — admin + viewer
+		//   POST   /api/alerts/rules           — admin only
+		//   PATCH  /api/alerts/rules/{id}      — admin only
+		//   POST   /api/alerts/rules/{id}/disable — admin only
+		//   POST   /api/alerts/rules/{id}/enable  — admin only
+		//   POST   /api/alerts/rules/{id}/test-fire — admin only (D-19)
+		//   GET    /api/anomaly-roster         — admin + viewer
+		//   GET    /api/metering-points/{id}/anomaly-state — admin + viewer
+		//   PATCH  /api/metering-points/{id}/anomaly-rules/{kind} — admin only
+		alertDeps := *deps.AlertDeps
+		r.Route("/api/alerts", func(rt chi.Router) {
+			rt.Group(func(g chi.Router) {
+				g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRead))
+				g.Get("/", alert.ListHandler(alertDeps))
+				g.Get("/recent", alert.RecentForDrawerHandler(alertDeps))
+				g.Get("/{id}", alert.GetHandler(alertDeps))
+			})
+			rt.Group(func(g chi.Router) {
+				g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertAck))
+				g.Post("/{id}/ack", alert.AckHandler(alertDeps))
+			})
+			rt.Group(func(g chi.Router) {
+				g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertSnooze))
+				g.Post("/{id}/snooze", alert.SnoozeHandler(alertDeps))
+			})
+			rt.Route("/rules", func(rr chi.Router) {
+				rr.Group(func(g chi.Router) {
+					g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRead))
+					g.Get("/", alert.ListRulesHandler(alertDeps))
+				})
+				rr.Group(func(g chi.Router) {
+					g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
+					g.Post("/", alert.CreateRuleHandler(alertDeps))
+				})
+				rr.Group(func(g chi.Router) {
+					g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleUpdate))
+					g.Patch("/{id}", alert.UpdateRuleHandler(alertDeps))
+				})
+				rr.Group(func(g chi.Router) {
+					g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleDisable))
+					g.Post("/{id}/disable", alert.DisableRuleHandler(alertDeps))
+				})
+				rr.Group(func(g chi.Router) {
+					g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleEnable))
+					g.Post("/{id}/enable", alert.EnableRuleHandler(alertDeps))
+				})
+				if deps.AlertTestFireDeps != nil {
+					rr.Group(func(g chi.Router) {
+						g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertTestFire))
+						g.Post("/{id}/test-fire", alert.TestFireHandler(*deps.AlertTestFireDeps))
+					})
+				}
+			})
+		})
+		r.Group(func(g chi.Router) {
+			g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRead))
+			g.Get("/api/anomaly-roster", alert.RosterHandler(alertDeps))
+			g.Get("/api/metering-points/{id}/anomaly-state", alert.MPAnomalyStateHandler(alertDeps))
+		})
+		r.Group(func(g chi.Router) {
+			g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
+			g.Patch("/api/metering-points/{id}/anomaly-rules/{kind}", alert.ToggleMPAnomalyHandler(alertDeps))
+		})
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without

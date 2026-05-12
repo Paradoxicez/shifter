@@ -123,6 +123,23 @@ const (
 	ActionSettingsUpdate Action = "settings.update"
 )
 
+// Phase 6 — Plan 06-04: alert-center actions (D-11 viewer read-only).
+// ActionAlertRead is the only action granted to RoleViewer; every mutating
+// action is admin-only. Server-side RBAC mirrors the UI: the drawer + page
+// hide Ack/Snooze for viewer, AND the handler 403s if a viewer forges the
+// request.
+const (
+	ActionAlertRead         Action = "alert.read"
+	ActionAlertAck          Action = "alert.ack"
+	ActionAlertSnooze       Action = "alert.snooze"
+	ActionAlertMute         Action = "alert.mute"
+	ActionAlertRuleCreate   Action = "alert.rule_create"
+	ActionAlertRuleUpdate   Action = "alert.rule_update"
+	ActionAlertRuleDisable  Action = "alert.rule_disable"
+	ActionAlertRuleEnable   Action = "alert.rule_enable"
+	ActionAlertTestFire     Action = "alert.test_fire"
+)
+
 // Phase 6 — Plan 06-05: fine-grained user-management actions. The Phase 1
 // umbrella ActionUserManage stays as the legacy "do anything with users"
 // admin gate. The new actions split that umbrella so each REST verb is
@@ -246,6 +263,18 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionUserResetPassword:    true,
 		ActionUserLogoutEverywhere: true,
 		ActionUserReadSelf:         true,
+
+		// Phase 6 — Plan 06-04: alert-center. Admin has every action; viewer
+		// has only ActionAlertRead below (D-11 read-only).
+		ActionAlertRead:        true,
+		ActionAlertAck:         true,
+		ActionAlertSnooze:      true,
+		ActionAlertMute:        true,
+		ActionAlertRuleCreate:  true,
+		ActionAlertRuleUpdate:  true,
+		ActionAlertRuleDisable: true,
+		ActionAlertRuleEnable:  true,
+		ActionAlertTestFire:    true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -275,6 +304,11 @@ var roleBundles = map[Role]map[Action]bool{
 		// the user-mgmt mutating actions are granted to viewer — every
 		// mutating endpoint 403s for viewer per D-26 + the umbrella RBAC test.
 		ActionUserReadSelf: true,
+
+		// Phase 6 — Plan 06-04: viewer can READ alerts (D-11). Every
+		// mutating alert action (ack, snooze, mute, rule create/update/
+		// disable/enable, test_fire) is intentionally absent — fail-closed.
+		ActionAlertRead: true,
 	},
 }
 

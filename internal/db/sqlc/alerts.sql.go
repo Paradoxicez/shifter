@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAlertsUnreadBySeverity = `-- name: CountAlertsUnreadBySeverity :one
+
+SELECT
+    count(*) FILTER (WHERE severity = 'critical' AND state IN ('firing','snoozed')) AS critical_count,
+    count(*) FILTER (WHERE severity = 'warning'  AND state IN ('firing','snoozed')) AS warning_count,
+    count(*) FILTER (WHERE severity = 'info'     AND state IN ('firing','snoozed')) AS info_count
+FROM alert
+WHERE muted = FALSE
+`
+
+type CountAlertsUnreadBySeverityRow struct {
+	CriticalCount int64
+	WarningCount  int64
+	InfoCount     int64
+}
+
+// ============================================================================
+// Phase 6 Plan 06-04 — alert center HTTP handlers (list / detail / bell
+// counts / drawer recent).
+// ============================================================================
+// Powers the bell badge — returns one row with critical/warning/info counts
+// of unread (firing|snoozed) non-muted alerts. The ListHandler returns this
+// alongside the page rows to save a second round-trip from the UI.
+func (q *Queries) CountAlertsUnreadBySeverity(ctx context.Context) (CountAlertsUnreadBySeverityRow, error) {
+	row := q.db.QueryRow(ctx, countAlertsUnreadBySeverity)
+	var i CountAlertsUnreadBySeverityRow
+	err := row.Scan(&i.CriticalCount, &i.WarningCount, &i.InfoCount)
+	return i, err
+}
+
 const getInstallDisplayName = `-- name: GetInstallDisplayName :one
 SELECT display_name
 FROM install_identity
@@ -531,6 +561,64 @@ func (q *Queries) ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]Li
 			&i.GatewayLabel,
 			&i.GatewayLastSeenAt,
 			&i.GatewayOffline,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentAlertsForDrawer = `-- name: ListRecentAlertsForDrawer :many
+SELECT a.id, a.rule_id, a.rule_kind, a.severity, a.state, a.payload, a.fired_at,
+       a.target_entity_type, a.target_entity_id, a.is_test
+FROM alert a
+WHERE a.state IN ('firing','acknowledged','snoozed')
+  AND a.muted = FALSE
+ORDER BY
+    CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END ASC,
+    a.fired_at DESC
+LIMIT 10
+`
+
+type ListRecentAlertsForDrawerRow struct {
+	ID               pgtype.UUID
+	RuleID           pgtype.UUID
+	RuleKind         string
+	Severity         string
+	State            string
+	Payload          []byte
+	FiredAt          pgtype.Timestamptz
+	TargetEntityType string
+	TargetEntityID   pgtype.UUID
+	IsTest           bool
+}
+
+// Top 10 currently-active alerts for the slide-over drawer (UI-SPEC §Surface 1).
+// Sort: critical > warning > info, then most-recent first within each tier.
+func (q *Queries) ListRecentAlertsForDrawer(ctx context.Context) ([]ListRecentAlertsForDrawerRow, error) {
+	rows, err := q.db.Query(ctx, listRecentAlertsForDrawer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentAlertsForDrawerRow
+	for rows.Next() {
+		var i ListRecentAlertsForDrawerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RuleID,
+			&i.RuleKind,
+			&i.Severity,
+			&i.State,
+			&i.Payload,
+			&i.FiredAt,
+			&i.TargetEntityType,
+			&i.TargetEntityID,
+			&i.IsTest,
 		); err != nil {
 			return nil, err
 		}

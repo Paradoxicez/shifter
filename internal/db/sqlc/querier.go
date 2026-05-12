@@ -65,6 +65,14 @@ type Querier interface {
 	// D-14: valid_to = swap.confirm_time (operator click) — the closing side of
 	// a swap. Idempotent guard: only closes a still-open binding.
 	CloseBinding(ctx context.Context, arg CloseBindingParams) (Binding, error)
+	// ============================================================================
+	// Phase 6 Plan 06-04 — alert center HTTP handlers (list / detail / bell
+	// counts / drawer recent).
+	// ============================================================================
+	// Powers the bell badge — returns one row with critical/warning/info counts
+	// of unread (firing|snoozed) non-muted alerts. The ListHandler returns this
+	// alongside the page rows to save a second round-trip from the UI.
+	CountAlertsUnreadBySeverity(ctx context.Context) (CountAlertsUnreadBySeverityRow, error)
 	// Phase 6 metrics tile + Phase 2 tests. Time-bounded so the tile can show
 	// "X swaps in the last 7 days" without scanning the whole table.
 	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
@@ -527,6 +535,9 @@ type Querier interface {
 	// battery_pct and rssi come from the latest measurement row for the active
 	// metering point (measurement has no device_id per DATA-01 invariant).
 	ListPlacementsByPlan(ctx context.Context, floorPlanID pgtype.UUID) ([]ListPlacementsByPlanRow, error)
+	// Top 10 currently-active alerts for the slide-over drawer (UI-SPEC §Surface 1).
+	// Sort: critical > warning > info, then most-recent first within each tier.
+	ListRecentAlertsForDrawer(ctx context.Context) ([]ListRecentAlertsForDrawerRow, error)
 	// Plan 02-08 MP detail "recent uplinks" tab + Phase 4 DETL-01 chart preload.
 	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
 	// can't accidentally page through years of telemetry.

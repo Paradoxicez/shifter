@@ -393,6 +393,15 @@ var serveCmd = &cobra.Command{
 			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
 		})
 
+		// Phase 6 — Plan 06-04 (D-19): test-fire auto-clear worker. One-shot
+		// jobs scheduled by TestFireHandler 60s in the future. Distinct from
+		// the periodic evaluators — no PeriodicJob entry.
+		river.AddWorker(riverWorkers, &alert.TestFireClearWorker{
+			Pool:  pool,
+			Store: alertStore,
+			Log:   log.With("component", "alert_test_fire_clear"),
+		})
+
 		// Build cron schedule for the audit prune. Install timezone is
 		// pulled from install_identity (singleton id=1) so the operator-
 		// chosen tz at install time drives the schedule. Falls back to
@@ -560,6 +569,29 @@ var serveCmd = &cobra.Command{
 				Store:      userStore,
 				SessionMgr: sm,
 				Log:        log.With("component", "user"),
+			},
+			AlertDeps: &alert.HTTPDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Rules:      alertRules,
+				Alerts:     alertStore,
+				Log:        log.With("component", "alert.handler"),
+			},
+			AlertTestFireDeps: &alert.TestFireDeps{
+				HTTPDeps: alert.HTTPDeps{
+					Pool:       pool,
+					SessionMgr: sm,
+					Rules:      alertRules,
+					Alerts:     alertStore,
+					Log:        log.With("component", "alert.test_fire"),
+				},
+				EnqueueClear: func(ctx context.Context, tx pgx.Tx, alertID uuid.UUID, scheduledAt time.Time) error {
+					_, err := riverClient.InsertTx(ctx, tx,
+						alert.TestFireClearArgs{AlertID: alertID},
+						&river.InsertOpts{ScheduledAt: scheduledAt, MaxAttempts: 3},
+					)
+					return err
+				},
 			},
 			SPA: httpapi.SPAHandler(),
 		})

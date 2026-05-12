@@ -150,6 +150,34 @@ func (h *Hub) dispatch(payload []byte) {
 	}
 }
 
+// Publish fans an arbitrary JSON payload to every subscriber that requested
+// the given topic. Unlike dispatch (which auto-routes by metering_point_id),
+// Publish takes the topic explicitly — Plan 06-04 alert workers call this
+// with topic=AlertTopic to push fire / clear events onto subscribers.
+//
+// Non-blocking sends (T-04-02-01 backpressure policy): if a subscriber's
+// channel is full the payload is dropped and the subscriber's dropped
+// counter is incremented. The same WARN-every-10-drops cadence applies.
+func (h *Hub) Publish(topic Topic, payload []byte) {
+	topicStr := string(topic)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, sub := range h.subs {
+		if _, ok := sub.topics[topicStr]; !ok {
+			continue
+		}
+		select {
+		case sub.ch <- payload:
+		default:
+			sub.dropped++
+			if sub.dropped%10 == 0 {
+				h.log.Warn("events: dropping payload to slow subscriber",
+					"conn_id", sub.id, "dropped", sub.dropped, "topic", topicStr)
+			}
+		}
+	}
+}
+
 // topicSet converts a slice of topic strings into a lookup map.
 func topicSet(topics []string) map[string]struct{} {
 	m := make(map[string]struct{}, len(topics))
