@@ -1,10 +1,13 @@
 /**
  * Plan 06-04 — Add Rule dialog (UI-SPEC §"Add Rule dialog — 5 steps").
+ * Plan 07-10 — Phase 7 extensions:
+ *   - Profile-aware rule kind filtering by anomaly_compatibility
+ *   - "Test against last 30 days" backtest button + sparkline result panel
  *
  * Steps:
  *  1. Scope         — SKIPPED when invoked with meteringPointId/siteId
- *  2. Kind
- *  3. Conditions
+ *  2. Kind          — filtered by anomaly_compatibility (Phase 7)
+ *  3. Conditions    — includes backtest button below rule config (Phase 7)
  *  4. Severity + Cooldown + Notes
  *  5. Review        — Save + Test fire button
  *
@@ -14,8 +17,11 @@
  * as visual section headers so the contract with UI-SPEC remains stable.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { useMutation } from '@tanstack/react-query'
+import { Bar, BarChart } from 'recharts'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -34,8 +40,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useCreateRuleMutation, useTestFireMutation } from '@/hooks/useAlerts'
+import { runBacktest } from '@/lib/backtest'
+import type { BacktestResponse } from '@/lib/backtest'
 
 export interface AddRuleDialogProps {
   open: boolean
@@ -43,21 +52,40 @@ export interface AddRuleDialogProps {
   /** When set, step 1 (Scope) is skipped — UI-SPEC D-18 prefilled-from-MP entry */
   meteringPointId?: string
   siteId?: string
+  /**
+   * Plan 07-10 D-42: anomaly_compatibility of the MP's bound device profile.
+   * Drives which rule kinds are visible in the Kind dropdown.
+   * - 'full'        → all rule kinds available (default)
+   * - 'limited'     → anomaly_p95 + anomaly_iqr available; anomaly_quiet_hour hidden
+   * - 'unsupported' → all anomaly rule kinds hidden; banner shown
+   * - undefined     → treated as 'full' (backward compat for callers without profile)
+   */
+  anomalyCompatibility?: 'full' | 'limited' | 'unsupported'
 }
 
-const RULE_KINDS = [
+// Base rule kinds (non-anomaly) always available.
+const BASE_RULE_KINDS = [
   'threshold_instantaneous',
   'threshold_hourly',
   'threshold_daily',
   'offline_device',
-  'anomaly_p95',
-  'anomaly_iqr',
-  'anomaly_quiet_hour',
+  'gateway_offline',
+  'battery_low',
+  'reverse_flow_increase',
 ] as const
+
+const ANOMALY_ALL = ['anomaly_p95', 'anomaly_iqr', 'anomaly_quiet_hour'] as const
+const ANOMALY_LIMITED = ['anomaly_p95', 'anomaly_iqr'] as const
 
 const SEVERITIES = ['critical', 'warning', 'info'] as const
 
-export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: AddRuleDialogProps) {
+export function AddRuleDialog({
+  open,
+  onOpenChange,
+  meteringPointId,
+  siteId,
+  anomalyCompatibility,
+}: AddRuleDialogProps) {
   const [ruleKind, setRuleKind] = useState<string>('threshold_instantaneous')
   const [scopeKind, setScopeKind] = useState<string>(
     meteringPointId ? 'metering_point' : siteId ? 'site' : 'global',
@@ -73,8 +101,24 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
   const createRule = useCreateRuleMutation()
   const testFire = useTestFireMutation()
 
+  // Plan 07-10: backtest mutation — calls POST /api/alerts/backtest read-only.
+  const backtestMutation = useMutation({
+    mutationFn: ({ kind, mpId }: { kind: string; mpId: string }) =>
+      runBacktest(kind, mpId),
+  })
+
   // Track if scope step is skipped (prefilled entry from MP/Site detail).
   const scopePrefilled = Boolean(meteringPointId || siteId)
+
+  // Plan 07-10 D-42: compute visible rule kinds based on anomaly_compatibility.
+  const visibleKinds = useMemo(() => {
+    const compat = anomalyCompatibility ?? 'full'
+    if (compat === 'unsupported') return [...BASE_RULE_KINDS]
+    if (compat === 'limited') return [...BASE_RULE_KINDS, ...ANOMALY_LIMITED]
+    return [...BASE_RULE_KINDS, ...ANOMALY_ALL]
+  }, [anomalyCompatibility])
+
+  const isUnsupported = anomalyCompatibility === 'unsupported'
 
   const reset = () => {
     setRuleKind('threshold_instantaneous')
@@ -86,6 +130,7 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
     setCooldown('900')
     setName('')
     setNotes('')
+    backtestMutation.reset()
   }
 
   const onSave = async () => {
@@ -134,6 +179,13 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
     }
   }
 
+  // Plan 07-10: run backtest for the currently-selected rule kind + MP.
+  const onRunBacktest = () => {
+    const mpId = meteringPointId ?? ''
+    if (!mpId) return
+    backtestMutation.mutate({ kind: ruleKind, mpId })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -164,17 +216,27 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
             </section>
           ) : null}
 
-          {/* Step 2 — Kind */}
+          {/* Step 2 — Kind (filtered by anomaly_compatibility per Plan 07-10 D-42) */}
           <section data-step="2">
             <h3 className="text-sm font-semibold">
               Step {scopePrefilled ? '1' : '2'} · Kind
             </h3>
+
+            {/* Plan 07-10: unsupported profile banner */}
+            {isUnsupported ? (
+              <Alert variant="default" className="mt-2">
+                <AlertDescription>
+                  Anomaly detection is not available for this device type.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
             <Select value={ruleKind} onValueChange={setRuleKind}>
               <SelectTrigger>
                 <SelectValue placeholder="Rule kind" />
               </SelectTrigger>
               <SelectContent>
-                {RULE_KINDS.map((k) => (
+                {visibleKinds.map((k) => (
                   <SelectItem key={k} value={k}>
                     {k}
                   </SelectItem>
@@ -223,6 +285,27 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
                 />
               </div>
             </div>
+
+            {/* Plan 07-10: backtest button + result panel (anomaly rules only, when MP is known) */}
+            {meteringPointId ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onRunBacktest}
+                  disabled={backtestMutation.isPending}
+                >
+                  Test against last 30 days
+                </Button>
+
+                {backtestMutation.isPending && <Skeleton className="h-12" />}
+
+                {backtestMutation.data && (
+                  <BacktestResultPanel result={backtestMutation.data} />
+                )}
+              </div>
+            ) : null}
           </section>
 
           {/* Step 4 — Severity + Cooldown + Notes */}
@@ -296,5 +379,35 @@ export function AddRuleDialog({ open, onOpenChange, meteringPointId, siteId }: A
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ── BacktestResultPanel ──────────────────────────────────────────────────────
+
+/**
+ * Renders the backtest result: fire count headline + 30-bar sparkline.
+ * Zero-fires case shows the "Defaults may be well-tuned for this meter." copy.
+ */
+function BacktestResultPanel({ result }: { result: BacktestResponse }) {
+  return (
+    <div className="mt-1 rounded-md border border-border p-2">
+      <p className="text-sm">
+        {result.fires_count} fires in the last 30 days
+        {result.fires_count === 0 ? (
+          <span className="text-muted-foreground">
+            {' '}— this rule would not have fired. Defaults may be well-tuned for this meter.
+          </span>
+        ) : null}
+      </p>
+      <BarChart
+        width={300}
+        height={48}
+        data={result.daily_fires}
+        margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+        aria-label="Daily fire counts over the last 30 days"
+      >
+        <Bar dataKey="count" />
+      </BarChart>
+    </div>
   )
 }
