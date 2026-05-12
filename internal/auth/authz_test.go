@@ -168,6 +168,23 @@ func TestAuthz_CodecTestRun_AdminOnly(t *testing.T) {
 	require.False(t, Can(viewer, ActionCodecTestRun, nil), "viewer must NOT be able to codec.test_run (T-07-07-08)")
 }
 
+// TestAuthz_Catalog_AdminCanAll — Plan 07-04 T-07-04-01:
+// Admin can perform all 3 catalog actions; viewer can only read.
+// ActionCatalogRead is viewer-accessible (both roles); ActionCatalogImport
+// and ActionCatalogUpdate are admin-only (T-07-04-01 mitigation).
+func TestAuthz_Catalog_AdminCanAll(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	viewer := &User{ID: "u2", Role: "viewer"}
+	// Admin can read, import, and update.
+	require.True(t, Can(admin, ActionCatalogRead, nil), "admin must be able to catalog.read")
+	require.True(t, Can(admin, ActionCatalogImport, nil), "admin must be able to catalog.import")
+	require.True(t, Can(admin, ActionCatalogUpdate, nil), "admin must be able to catalog.update")
+	// Viewer can read but NOT import or update (T-07-04-01).
+	require.True(t, Can(viewer, ActionCatalogRead, nil), "viewer must be able to catalog.read (read-only)")
+	require.False(t, Can(viewer, ActionCatalogImport, nil), "viewer must NOT be able to catalog.import (T-07-04-01)")
+	require.False(t, Can(viewer, ActionCatalogUpdate, nil), "viewer must NOT be able to catalog.update (T-07-04-01)")
+}
+
 // TestAuthz_AlertActionsAdminOnlyExceptRead — Plan 06-04 D-11:
 // RoleAdmin has every alert.* action; RoleViewer has ActionAlertRead only.
 // Mutating actions (ack/snooze/mute/rule_create/update/disable/enable/

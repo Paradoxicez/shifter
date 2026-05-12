@@ -138,6 +138,28 @@ const (
 	ActionCodecTestRun Action = "codec.test_run"
 )
 
+// Phase 7 — Plan 07-04: Vendor Catalog HTTP API actions (V2-VEND-01).
+//
+// ActionCatalogRead is granted to admin + viewer — the catalog list and entry
+// detail are read-only surfaces that both roles can consume.
+//
+// ActionCatalogImport and ActionCatalogUpdate are admin-only (T-07-04-01
+// mitigation: viewer POSTing import/update returns 403 from RequireAction
+// before the handler runs; defense-in-depth).
+const (
+	// ActionCatalogRead gates GET /api/catalog and GET /api/catalog/{slug}.
+	// Admin + viewer allowed (read-only catalog browse).
+	ActionCatalogRead Action = "catalog.read"
+
+	// ActionCatalogImport gates POST /api/catalog/import.
+	// Admin-only — creates a new device_profile row + writes audit row.
+	ActionCatalogImport Action = "catalog.import"
+
+	// ActionCatalogUpdate gates POST /api/catalog/{profile_id}/update.
+	// Admin-only — applies per-field catalog diff + writes audit row.
+	ActionCatalogUpdate Action = "catalog.update"
+)
+
 // Gap closure Plan 06-12 — SETT-02: identity update (admin only).
 // GET /api/settings/identity uses ActionConnectionTest (any authed user).
 // PATCH /api/settings/identity uses ActionSettingsIdentityUpdate (admin only).
@@ -328,6 +350,13 @@ var roleBundles = map[Role]map[Action]bool{
 		// Phase 7 — Plan 07-07: codec sandbox test runner. Admin-only.
 		// T-07-07-08 mitigation: viewer CANNOT trigger codec execution.
 		ActionCodecTestRun: true,
+
+		// Phase 7 — Plan 07-04: Vendor Catalog API. Admin has all 3 actions.
+		// ActionCatalogRead is also granted to RoleViewer below (read-only browse).
+		// ActionCatalogImport + ActionCatalogUpdate are admin-only (T-07-04-01).
+		ActionCatalogRead:   true,
+		ActionCatalogImport: true,
+		ActionCatalogUpdate: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -371,6 +400,11 @@ var roleBundles = map[Role]map[Action]bool{
 		// ActionBackupRun and ActionBackupConfigure are intentionally absent —
 		// viewer cannot trigger a backup or change backup thresholds.
 		ActionBackupRead: true,
+
+		// Phase 7 — Plan 07-04: viewer can READ the vendor catalog (catalog list
+		// + entry detail). ActionCatalogImport and ActionCatalogUpdate are
+		// intentionally absent — fail-closed default returns false (T-07-04-01).
+		ActionCatalogRead: true,
 	},
 }
 

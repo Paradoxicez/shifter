@@ -168,6 +168,29 @@ const (
 	ActionSettingsIdentityUpdate = "settings.identity_update"
 )
 
+// Phase 7 — Plan 07-04: catalog profile mutation audit constants.
+// These strings MUST exactly mirror the CHECK literals added by
+// migration 0051_audit_vocab_catalog.up.sql — any drift = 23514 at write.
+//
+// AuditActionCatalogProfileImported fires when an operator calls
+// POST /api/catalog/import (creates a new device_profile row from catalog).
+//
+// AuditActionCatalogProfileUpdated fires when an operator calls
+// POST /api/catalog/{profile_id}/update (applies per-field diff).
+//
+// AuditActionCatalogProfileCodecResynced is reserved for future use when
+// the drift-check runner explicitly re-syncs a codec outside the import/
+// update flows (e.g. a manual admin tool action).
+const (
+	AuditActionCatalogProfileImported     = "catalog.profile.imported"
+	AuditActionCatalogProfileUpdated      = "catalog.profile.updated"
+	AuditActionCatalogProfileCodecResynced = "catalog.profile.codec_resynced"
+)
+
+// Phase 7 — Plan 07-04: device_profile entity type reuse.
+// Catalog mutations use EntityTypeDeviceProfile (already defined above).
+// No new entity type is needed — the catalog action rows target device_profile rows.
+
 // Gap closure Plan 06-12 — SETT-02: install_identity entity type.
 // Used as EntityType in audit.Entry for identity update rows.
 const (
