@@ -16,6 +16,9 @@ import (
 
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/db"
+	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
+	"github.com/shifter-io/shifter/internal/floorplan"
+	mapapi "github.com/shifter-io/shifter/internal/map"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/swap"
@@ -309,4 +312,80 @@ func TestRouter_SwapInheritsMeteringpointMiddleware(t *testing.T) {
 	// (outside the subtree), this assertion would fail loudly.
 	require.NotEmpty(t, res.Header.Get("X-Test-MP-Middleware"),
 		"swap route does not inherit metering-points middleware — check router.go for a sibling-mount regression")
+}
+
+// TestRouter_MapRouteMounted — Plan 05-13 gap-1 closure. When MapDeps is
+// non-nil, GET /api/map/data routes through auth.RequireAction (returns 401
+// unauth). When MapDeps is nil, the route is absent → 404. Mirrors the
+// SwapDeps / ProfileDeps nil-guard pattern at lines 109-194.
+func TestRouter_MapRouteMounted(t *testing.T) {
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	seedAdminForRouterTest(t, pool, "map-mount")
+	sm := auth.NewSessionManager(pool, true, time.Hour, 24*time.Hour)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	depsWithMap := Deps{
+		Pool: pool, SessionMgr: sm, Log: logger,
+		MapDeps: &mapapi.Deps{Pool: pool, Logger: logger, SessionMgr: sm},
+	}
+	router := NewRouter(depsWithMap)
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/api/map/data")
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode,
+		"GET /api/map/data must reach RequireAction — 401 unauth (NOT 404 unmounted)")
+
+	depsNil := Deps{Pool: pool, SessionMgr: sm, Log: logger}
+	router2 := NewRouter(depsNil)
+	srv2 := httptest.NewServer(router2)
+	t.Cleanup(srv2.Close)
+	res2, err := http.Get(srv2.URL + "/api/map/data")
+	require.NoError(t, err)
+	res2.Body.Close()
+	require.Equal(t, http.StatusNotFound, res2.StatusCode,
+		"nil MapDeps must NOT mount map routes — 404 expected")
+}
+
+// TestRouter_FloorPlanRouteMounted — Plan 05-13 gap-2 closure. When
+// FloorPlanDeps is non-nil, GET /api/sites/{id}/floor-plans routes through
+// auth.RequireAction (returns 401 unauth). When FloorPlanDeps is nil, the
+// route is absent → 404.
+func TestRouter_FloorPlanRouteMounted(t *testing.T) {
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	seedAdminForRouterTest(t, pool, "floor-plan-mount")
+	sm := auth.NewSessionManager(pool, true, time.Hour, 24*time.Hour)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	someSiteUUID := "00000000-0000-0000-0000-000000000001"
+
+	depsWithFP := Deps{
+		Pool: pool, SessionMgr: sm, Log: logger,
+		FloorPlanDeps: &floorplan.Deps{
+			Pool:       pool,
+			Queries:    sqlc.New(pool),
+			SessionMgr: sm,
+			ImageRoot:  t.TempDir(),
+		},
+	}
+	router := NewRouter(depsWithFP)
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/api/sites/" + someSiteUUID + "/floor-plans")
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode,
+		"GET /api/sites/{id}/floor-plans must reach RequireAction — 401 unauth (NOT 404 unmounted)")
+
+	depsNil := Deps{Pool: pool, SessionMgr: sm, Log: logger}
+	router2 := NewRouter(depsNil)
+	srv2 := httptest.NewServer(router2)
+	t.Cleanup(srv2.Close)
+	res2, err := http.Get(srv2.URL + "/api/sites/" + someSiteUUID + "/floor-plans")
+	require.NoError(t, err)
+	res2.Body.Close()
+	require.Equal(t, http.StatusNotFound, res2.StatusCode,
+		"nil FloorPlanDeps must NOT mount floor-plan routes — 404 expected")
 }
