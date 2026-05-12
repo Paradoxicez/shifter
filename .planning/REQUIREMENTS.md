@@ -152,10 +152,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **OPS-02**: Project ships a TimescaleDB-aware logical backup script that backs up the database and rsyncs the floor-plan image volume
 - [x] **OPS-03**: Backup destination is configurable (local filesystem path or S3-compatible URL)
 - [x] **OPS-04**: Restore procedure is tested in CI (round-trip backup → fresh DB → restore → smoke test)
-- [ ] **OPS-05**: Container logs use the `json-file` driver with size and file-count caps configured by default
-- [ ] **OPS-06**: All secrets (DB password, ChirpStack API token, session secret) are mounted via Docker Compose `secrets`, not passed via `.env`
-- [ ] **OPS-07**: All container image tags are pinned (no `:latest`) — both in the bundle and in the external compose
-- [ ] **OPS-08**: Project ships an upgrade runbook with rollback procedure pinned per Shifter release
+- [x] **OPS-05**: Container logs use the `json-file` driver with size and file-count caps configured by default
+- [x] **OPS-06**: All secrets (DB password, ChirpStack API token, session secret) are mounted via Docker Compose `secrets`, not passed via `.env`
+- [x] **OPS-07**: All container image tags are pinned (no `:latest`) — both in the bundle and in the external compose
+- [x] **OPS-08**: Project ships an upgrade runbook with rollback procedure pinned per Shifter release
 
 ### UX Conventions
 
@@ -317,10 +317,10 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | OPS-02 | Phase 6 | Complete |
 | OPS-03 | Phase 6 | Complete |
 | OPS-04 | Phase 6 | Complete |
-| OPS-05 | Phase 6 | Pending |
-| OPS-06 | Phase 6 | Pending |
-| OPS-07 | Phase 6 | Pending |
-| OPS-08 | Phase 6 | Pending |
+| OPS-05 | Phase 6 | Complete |
+| OPS-06 | Phase 6 | Complete |
+| OPS-07 | Phase 6 | Complete |
+| OPS-08 | Phase 6 | Complete |
 | UX-01 | Phase 1 | Complete |
 | UX-02 | Phase 1 | Complete |
 | UX-03 | Phase 3 | Complete |
