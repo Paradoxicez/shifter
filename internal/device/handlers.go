@@ -1024,9 +1024,39 @@ func decommissionDevice(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		// D-25: Decommissioned devices auto-remove from any floor plan they were
+		// pinned to. Same pgx.Tx as the device UPDATE so a rollback restores BOTH.
+		placementBefore, placementErr := q.GetPlacementByDevice(r.Context(), pgUUID(id))
+		hadPlacement := placementErr == nil && placementBefore.DeviceID.Valid
+		if hadPlacement {
+			if err := q.DeletePlacementByDevice(r.Context(), pgUUID(id)); err != nil {
+				internalError(deps.Log, w, "delete placement on decommission", err)
+				return
+			}
+			// Audit the placement removal as a distinct entry so Phase 6 audit
+			// browse surfaces both the decommission and the unpinning.
+			if err := audit.WriteEntry(r.Context(), tx, audit.Entry{
+				UserID:     mustParseUUID(user.ID),
+				Action:     audit.ActionPlacementRemove,
+				EntityType: audit.EntityTypePlacement,
+				EntityID:   uuid.UUID(placementBefore.DeviceID.Bytes),
+				Before: map[string]any{
+					"floor_plan_id": uuid.UUID(placementBefore.FloorPlanID.Bytes).String(),
+					"x_frac":        placementBefore.XFrac,
+					"y_frac":        placementBefore.YFrac,
+				},
+				After:     map[string]any{"reason": "device_decommission"},
+				RequestID: middleware.GetReqID(r.Context()),
+			}); err != nil {
+				internalError(deps.Log, w, "audit placement remove", err)
+				return
+			}
+		}
+
 		after := map[string]any{
-			"decommissioned_at":  timestamptzText(decommissioned.DecommissionedAt),
-			"closed_binding":     bindingFound,
+			"decommissioned_at": timestamptzText(decommissioned.DecommissionedAt),
+			"closed_binding":    bindingFound,
+			"placement_removed": hadPlacement,
 		}
 		if bindingFound {
 			after["binding_id"] = uuid.UUID(bindingID.Bytes).String()

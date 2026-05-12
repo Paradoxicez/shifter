@@ -225,6 +225,8 @@ type Querier interface {
 	// re-insert. Wrapped in a tx with the subsequent CreateMapping calls so
 	// the editor never observes a half-saved state.
 	DeleteMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) error
+	// Called by both right-click remove AND device decommission (D-25).
+	DeletePlacementByDevice(ctx context.Context, deviceID pgtype.UUID) error
 	// D-07: per-profile expected_interval_s; online = last_seen_at within 2x interval.
 	// Joins device → device_profile → binding → metering_point to filter by utility.
 	// $1 = utility_class text
@@ -277,6 +279,9 @@ type Querier interface {
 	// Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
 	// (`/profiles/axioma_w1`).
 	GetDeviceProfileBySlug(ctx context.Context, slug string) (DeviceProfile, error)
+	// Helper for the same-site integrity check: returns the device's site via
+	// its active binding's metering_point.
+	GetDeviceSiteID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	GetFloorPlan(ctx context.Context, id pgtype.UUID) (FloorPlan, error)
 	GetGateway(ctx context.Context, id pgtype.UUID) (Gateway, error)
 	// Lowercase EUI lookup (matches Phase 2 dev_eui pattern). Caller MUST pass
@@ -314,6 +319,7 @@ type Querier interface {
 	// Plan 15 reentrant wizard: GET /api/install/state returns the singleton row,
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
+	GetPlacementByDevice(ctx context.Context, deviceID pgtype.UUID) (DeviceFloorPlanPlacement, error)
 	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
 	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
@@ -418,6 +424,11 @@ type Querier interface {
 	ListMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) ([]DeviceProfileMapping, error)
 	// Returns metering points in scope (all / site / single) for the meter_rows table.
 	ListMetersInScope(ctx context.Context, arg ListMetersInScopeParams) ([]ListMetersInScopeRow, error)
+	// Returns placements joined with the device + device_profile data needed for
+	// client-side D-22 health computation (state colors) without a follow-up call.
+	// battery_pct and rssi come from the latest measurement row for the active
+	// metering point (measurement has no device_id per DATA-01 invariant).
+	ListPlacementsByPlan(ctx context.Context, floorPlanID pgtype.UUID) ([]ListPlacementsByPlanRow, error)
 	// Plan 02-08 MP detail "recent uplinks" tab + Phase 4 DETL-01 chart preload.
 	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
 	// can't accidentally page through years of telemetry.
@@ -602,6 +613,8 @@ type Querier interface {
 	// mis-classify; the CHECK constraint still bounds the values to water |
 	// electricity).
 	UpdateMP(ctx context.Context, arg UpdateMPParams) (MeteringPoint, error)
+	// Drag-to-nudge: only x_frac / y_frac change; floor_plan_id stays.
+	UpdatePlacement(ctx context.Context, arg UpdatePlacementParams) (DeviceFloorPlanPlacement, error)
 	UpdateReportPDFStatus(ctx context.Context, arg UpdateReportPDFStatusParams) error
 	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
 	// moving a site between parents is a separate "reparent" flow with audit
@@ -617,6 +630,9 @@ type Querier interface {
 	UpsertChirpStackConnection(ctx context.Context, arg UpsertChirpStackConnectionParams) (ChirpstackConnection, error)
 	// Plan 15 wizard finish + Phase 5 settings page edit.
 	UpsertInstallIdentity(ctx context.Context, arg UpsertInstallIdentityParams) (InstallIdentity, error)
+	// INSERT or UPDATE — device_id is PK (a device pins to one plan at a time).
+	// ON CONFLICT on device_id moves the pin to the new plan (SITE-04 UPSERT).
+	UpsertPlacement(ctx context.Context, arg UpsertPlacementParams) (DeviceFloorPlanPlacement, error)
 	// Audit Log (D-22 + D-23 + D-24 + AUDIT-01). The audit_log table is
 	// INSERT-ONLY at the DB layer (0016 trigger raises `audit_log is INSERT-ONLY`
 	// on UPDATE / DELETE — T-02-04-02 mitigation). Every state-changing action on
