@@ -27,6 +27,7 @@ const ProfileEditorRoute = lazy(() => import('@/routes/profiles/$id'))
 const AdminImportsPage = lazy(() => import('@/routes/admin/imports'))
 const ImportJobDetailPage = lazy(() => import('@/routes/admin/imports/$jobId'))
 const MapPage = lazy(() => import('@/routes/map'))
+const ReportsPage = lazy(() => import('@/routes/reports'))
 
 /**
  * Phase 1 router skeleton.
@@ -182,6 +183,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <MapPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'reports',
+        element: (
+          <Suspense fallback={null}>
+            <ReportsPage />
           </Suspense>
         ),
       },
