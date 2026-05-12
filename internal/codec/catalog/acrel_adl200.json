@@ -1,0 +1,17 @@
+{
+  "slug": "acrel_adl200",
+  "name": "Acrel ADL200",
+  "vendor": "Acrel",
+  "family": "ADL200",
+  "capabilities": ["cumulative", "instant_power", "multi_phase", "power_quality"],
+  "version": "1.0.0",
+  "codec_js_path": "acrel_family.js",
+  "counter_modulus": 4294967296,
+  "mac_version": "LORAWAN_1_0_3",
+  "region": null,
+  "expected_uplink_interval_seconds": 900,
+  "offline_threshold_multiplier": 2.0,
+  "anomaly_compatibility": "full",
+  "battery_curve": "linear_pct",
+  "vendor_has_separate_meter_serial": false
+}

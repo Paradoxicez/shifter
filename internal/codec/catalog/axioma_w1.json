@@ -1,0 +1,17 @@
+{
+  "slug": "axioma_w1",
+  "name": "Axioma Qalcosonic W1",
+  "vendor": "Axioma",
+  "family": "Qalcosonic W1",
+  "capabilities": ["cumulative", "flow_rate", "battery", "leak_detection"],
+  "version": "1.0.0",
+  "codec_js_path": "axioma_w1.js",
+  "counter_modulus": 4294967296,
+  "mac_version": "LORAWAN_1_0_3",
+  "region": null,
+  "expected_uplink_interval_seconds": 3600,
+  "offline_threshold_multiplier": 3.0,
+  "anomaly_compatibility": "full",
+  "battery_curve": "linear_pct",
+  "vendor_has_separate_meter_serial": false
+}

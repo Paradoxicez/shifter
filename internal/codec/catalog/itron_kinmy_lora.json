@@ -1,0 +1,17 @@
+{
+  "slug": "itron_kinmy_lora",
+  "name": "Itron Water Meter (KINMY LoRa Module)",
+  "vendor": "Itron",
+  "family": "KINMY LoRa Module",
+  "capabilities": ["cumulative", "leak_detection", "tamper_detection", "battery"],
+  "version": "1.0.0",
+  "codec_js_path": "itron_kinmy_lora.js",
+  "counter_modulus": 4294967296,
+  "mac_version": "LORAWAN_1_0_3",
+  "region": null,
+  "expected_uplink_interval_seconds": 86400,
+  "offline_threshold_multiplier": 1.8,
+  "anomaly_compatibility": "limited",
+  "battery_curve": "li_socl2_3v6",
+  "vendor_has_separate_meter_serial": true
+}
