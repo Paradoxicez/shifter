@@ -280,6 +280,14 @@ type Device struct {
 	UpdatedAt        pgtype.Timestamptz
 }
 
+type DeviceFloorPlanPlacement struct {
+	DeviceID    pgtype.UUID
+	FloorPlanID pgtype.UUID
+	XFrac       float32
+	YFrac       float32
+	CreatedAt   pgtype.Timestamptz
+}
+
 type DeviceProfile struct {
 	ID                pgtype.UUID
 	Slug              string
@@ -309,6 +317,20 @@ type DeviceProfileMapping struct {
 	Position        int32
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+// Floor plan images per site (SITE-02/03). Multiple rows = multi-floor layout (D-16).
+type FloorPlan struct {
+	ID        pgtype.UUID
+	SiteID    pgtype.UUID
+	Label     string
+	SortOrder int32
+	// Relative path under /var/lib/shifter/floor-plans (D-18). Static serve via plan 05-07.
+	ImagePath  string
+	ImageW     int32
+	ImageH     int32
+	UploadedAt pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
 }
 
 type Gateway struct {

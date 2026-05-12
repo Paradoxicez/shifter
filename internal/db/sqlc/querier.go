@@ -89,6 +89,10 @@ type Querier interface {
 	// step (e.g. CommitSwap) doesn't race with the not-yet-persisted measurement
 	// row. Also useful for any caller that needs an MP's row count.
 	CountMeasurementsByMP(ctx context.Context, meteringPointID pgtype.UUID) (int64, error)
+	// Used by the PATCH replace-image handler to build the D-24 confirmation
+	// dialog copy: "Existing {N} pins will be kept at the same fractional
+	// positions on the new image."
+	CountPinsOnFloorPlan(ctx context.Context, floorPlanID pgtype.UUID) (int64, error)
 	// Device — physical LoRaWAN endpoint (D-15 + D-25 + DEV-09). dev_eui is the
 	// LoRaWAN-canonical 16-char lowercase hex string (CS uses lowercase across
 	// v4 gRPC + MQTT topics — Plan 01-12). Schema CHECK enforces both the
@@ -107,6 +111,14 @@ type Querier interface {
 	// seeded profiles cover Phase 2 — operator-authored profiles unlock in
 	// Phase 6). codec_js may be empty at creation; the seed routine fills it.
 	CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfileParams) (DeviceProfile, error)
+	// floor_plan.sql — Phase 5 SITE-02/03 (D-16 schema + D-18 image storage).
+	// Serves upload (CreateFloorPlan), listing (ListFloorPlansBySite), detail
+	// (GetFloorPlan), image replace (UpdateFloorPlanImage), rename (UpdateFloorPlanLabel),
+	// delete (DeleteFloorPlan), and pin-count (CountPinsOnFloorPlan).
+	// Upload handler inserts immediately after the image bytes are written to
+	// disk (before tx commit). sort_order defaults to the next slot; UNIQUE
+	// (site_id, sort_order) rejects duplicates with a 23505 error.
+	CreateFloorPlan(ctx context.Context, arg CreateFloorPlanParams) (FloorPlan, error)
 	// Gateway CRUD + stats cache + decommission. Phase 3 D-29..D-32.
 	//
 	// D-30 verbatim (user decision 2026-05-11): soft-delete in Postgres (via
@@ -201,6 +213,9 @@ type Querier interface {
 	// because the binding may already be closed when the operator decommissions
 	// (or vice versa); the application layer composes them.
 	DecommissionDevice(ctx context.Context, id pgtype.UUID) (Device, error)
+	// DELETE /api/floor-plans/:id. Cascades to device_floor_plan_placement (0033).
+	// Handler writes audit row inside the same tx before committing.
+	DeleteFloorPlan(ctx context.Context, id pgtype.UUID) error
 	// Called by FinishSetup after all four target tables are populated.
 	DeleteInstallState(ctx context.Context) error
 	// Single-row delete — used by Phase 6 admin actions; Phase 2's editor uses
@@ -262,6 +277,7 @@ type Querier interface {
 	// Plan 02-08 seed routine + Plan 02-08 profile editor URL routing
 	// (`/profiles/axioma_w1`).
 	GetDeviceProfileBySlug(ctx context.Context, slug string) (DeviceProfile, error)
+	GetFloorPlan(ctx context.Context, id pgtype.UUID) (FloorPlan, error)
 	GetGateway(ctx context.Context, id pgtype.UUID) (Gateway, error)
 	// Lowercase EUI lookup (matches Phase 2 dev_eui pattern). Caller MUST pass
 	// the lowercase form — the schema CHECK enforces it on storage.
@@ -366,6 +382,10 @@ type Querier interface {
 	//   $8 = offset_n INT
 	ListDevicesFiltered(ctx context.Context, arg ListDevicesFilteredParams) ([]ListDevicesFilteredRow, error)
 	ListExpiredReports(ctx context.Context) ([]ListExpiredReportsRow, error)
+	// Site detail — Floor plan tab. Ordered by sort_order then uploaded_at so
+	// ties resolve deterministically (upload order breaks ties within the same
+	// sort_order — though UNIQUE prevents true dupes within a site).
+	ListFloorPlansBySite(ctx context.Context, siteID pgtype.UUID) ([]FloorPlan, error)
 	// D-32 default view: hides archived rows. Phase 3 ships a stable
 	// created_at DESC ordering (the gateway list is small — ≤200 per page —
 	// and operator workflows expect "newest first"). The handler exposes
@@ -553,6 +573,15 @@ type Querier interface {
 	// queries — see device_profile_mappings.sql). cs_profile_id is intentionally
 	// NOT updatable here; only MarkProfileSyncedToChirpStack writes that column.
 	UpdateDeviceProfile(ctx context.Context, arg UpdateDeviceProfileParams) (DeviceProfile, error)
+	// PATCH /api/floor-plans/:id — replaces the image file while keeping the
+	// label/sort_order and ALL device_floor_plan_placement rows intact (D-24).
+	// Handler writes the new file, calls UpdateFloorPlanImage, then unlinks the
+	// old file on commit (on rollback the new file is unlinked).
+	UpdateFloorPlanImage(ctx context.Context, arg UpdateFloorPlanImageParams) (FloorPlan, error)
+	// PATCH /api/floor-plans/:id/label — renames + optionally reorders a plan.
+	// Conflict on UNIQUE (site_id, sort_order) if another plan already holds the
+	// new sort_order → handler returns 409.
+	UpdateFloorPlanLabel(ctx context.Context, arg UpdateFloorPlanLabelParams) (FloorPlan, error)
 	UpdateGateway(ctx context.Context, arg UpdateGatewayParams) (Gateway, error)
 	// Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
 	UpdateGatewayStatsCache(ctx context.Context, arg UpdateGatewayStatsCacheParams) error

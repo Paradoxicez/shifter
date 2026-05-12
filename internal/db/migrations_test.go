@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shifter-io/shifter/internal/testsupport"
 	"github.com/stretchr/testify/require"
 )
@@ -78,11 +79,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// 0028_cagg_yearly — four-level CAGG hierarchy). Bumped 28 → 29 in plan 05-02
 	// task 2 (0029_retention_config — singleton retention configuration table).
 	// Bumped 29 → 31 in plan 05-03 (0030_report + 0031_audit_vocab_phase5).
+	// Bumped 31 → 33 in plan 05-05 (0032_floor_plan + 0033_device_floor_plan_placement).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 31, version, "expected schema_migrations.version = 31 (latest after plan 05-03)")
+	require.Equal(t, 33, version, "expected schema_migrations.version = 33 (latest after plan 05-05)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.
@@ -178,7 +180,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 31, version)
+	require.Equal(t, 33, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -663,8 +665,8 @@ func TestPhase3Migrations_0018_Gateway_Apply(t *testing.T) {
 
 // TestPhase3Migrations_0018_Down — applies all migrations then rolls back
 // to before 0018 so the gateway table must disappear.
-// Plan 05-02 bumped the chain to 29, so the rollback distance is 12 steps:
-// 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
+// Plan 05-05 bumped the chain to 33, so the rollback distance is 14 steps:
+// 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
 func TestPhase3Migrations_0018_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -674,8 +676,8 @@ func TestPhase3Migrations_0018_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back twelve steps: 0029 → 0028 → ... → 0019 → 0018.
-	require.NoError(t, runMigrateSteps(t, pool, -12))
+	// Roll back fourteen steps: 0033 → 0032 → 0031 → 0030 → 0029 → ... → 0019 → 0018.
+	require.NoError(t, runMigrateSteps(t, pool, -14))
 
 	var exists bool
 	require.NoError(t, pool.QueryRow(ctx,
@@ -791,8 +793,8 @@ func TestPhase3Migrations_0019_ImportJob_Apply(t *testing.T) {
 
 // TestPhase3Migrations_0019_Down — roll back to before 0019; import_job and
 // import_job_row + both enums must be dropped.
-// Plan 05-02 bumped the chain to 29, so the rollback distance is 11 steps:
-// 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019. 0018 stays applied.
+// Plan 05-05 bumped the chain to 33, so the rollback distance is 13 steps:
+// 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019. 0018 stays applied.
 func TestPhase3Migrations_0019_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -802,8 +804,8 @@ func TestPhase3Migrations_0019_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back eleven steps: 0029 → 0028 → ... → 0019. 0018 (gateway) stays.
-	require.NoError(t, runMigrateSteps(t, pool, -11))
+	// Roll back thirteen steps: 0033 → 0032 → ... → 0019. 0018 (gateway) stays.
+	require.NoError(t, runMigrateSteps(t, pool, -13))
 
 	for _, table := range []string{"import_job", "import_job_row"} {
 		var exists bool
@@ -939,10 +941,10 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back to before 0020. Plan 05-03 bumped the chain to 31, so the
-	// rollback distance is 12 steps: 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020.
+	// Roll back to before 0020. Plan 05-05 bumped the chain to 33, so the
+	// rollback distance is 14 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020.
 	// 0019/0018 stay applied.
-	require.NoError(t, runMigrateSteps(t, pool, -12))
+	require.NoError(t, runMigrateSteps(t, pool, -14))
 
 	var userID string
 	require.NoError(t, pool.QueryRow(ctx,
@@ -978,8 +980,8 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 }
 
 // TestRunMigrations_RiverDownUpClean — 0024_river_tables round-trip test.
-// Applies all migrations (up to 31), rolls back 8 steps (0031→0030→0029→0028→0027→0026→0025→0024),
-// asserts river_job does NOT exist, then re-applies 8 steps, asserts it does.
+// Applies all migrations (up to 33), rolls back 10 steps (0033→0032→0031→0030→0029→0028→0027→0026→0025→0024),
+// asserts river_job does NOT exist, then re-applies 10 steps, asserts it does.
 // This pins the Pitfall #8 mitigation: River schema is managed by golang-migrate
 // so the install script does NOT need a separate `river migrate-up` step.
 func TestRunMigrations_RiverDownUpClean(t *testing.T) {
@@ -990,7 +992,7 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx := context.Background()
 
-	// Apply all migrations up to 31.
+	// Apply all migrations up to 33.
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
 	// Verify river_job exists before rollback.
@@ -1001,9 +1003,9 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, existsBefore, "river_job must exist after 0024 up")
 
-	// Roll back 8 steps: 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024.
-	// This takes us from v31 (audit_vocab_phase5) back before River (v23).
-	require.NoError(t, runMigrateSteps(t, pool, -8))
+	// Roll back 10 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024.
+	// This takes us from v33 (device_floor_plan_placement) back before River (v23).
+	require.NoError(t, runMigrateSteps(t, pool, -10))
 
 	// river_job must NOT exist after 0024 down.
 	var existsAfterDown bool
@@ -1013,8 +1015,8 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, existsAfterDown, "river_job must not exist after 0024 down")
 
-	// Re-apply 8 steps (0024 + 0025–0031).
-	require.NoError(t, runMigrateSteps(t, pool, 8))
+	// Re-apply 10 steps (0024 + 0025–0033).
+	require.NoError(t, runMigrateSteps(t, pool, 10))
 
 	// river_job must exist again after re-applying 0024.
 	var existsAfterUp bool
@@ -1032,8 +1034,8 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 }
 
 // TestRunMigrations_CAGGsDropClean — 0025–0029 CAGG + retention_config round-trip test.
-// Applies all migrations (up to 31), rolls back 7 steps (down 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025),
-// asserts continuous_aggregates count = 0 and retention_config absent, then re-applies (up 7 steps)
+// Applies all migrations (up to 33), rolls back 9 steps (down 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025),
+// asserts continuous_aggregates count = 0 and retention_config absent, then re-applies (up 9 steps)
 // and asserts continuous_aggregates count = 4 and retention_config present.
 //
 // This pins the WITH NO DATA / Pitfall #1 mitigation: each CAGG migration
@@ -1046,7 +1048,7 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx := context.Background()
 
-	// Apply all migrations up to 31.
+	// Apply all migrations up to 33.
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
 	// Verify 4 CAGGs exist before rollback.
@@ -1055,10 +1057,10 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 		`SELECT count(*) FROM timescaledb_information.continuous_aggregates`,
 	).Scan(&countBefore)
 	require.NoError(t, err)
-	require.Equal(t, 4, countBefore, "4 CAGGs must exist after migrations up to 31")
+	require.Equal(t, 4, countBefore, "4 CAGGs must exist after migrations up to 33")
 
-	// Roll back 7 steps: 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025.
-	require.NoError(t, runMigrateSteps(t, pool, -7))
+	// Roll back 9 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025.
+	require.NoError(t, runMigrateSteps(t, pool, -9))
 
 	// All 4 CAGGs must be gone after rolling back 0025–0029.
 	var countAfterDown int
@@ -1076,8 +1078,8 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, retentionGone, "retention_config must be dropped after 0029 down")
 
-	// Re-apply 0025–0031 (7 steps up).
-	require.NoError(t, runMigrateSteps(t, pool, 7))
+	// Re-apply 0025–0033 (9 steps up).
+	require.NoError(t, runMigrateSteps(t, pool, 9))
 
 	// All 4 CAGGs must reappear.
 	var countAfterUp int
@@ -1095,9 +1097,139 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, retentionBack, "retention_config must be recreated after 0029 re-applied")
 
-	// Schema version must be 31 after re-apply.
+	// Schema version must be 33 after re-apply.
 	var version int
 	err = pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 31, version, "schema_migrations.version must be 31 after re-apply")
+	require.Equal(t, 33, version, "schema_migrations.version must be 33 after re-apply")
+}
+
+// TestRunMigrations_FloorPlanCascadeFromSite — 0032+0033 cascade path.
+// INSERT site → floor_plan → device + device_floor_plan_placement,
+// then DELETE FROM site and assert both floor_plan and placement rows are gone.
+// Pins the ON DELETE CASCADE chain from site → floor_plan (0032) → placement (0033).
+func TestRunMigrations_FloorPlanCascadeFromSite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Seed: site → floor_plan.
+	var siteID, planID, profileID, devID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO site (name, timezone) VALUES ('fp-cascade-site', 'UTC') RETURNING id`,
+	).Scan(&siteID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO floor_plan (site_id, label, sort_order, image_path, image_w, image_h)
+		 VALUES ($1, 'Ground Floor', 0, 'test-uuid.png', 800, 600)
+		 RETURNING id`,
+		siteID,
+	).Scan(&planID))
+
+	// Seed: device profile → device → placement.
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = 'axioma_w1'`,
+	).Scan(&profileID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id)
+		 VALUES ('f0f0f0f0f0f0f001', 'fp-dev', $1)
+		 RETURNING id`,
+		profileID,
+	).Scan(&devID))
+	_, err := pool.Exec(ctx,
+		`INSERT INTO device_floor_plan_placement (device_id, floor_plan_id, x_frac, y_frac)
+		 VALUES ($1, $2, 0.25, 0.75)`,
+		devID, planID,
+	)
+	require.NoError(t, err, "placement insert must succeed")
+
+	// Verify both rows exist before the cascade.
+	var planCount, placementCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM floor_plan WHERE id = $1`, planID,
+	).Scan(&planCount))
+	require.Equal(t, 1, planCount, "floor_plan row must exist before site delete")
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM device_floor_plan_placement WHERE floor_plan_id = $1`, planID,
+	).Scan(&placementCount))
+	require.Equal(t, 1, placementCount, "placement row must exist before site delete")
+
+	// DELETE FROM site — cascades to floor_plan, which cascades to placement.
+	_, err = pool.Exec(ctx, `DELETE FROM site WHERE id = $1`, siteID)
+	require.NoError(t, err, "site delete must succeed")
+
+	// Both floor_plan and placement must be gone.
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM floor_plan WHERE id = $1`, planID,
+	).Scan(&planCount))
+	require.Equal(t, 0, planCount, "floor_plan must be deleted by ON DELETE CASCADE from site")
+
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM device_floor_plan_placement WHERE floor_plan_id = $1`, planID,
+	).Scan(&placementCount))
+	require.Equal(t, 0, placementCount, "placement must be deleted by ON DELETE CASCADE from floor_plan")
+}
+
+// TestRunMigrations_PlacementFractionalBounds_Rejected — 0033 CHECK constraint.
+// INSERT with x_frac=1.5 (out of [0,1]) must raise pgconn error code 23514
+// (check_violation). Pins the critical invariant that fractional coords are
+// always in [0,1] at the DB layer regardless of handler validation.
+func TestRunMigrations_PlacementFractionalBounds_Rejected(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	ctx := context.Background()
+	require.NoError(t, RunMigrations(ctx, pool, log))
+
+	// Seed minimum rows.
+	var siteID, planID, profileID, devID string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO site (name, timezone) VALUES ('fp-bounds-site', 'UTC') RETURNING id`,
+	).Scan(&siteID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO floor_plan (site_id, label, sort_order, image_path, image_w, image_h)
+		 VALUES ($1, 'Plan', 0, 'bounds-test.png', 400, 300)
+		 RETURNING id`,
+		siteID,
+	).Scan(&planID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = 'axioma_w1'`,
+	).Scan(&profileID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id)
+		 VALUES ('f0f0f0f0f0f0f002', 'bounds-dev', $1)
+		 RETURNING id`,
+		profileID,
+	).Scan(&devID))
+
+	// x_frac = 1.5 → must violate placement_x_frac_range (CHECK x_frac >= 0 AND x_frac <= 1).
+	_, err := pool.Exec(ctx,
+		`INSERT INTO device_floor_plan_placement (device_id, floor_plan_id, x_frac, y_frac)
+		 VALUES ($1, $2, 1.5, 0.5)`,
+		devID, planID,
+	)
+	require.Error(t, err, "x_frac=1.5 must be rejected by CHECK constraint")
+
+	// pgconn error code 23514 = check_violation.
+	var pgErr *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr,
+		"error must be a *pgconn.PgError: got %T %v", err, err)
+	require.Equal(t, "23514", pgErr.Code,
+		"error code must be 23514 (check_violation), got %s", pgErr.Code)
+
+	// y_frac = -0.1 → same constraint family.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO device_floor_plan_placement (device_id, floor_plan_id, x_frac, y_frac)
+		 VALUES ($1, $2, 0.5, -0.1)`,
+		devID, planID,
+	)
+	require.Error(t, err, "y_frac=-0.1 must be rejected by CHECK constraint")
+	var pgErr2 *pgconn.PgError
+	require.ErrorAs(t, err, &pgErr2)
+	require.Equal(t, "23514", pgErr2.Code)
 }
