@@ -17,14 +17,14 @@ files_modified:
   - internal/cli/root.go
   - internal/alert/alerts_prune_worker.go
   - internal/alert/alerts_prune_worker_test.go
-  - internal/db/migrations/0046_admin_prune_alerts.up.sql
-  - internal/db/migrations/0046_admin_prune_alerts.down.sql
+  - internal/db/migrations/0047_audit_vocab_alert_prune.up.sql
+  - internal/db/migrations/0047_audit_vocab_alert_prune.down.sql
   - internal/cli/serve.go
   - internal/http/health.go
   - internal/http/health_test.go
   - internal/compose/conventions_test.go
 autonomous: true
-requirements: [OPS-05, OPS-06, OPS-07, OPS-08, AUDIT-02]
+requirements: [OPS-05, OPS-06, OPS-07, OPS-08]
 must_haves:
   truths:
     - "compose/bundled.yml + compose/external.yml audited line-by-line: every service has `<<: *json-logging` anchor; no `:latest` tag anywhere; every credential mounted via Compose `secrets:` (not `.env`); no `${SHIFTER_DB_PASSWORD}` env-var leakage of secret values (D-48)"
@@ -51,7 +51,7 @@ must_haves:
       via: "CLI invokes Doctor.SnapshotBundle(ctx) and writes JSON to stdout/file"
       pattern: "SnapshotBundle"
     - from: internal/alert/alerts_prune_worker.go
-      to: internal/db/migrations/0046_admin_prune_alerts.up.sql
+      to: internal/db/migrations/0047_audit_vocab_alert_prune.up.sql
       via: "Worker calls SELECT admin_prune_alerts(cutoff_days); SECURITY DEFINER function"
       pattern: "admin_prune_alerts"
 ---
@@ -106,7 +106,7 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
 
 <task type="auto" tdd="true">
   <name>Task 1: Alerts retention prune worker + admin_prune_alerts SECURITY DEFINER function + /health/detailed extension</name>
-  <files>internal/db/migrations/0046_admin_prune_alerts.up.sql, internal/db/migrations/0046_admin_prune_alerts.down.sql, internal/alert/alerts_prune_worker.go, internal/alert/alerts_prune_worker_test.go, internal/cli/serve.go, internal/http/health.go, internal/http/health_test.go</files>
+  <files>internal/db/migrations/0047_audit_vocab_alert_prune.up.sql, internal/db/migrations/0047_audit_vocab_alert_prune.down.sql, internal/alert/alerts_prune_worker.go, internal/alert/alerts_prune_worker_test.go, internal/cli/serve.go, internal/http/health.go, internal/http/health_test.go</files>
   <read_first>
     - internal/db/migrations/0043_admin_prune_audit_rows.up.sql (Plan 06-01: mirror this SECURITY DEFINER pattern for alerts)
     - internal/alert/audit_prune_worker.go (Plan 06-01: mirror the worker pattern)
@@ -127,9 +127,11 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
     - Test (TestHealthDetailed_Status_DegradedIfBackupTooOld): if last backup age > backup_crit_threshold_hours → overall status="degraded".
   </behavior>
   <action>
-    Decision: alerts table has no INSERT-ONLY trigger, so plain DELETE inside the worker suffices — NO migration 0046_admin_prune_alerts. Use a new vocabulary migration 0046_audit_vocab_alert_prune.up.sql adding 'alert.pruned' action.
+    **Migration coordination:** Plan 06-11 claims migration `0047` (Plan 06-01 owns 0037-0043, Plan 06-05 owns 0044, Plan 06-08 owns 0045, Plan 06-10 owns 0046).
 
-    **Migration 0046_audit_vocab_alert_prune.up.sql:**
+    Decision: the alerts table has no INSERT-ONLY trigger, so a plain DELETE inside the worker suffices — NO `admin_prune_alerts` SECURITY DEFINER function. We DO add a new vocabulary migration `0047_audit_vocab_alert_prune.up.sql` adding the `'alert.pruned'` action since the prune writes a meta audit row.
+
+    **Migration 0047_audit_vocab_alert_prune.up.sql:**
     ```sql
     ALTER TABLE audit_log DROP CONSTRAINT audit_log_action_valid;
     ALTER TABLE audit_log ADD CONSTRAINT audit_log_action_valid CHECK (action IN (
@@ -175,13 +177,20 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
             ) SELECT count(*) FROM del`, days).Scan(&deleted); err != nil {
             return err
         }
-        // 3. Audit row 'alert.pruned' (no specific entity; use uuid.Nil)
-        if _, err := tx.Exec(ctx,
-            `INSERT INTO audit_log (action, entity_type, entity_id, notes)
-             VALUES ('alert.pruned', 'alert', $1, $2)`,
-            uuid.Nil,
-            fmt.Sprintf("Pruned %d alerts older than %d days", deleted, days),
-        ); err != nil { return err }
+        // 3. Audit meta-row 'alert.pruned' — use gen_random_uuid() for the
+        //    self-referential entity_id, matching the audit_prune_worker pattern
+        //    from Plan 06-01 (D-51). Each prune cycle gets a unique meta-id so
+        //    successive prunes are independently queryable in audit history.
+        var metaID uuid.UUID
+        if err := tx.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&metaID); err != nil {
+            return fmt.Errorf("gen meta id: %w", err)
+        }
+        if err := audit.WriteEntry(ctx, tx, audit.Entry{
+            Action:     audit.ActionAlertPruned,        // Plan 06-11 const "alert.pruned"
+            EntityType: audit.EntityTypeAlert,          // Plan 06-01 const "alert"
+            EntityID:   metaID,                          // meta-id, self-referential
+            Notes:      fmt.Sprintf("Pruned %d alerts older than %d days", deleted, days),
+        }); err != nil { return err }
         if err := tx.Commit(ctx); err != nil { return err }
         w.Log.Info("alerts_prune.cycle", "deleted", deleted, "cutoff_days", days)
         return nil
@@ -223,12 +232,14 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
     Overall status: "ok" if all subsystem checks pass + no alert_worker_state.degraded + last_backup.age_seconds < crit_threshold; "degraded" otherwise.
   </action>
   <verify>
-    <automated>go test ./internal/alert/... ./internal/http/... ./internal/db/... -run "TestAlertsPruneWorker|TestHealthDetailed|TestMigration0046" -count=1 -timeout=60s</automated>
+    <automated>go test ./internal/alert/... ./internal/http/... ./internal/db/... -run "TestAlertsPruneWorker|TestHealthDetailed|TestMigration0047" -count=1 -timeout=60s</automated>
   </verify>
   <acceptance_criteria>
-    - `internal/db/migrations/0046_audit_vocab_alert_prune.up.sql` contains `'alert.pruned'` in the CHECK constraint
+    - `internal/db/migrations/0047_audit_vocab_alert_prune.up.sql` contains `'alert.pruned'` in the CHECK constraint
     - `internal/audit/log.go` declares `ActionAlertPruned = "alert.pruned"`
-    - `internal/alert/alerts_prune_worker.go` contains `DELETE FROM alert WHERE fired_at < now() - make_interval(days =>` AND `INSERT INTO audit_log (action, ...) VALUES ('alert.pruned', ...)`
+    - `internal/alert/alerts_prune_worker.go` contains `DELETE FROM alert WHERE fired_at < now() - make_interval(days =>`
+    - `internal/alert/alerts_prune_worker.go` uses `audit.WriteEntry` with `audit.ActionAlertPruned` AND `gen_random_uuid()` for the meta-row entity_id (matches Plan 06-01 audit_prune pattern): `grep "gen_random_uuid" internal/alert/alerts_prune_worker.go` returns ≥ 1 line AND `grep "audit.WriteEntry" internal/alert/alerts_prune_worker.go` returns ≥ 1 line
+    - `internal/alert/alerts_prune_worker.go` does NOT use `uuid.Nil`: `grep "uuid.Nil" internal/alert/alerts_prune_worker.go` returns 0
     - `internal/cli/serve.go` registers `&alert.AlertsPruneWorker{` AND has a periodic job with cron `30 3 * * *` (03:30 install_tz)
     - `internal/http/health.go` declares `AlertWorkers []AlertWorkerHealth` AND `LastBackup *LastBackupHealth` fields
     - `internal/http/health.go` overall status = "degraded" when any alert_worker_state.degraded=true OR last_backup.age_seconds > crit_threshold (grep both conditions)
@@ -525,7 +536,7 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
 
     ### Per-release breaking-migration notes
 
-    Each Shifter release appends a "v0.X.Y release notes" subsection here when migrations change in ways operators must know about. Phase 6 (v0.6.0) adds migrations 0037–0046 (audit vocabulary, alert engine substrate, retention extensions, backup_run history). No data migration risk: all are additive.
+    Each Shifter release appends a "v0.X.Y release notes" subsection here when migrations change in ways operators must know about. Phase 6 (v0.6.0) adds migrations 0037–0047 (audit vocabulary, alert engine substrate, retention extensions, backup_run history). No data migration risk: all are additive.
     ```
 
     `internal/compose/doc.go`: package doc explaining the lint test's purpose.
@@ -585,7 +596,6 @@ D-50 (RESEARCH Open Question #3): NO Docker socket / no log-tail in v1; document
 - OPS-06 covered: secrets via Compose secrets: verified via lint
 - OPS-07 covered: pinned image tags verified via lint
 - OPS-08 covered: per-release upgrade runbook with rollback documented
-- AUDIT-02 reinforced: alerts retention prune writes audit trail; /health/detailed surfaces alert worker observability
 - D-21, D-22, D-48, D-49, D-50 implemented
 </success_criteria>
 

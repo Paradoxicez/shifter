@@ -5,6 +5,8 @@ type: execute
 wave: 1
 depends_on: []
 files_modified:
+  - internal/db/migrations/0044_user_last_login.up.sql
+  - internal/db/migrations/0044_user_last_login.down.sql
   - internal/auth/users.go
   - internal/auth/users_test.go
   - internal/user/store.go
@@ -155,7 +157,7 @@ audit constants (Plan 06-01 task 1):
 
 <task type="auto" tdd="true">
   <name>Task 1: Store extensions + guards + password generator + IterateAndRevoke export</name>
-  <files>internal/auth/users.go, internal/auth/users_test.go, internal/auth/account.go, internal/user/store.go, internal/user/store_test.go, internal/user/password.go, internal/user/password_test.go, internal/user/guards.go, internal/user/guards_test.go, internal/user/doc.go</files>
+  <files>internal/db/migrations/0044_user_last_login.up.sql, internal/db/migrations/0044_user_last_login.down.sql, internal/auth/users.go, internal/auth/users_test.go, internal/auth/account.go, internal/user/store.go, internal/user/store_test.go, internal/user/password.go, internal/user/password_test.go, internal/user/guards.go, internal/user/guards_test.go, internal/user/doc.go</files>
   <read_first>
     - internal/auth/users.go (existing Store surface; Plan 06-05 extends it)
     - internal/auth/account.go (iterateAndRevoke function body — needs EXPORT per Pitfall 3 RESEARCH §Decision G)
@@ -212,15 +214,24 @@ audit constants (Plan 06-01 task 1):
     func (s *Store) GetByIDForUpdate(ctx context.Context, tx pgx.Tx, id string) (*UserRecord, error) // SELECT ... FOR UPDATE for serializable last-admin
     ```
 
-    Extend `UserRecord` struct to include `DisabledAt *time.Time`, `CreatedAt time.Time`, `UpdatedAt time.Time`, `LastLoginAt *time.Time` (the last_login_at column is new; if migration 0002 doesn't have it, ADD it via a new migration `0041_user_last_login.up.sql` — Phase 6 needs it for the Users table "Last login" column per UI-SPEC §Surface 5).
+    Extend `UserRecord` struct to include `DisabledAt *time.Time`, `CreatedAt time.Time`, `UpdatedAt time.Time`, `LastLoginAt *time.Time` (the `last_login_at` column does not exist on the Phase 1 `"user"` table — verified at planning time: `grep -l "last_login_at" internal/db/migrations/*.sql` returns no matches as of 2026-05-12).
 
-    NOTE: If `last_login_at` column doesn't exist (verify in Wave 0), create migration `0041_user_last_login.up.sql`:
+    **Migration coordination note:** Phase 6 plans claim migration numbers as follows to prevent collisions:
+    - Plan 06-01: 0037 (audit vocab), 0038 (alert_rule), 0039 (alert), 0040 (retention_config_phase6), 0042 (alert_worker_state), 0043 (admin_prune_audit_rows) — 0041 reserved/unused.
+    - Plan 06-05 (THIS PLAN): **0044** (user_last_login)
+    - Plan 06-08: 0045 (backup_run)
+    - Plan 06-10: 0046 (backup_thresholds)
+    - Plan 06-11: 0047 (audit_vocab_alert_prune)
+
+    Create migration `0044_user_last_login.up.sql` **unconditionally** (do NOT branch on Wave 0 discovery — the column is provably absent at plan time):
     ```sql
     ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMPTZ;
-    -- backfill: set last_login_at = updated_at for existing rows (best-effort)
-    UPDATE "user" SET last_login_at = updated_at;
+    -- Backfill best-effort: set last_login_at = updated_at for existing rows so
+    -- the Users table renders "Last login" reasonably for pre-Phase 6 users.
+    UPDATE "user" SET last_login_at = updated_at WHERE last_login_at IS NULL;
     ```
-    The Plan 06-06 auth-retrofit will set `last_login_at = now()` on every successful login.
+    Down migration: `ALTER TABLE "user" DROP COLUMN last_login_at;`
+    The Plan 06-06 auth-retrofit will set `last_login_at = now()` on every successful login via `UpdateLastLoginAtTx`.
 
     **internal/user/doc.go:** Package doc explaining the package as a thin wrapper around auth.Store + iterateAndRevoke + guards, with the four D-24 trigger callers (LogoutEverywhere, Disable, ChangeRole, ResetPassword).
 
@@ -325,7 +336,7 @@ audit constants (Plan 06-01 task 1):
     - `internal/user/guards.go` contains both `RejectSelfAction` and `RejectLastAdminDemote` functions
     - `RejectLastAdminDemote` accepts `tx pgx.Tx` parameter (TOCTOU mitigation: callers wrap in SERIALIZABLE tx)
     - `internal/user/store.go` defines `UserDTO` struct without a `PasswordHash` field: `grep -c "PasswordHash" internal/user/store.go` returns 0
-    - If `last_login_at` column missing pre-Phase 6, migration `0041_user_last_login.up.sql` exists with `ADD COLUMN last_login_at TIMESTAMPTZ`
+    - Migration `internal/db/migrations/0044_user_last_login.up.sql` exists unconditionally with `ADD COLUMN last_login_at TIMESTAMPTZ` AND a matching down migration `0044_user_last_login.down.sql` with `DROP COLUMN last_login_at`
     - All 12 listed tests pass: `go test ./internal/auth/... ./internal/user/... -count=1` exits 0
   </acceptance_criteria>
   <done>The user store is extended; the random password generator passes the same strength bar as user-typed passwords (D-28); the two guards are server-side enforceable; TOCTOU is mitigated via SERIALIZABLE tx + SELECT FOR UPDATE.</done>

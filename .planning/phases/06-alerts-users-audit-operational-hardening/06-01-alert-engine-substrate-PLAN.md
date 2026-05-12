@@ -159,12 +159,12 @@ D-12 canonical payload (RESEARCH §Decision C):
     - Test: every constant in `internal/audit/log.go` Phase 6 block matches a string literal in 0037 (string equality grep).
   </behavior>
   <action>
-    Create migration `0037_audit_vocab_phase6.up.sql` that ALTERs `audit_log_action_valid` CHECK to add (in addition to existing entries from 0016/0020/0031/0034/0035/0036) exactly these 23 new action strings (D-30 operator-visible events + D-51 prune + Phase 6 alert/user/backup verbs):
+    Create migration `0037_audit_vocab_phase6.up.sql` that ALTERs `audit_log_action_valid` CHECK to add (in addition to existing entries from 0016/0020/0031/0034/0035/0036) exactly these 27 new action strings (D-30 operator-visible events + D-51 prune + Phase 6 alert/user/backup verbs + D-35 audit export):
     - `auth.login_success`, `auth.login_failed`, `auth.logout`, `auth.password_change`, `auth.password_reset_by_admin`, `auth.session_revoked`
     - `user.create`, `user.update`, `user.disable`, `user.enable`, `user.role_change`
     - `alert.rule_create`, `alert.rule_update`, `alert.rule_disable`, `alert.rule_enable`, `alert.fired`, `alert.cleared`, `alert.acknowledged`, `alert.snoozed`, `alert.muted`, `alert.test_fired`
     - `backup.start`, `backup.complete`, `backup.failed`, `backup.restore`
-    - `audit.prune`
+    - `audit.prune`, `audit.export`
 
     ALTERs `audit_log_entity_type_valid` to add: `user`, `session`, `alert_rule`, `alert`, `backup_run`, `audit_log` (the last one for the meta `audit.prune` row per D-51).
 
@@ -189,8 +189,8 @@ D-12 canonical payload (RESEARCH §Decision C):
       -- Phase 6 alerts:
       'alert.rule_create','alert.rule_update','alert.rule_disable','alert.rule_enable',
       'alert.fired','alert.cleared','alert.acknowledged','alert.snoozed','alert.muted','alert.test_fired',
-      -- Phase 6 backup/restore + audit prune (D-51):
-      'backup.start','backup.complete','backup.failed','backup.restore','audit.prune'
+      -- Phase 6 backup/restore + audit prune (D-51) + audit export (D-35 — see Plan 06-07):
+      'backup.start','backup.complete','backup.failed','backup.restore','audit.prune','audit.export'
     ));
     -- Same DROP/ADD for audit_log_entity_type_valid adding: 'user','session','alert_rule','alert','backup_run','audit_log'
     ```
@@ -229,13 +229,14 @@ D-12 canonical payload (RESEARCH §Decision C):
         ActionAlertMuted       = "alert.muted"
         ActionAlertTestFired   = "alert.test_fired"
     )
-    // Phase 6 backup + audit prune (D-51):
+    // Phase 6 backup + audit prune (D-51) + audit export (D-35 — see Plan 06-07):
     const (
         ActionBackupStart    = "backup.start"
         ActionBackupComplete = "backup.complete"
         ActionBackupFailed   = "backup.failed"
         ActionBackupRestore  = "backup.restore"
         ActionAuditPrune     = "audit.prune"
+        ActionAuditExport    = "audit.export"
     )
     // Phase 6 entity types:
     const (
@@ -252,9 +253,9 @@ D-12 canonical payload (RESEARCH §Decision C):
     <automated>go test ./internal/audit/... -run TestPhase6VocabularyConstants -count=1</automated>
   </verify>
   <acceptance_criteria>
-    - `internal/db/migrations/0037_audit_vocab_phase6.up.sql` exists and contains all 26 new action strings AND all 6 new entity-type strings (grep: `grep -c "'auth.login_success'" internal/db/migrations/0037_audit_vocab_phase6.up.sql` returns >= 1 — appears exactly once in the new CHECK literal list)
+    - `internal/db/migrations/0037_audit_vocab_phase6.up.sql` exists and contains all 27 new action strings AND all 6 new entity-type strings (grep: `grep -c "'auth.login_success'" internal/db/migrations/0037_audit_vocab_phase6.up.sql` returns >= 1 — appears exactly once in the new CHECK literal list)
     - Down migration drops the Phase 6 CHECK and re-creates the Phase 5 vocabulary verbatim
-    - `internal/audit/log.go` contains all 26 const names: `grep -c "ActionAuthLoginSuccess\|ActionAuthLoginFailed\|ActionAuthLogout\|ActionAuthPasswordChange\|ActionAuthPasswordResetByAdmin\|ActionAuthSessionRevoked\|ActionUserCreate\|ActionUserUpdate\|ActionUserDisable\|ActionUserEnable\|ActionUserRoleChange\|ActionAlertRuleCreate\|ActionAlertRuleUpdate\|ActionAlertRuleDisable\|ActionAlertRuleEnable\|ActionAlertFired\|ActionAlertCleared\|ActionAlertAcked\|ActionAlertSnoozed\|ActionAlertMuted\|ActionAlertTestFired\|ActionBackupStart\|ActionBackupComplete\|ActionBackupFailed\|ActionBackupRestore\|ActionAuditPrune" internal/audit/log.go` returns 26
+    - `internal/audit/log.go` contains all 27 const names: `grep -c "ActionAuthLoginSuccess\|ActionAuthLoginFailed\|ActionAuthLogout\|ActionAuthPasswordChange\|ActionAuthPasswordResetByAdmin\|ActionAuthSessionRevoked\|ActionUserCreate\|ActionUserUpdate\|ActionUserDisable\|ActionUserEnable\|ActionUserRoleChange\|ActionAlertRuleCreate\|ActionAlertRuleUpdate\|ActionAlertRuleDisable\|ActionAlertRuleEnable\|ActionAlertFired\|ActionAlertCleared\|ActionAlertAcked\|ActionAlertSnoozed\|ActionAlertMuted\|ActionAlertTestFired\|ActionBackupStart\|ActionBackupComplete\|ActionBackupFailed\|ActionBackupRestore\|ActionAuditPrune\|ActionAuditExport" internal/audit/log.go` returns 27
     - All 6 entity types present: `grep -c "EntityTypeUser\|EntityTypeSession\|EntityTypeAlertRule\|EntityTypeAlert\|EntityTypeBackupRun\|EntityTypeAuditLog" internal/audit/log.go` returns 6
     - `go test ./internal/audit/... -count=1` passes
   </acceptance_criteria>
@@ -277,10 +278,13 @@ D-12 canonical payload (RESEARCH §Decision C):
     - Test (TestAlertSchema): alert row insert with payload JSONB succeeds; state CHECK rejects unknown states.
     - Test (TestAlertWorkerStateSeed): 5 rows exist after install_finish (one per worker_kind).
     - Test (TestRetentionConfigPhase6Columns): SELECT alerts_days, audit_log_days FROM retention_config WHERE id=1 returns 365, 1825.
+    - Test (TestAdminPruneAuditRows_OwnedByAuditAdminRole): `SELECT rolname FROM pg_roles JOIN pg_proc ON pg_proc.proowner = pg_roles.oid WHERE proname = 'admin_prune_audit_rows'` returns 'shifter_audit_admin' (D-51 dedicated owner role).
     - Test (TestAdminPruneAuditRows_Bypasses_Trigger): direct `DELETE FROM audit_log WHERE time < ...` raises 'audit_log is INSERT-ONLY'; `SELECT admin_prune_audit_rows(0)` succeeds and writes one `audit.prune` meta row; subsequent direct DELETE still raises (trigger re-enabled by COMMIT releasing SET LOCAL).
     - Test (TestAdminPruneAuditRows_ReturnsRowCount): function returns the number of pruned rows as INTEGER.
   </behavior>
   <action>
+    **Migration coordination:** Plan 06-01 claims migration numbers `0037, 0038, 0039, 0040, 0042, 0043` (0041 reserved but unused — kept as a deliberate gap so the audit_log SECURITY DEFINER function gets a memorable terminal number). Plan 06-05 owns 0044 (user_last_login); Plan 06-08 owns 0045 (backup_run); Plan 06-10 owns 0046 (backup_thresholds); Plan 06-11 owns 0047 (audit_vocab_alert_prune). No collisions.
+
     **Migration 0038 — alert_rule** (copy RESEARCH §Decision C schema sketch verbatim, with quiet-hour extensions from §Decision E):
     ```sql
     CREATE TABLE alert_rule (
@@ -378,6 +382,21 @@ D-12 canonical payload (RESEARCH §Decision C):
 
     **Migration 0043 — admin_prune_audit_rows** (D-51 verbatim function body):
     ```sql
+    -- D-51: dedicated non-superuser role to OWN the SECURITY DEFINER function.
+    -- Created idempotently so the migration replays cleanly. shifter_audit_admin
+    -- has only the table-level grants the prune function needs (DELETE+INSERT on
+    -- audit_log) — narrower than the app role 'shifter'. The function is then
+    -- ALTER FUNCTION ... OWNER TO shifter_audit_admin'd so SECURITY DEFINER
+    -- runs with this restricted role, NOT with the app role.
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shifter_audit_admin') THEN
+            CREATE ROLE shifter_audit_admin NOLOGIN;
+        END IF;
+    END$$;
+    GRANT DELETE ON audit_log TO shifter_audit_admin;
+    GRANT INSERT ON audit_log TO shifter_audit_admin;
+
     CREATE OR REPLACE FUNCTION admin_prune_audit_rows(cutoff_days INTEGER)
     RETURNS INTEGER
     LANGUAGE plpgsql
@@ -412,9 +431,12 @@ D-12 canonical payload (RESEARCH §Decision C):
         RETURN deleted_count;
     END
     $$;
+    -- D-51: re-own the function so SECURITY DEFINER runs as shifter_audit_admin
+    -- (which has ONLY DELETE+INSERT on audit_log) instead of as the app role.
+    ALTER FUNCTION admin_prune_audit_rows(INTEGER) OWNER TO shifter_audit_admin;
     REVOKE ALL ON FUNCTION admin_prune_audit_rows(INTEGER) FROM PUBLIC;
     GRANT EXECUTE ON FUNCTION admin_prune_audit_rows(INTEGER) TO shifter;
-    COMMENT ON FUNCTION admin_prune_audit_rows IS 'D-51: SECURITY DEFINER bypass of audit_log INSERT-ONLY trigger for retention prune. Called by River AuditPruneWorker. Trigger remains active for all other code paths.';
+    COMMENT ON FUNCTION admin_prune_audit_rows IS 'D-51: SECURITY DEFINER bypass of audit_log INSERT-ONLY trigger for retention prune. Owned by shifter_audit_admin (restricted role) — NOT by the app role. Called by River AuditPruneWorker. Trigger remains active for all other code paths.';
     ```
 
     **internal/install/finish.go extension:** Inside the existing Serializable tx (after the Phase 5 retention seed), UPDATE retention_config SET alerts_days=365, audit_log_days=1825 WHERE id=1. The columns have NOT NULL DEFAULTs so this is belt-and-suspenders; the test confirms values.
@@ -430,6 +452,9 @@ D-12 canonical payload (RESEARCH §Decision C):
     - `internal/db/migrations/0040_retention_config_phase6.up.sql` contains `ADD COLUMN alerts_days INTEGER NOT NULL DEFAULT 365` and `ADD COLUMN audit_log_days INTEGER NOT NULL DEFAULT 1825`
     - `internal/db/migrations/0042_alert_worker_state.up.sql` contains `CREATE TABLE alert_worker_state (` and exactly 5 INSERT VALUES rows for worker_kind seeds
     - `internal/db/migrations/0043_admin_prune_audit_rows.up.sql` contains `SECURITY DEFINER` and `SET LOCAL session_replication_role = 'replica'` and `'audit.prune'` and `RETURN deleted_count`
+    - `internal/db/migrations/0043_admin_prune_audit_rows.up.sql` creates the dedicated owner role: `grep "CREATE ROLE shifter_audit_admin" internal/db/migrations/0043_admin_prune_audit_rows.up.sql` returns ≥ 1 line
+    - `internal/db/migrations/0043_admin_prune_audit_rows.up.sql` re-owns the function: `grep "OWNER TO shifter_audit_admin" internal/db/migrations/0043_admin_prune_audit_rows.up.sql` returns ≥ 1 line
+    - Down migration drops the function FIRST, then drops the role (idempotent DROP ROLE IF EXISTS shifter_audit_admin)
     - `go test ./internal/db/... -count=1` passes
     - Direct `DELETE FROM audit_log` from a regular query still raises 'audit_log is INSERT-ONLY' (trigger intact); the function call succeeds
     - `internal/install/finish.go` references the alerts_days + audit_log_days columns: `grep "alerts_days\|audit_log_days" internal/install/finish.go` returns ≥ 1 line

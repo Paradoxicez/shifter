@@ -12,7 +12,9 @@ files_modified:
   - internal/auth/ratelimit.go
   - internal/audit/log.go
 autonomous: true
-requirements: [AUDIT-02]
+requirements: [AUDIT-01]
+notes:
+  - "Closes D-30 (operator-visible auth-event audit retrofit) — a Phase 2 D-21 deferred sub-item under the AUDIT-01 umbrella. Plan 06-07 owns AUDIT-02 (admin can view audit log with filters); this plan is the substrate that makes those filters surface auth events."
 must_haves:
   truths:
     - "POST /api/auth/login on success writes 'auth.login_success' audit row in same tx as session put (D-30 operator-visible only)"

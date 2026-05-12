@@ -5,8 +5,8 @@ type: execute
 wave: 2
 depends_on: [06-01]
 files_modified:
-  - internal/db/migrations/0044_backup_run.up.sql
-  - internal/db/migrations/0044_backup_run.down.sql
+  - internal/db/migrations/0045_backup_run.up.sql
+  - internal/db/migrations/0045_backup_run.down.sql
   - internal/backup/doc.go
   - internal/backup/runner.go
   - internal/backup/runner_test.go
@@ -32,7 +32,7 @@ requirements: [OPS-02, OPS-03, SETT-05]
 must_haves:
   truths:
     - "`shifter backup --to /path/to/dir` CLI subcommand exists; exits 0 on success, non-zero on failure"
-    - "Backup produces a single tar.gz containing: db/shifter.bak (pg_dump --format=custom), db/chirpstack.bak (bundled mode only), floor-plans/ rsync, manifest.json"
+    - "Backup produces a single tar.gz containing: db/shifter.dump (pg_dump --format=custom), db/chirpstack.dump (bundled mode only), floor-plans/ rsync, manifest.json"
     - "Manifest.json schema per RESEARCH §Decision A: {manifest_version, shifter_version, db_schema_version, chirpstack_mode, included, sha256_sums, started_at, finished_at}"
     - "Bundled mode (install_state.chirpstack_mode='bundled'): includes ChirpStack DB; external mode: Shifter-only"
     - "Backup CLI writes audit_log row 'backup.start' before pg_dump + 'backup.complete' (or 'backup.failed' with reason) after"
@@ -49,7 +49,7 @@ must_haves:
       provides: "Backup(ctx, destPath) runs pg_dump + tar + manifest + audit-in-tx"
     - path: internal/backup/manifest.go
       provides: "Manifest struct + sha256-of-every-file logic"
-    - path: internal/db/migrations/0044_backup_run.up.sql
+    - path: internal/db/migrations/0045_backup_run.up.sql
       provides: "backup_run history table"
     - path: compose/bundled.yml
       provides: "mcuadros/ofelia:v0.3.22 sidecar with backup schedule"
@@ -69,7 +69,7 @@ Ship the operator-owned backup surface: `shifter backup` CLI subcommand + `POST 
 
 Purpose: every Shifter install must be backup-able with one CLI call, one HTTP POST, or a scheduled nightly job. Bundled mode includes both DBs in one tarball (operator runs `shifter backup` once → full-stack recovery artifact). The tarball format is the v1 contract; v1.x will add S3 + scheduled UI without changing the format.
 
-Output: new `internal/backup/` package + Cobra subcommand + new migration `0044_backup_run` + Dockerfile bundles `postgresql16-client` + bundled compose adds ofelia sidecar + Settings backup API endpoints.
+Output: new `internal/backup/` package + Cobra subcommand + new migration `0045_backup_run` + Dockerfile bundles `postgresql16-client` + bundled compose adds ofelia sidecar + Settings backup API endpoints.
 </objective>
 
 <execution_context>
@@ -116,8 +116,8 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
 <tasks>
 
 <task type="auto" tdd="true">
-  <name>Task 1: Migration 0044 (backup_run) + internal/backup package (manifest + runner + store) + Dockerfile bundles pg client</name>
-  <files>internal/db/migrations/0044_backup_run.up.sql, internal/db/migrations/0044_backup_run.down.sql, internal/backup/doc.go, internal/backup/runner.go, internal/backup/runner_test.go, internal/backup/manifest.go, internal/backup/manifest_test.go, internal/backup/store.go, internal/backup/store_test.go, internal/config/config.go, Dockerfile</files>
+  <name>Task 1: Migration 0045 (backup_run) + internal/backup package (manifest + runner + store) + Dockerfile bundles pg client</name>
+  <files>internal/db/migrations/0045_backup_run.up.sql, internal/db/migrations/0045_backup_run.down.sql, internal/backup/doc.go, internal/backup/runner.go, internal/backup/runner_test.go, internal/backup/manifest.go, internal/backup/manifest_test.go, internal/backup/store.go, internal/backup/store_test.go, internal/config/config.go, Dockerfile</files>
   <read_first>
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-RESEARCH.md §Decision A "Exact Backup Command" + "Manifest Schema (D-39)" + "Bundling pg client tools in Shifter image"
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-RESEARCH.md §Code Examples "Backup Tarball Construction"
@@ -130,8 +130,8 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
     - Test (TestMigration0044_CreatesBackupRunTable): migration applies; columns: id, status, destination_path, file_name, file_size_bytes, sha256, started_at, finished_at, manifest_json (JSONB), error_message, schema_version, chirpstack_mode, triggered_by (uuid → user.id), trigger_kind ('cli'|'cron'|'api').
     - Test (TestManifest_RoundTrip): build manifest → MarshalJSON → UnmarshalJSON → equal. sha256 of each "included" entry matches.
     - Test (TestManifest_VerifyChecksums): bytes-of-each-file → sha256_sums map; verify by reading from extracted tar matches.
-    - Test (TestRunner_External_DumpsShifterOnly): chirpstack_mode='external' → tarball contains db/shifter.bak only, NO db/chirpstack.bak. Manifest.included = ["db/shifter.bak", "floor-plans/"]. Asserts no `chirpstack.bak` file in tarball.
-    - Test (TestRunner_Bundled_IncludesChirpstack): chirpstack_mode='bundled' + chirpstack DB seeded → tarball contains both db/shifter.bak and db/chirpstack.bak.
+    - Test (TestRunner_External_DumpsShifterOnly): chirpstack_mode='external' → tarball contains db/shifter.dump only, NO db/chirpstack.dump. Manifest.included = ["db/shifter.dump", "floor-plans/"]. Asserts no `chirpstack.dump` file in tarball.
+    - Test (TestRunner_Bundled_IncludesChirpstack): chirpstack_mode='bundled' + chirpstack DB seeded → tarball contains both db/shifter.dump and db/chirpstack.dump.
     - Test (TestRunner_PgDumpFlags): assert the exec.Cmd has flags `--format=custom --no-owner --no-acl`; assert NO `-j` or `--jobs` flag anywhere (Pitfall 1).
     - Test (TestRunner_TarballNameConvention): produced tarball name matches `shifter-backup-{install_slug}-{YYYYMMDD-HHMM}-{schema_version}.tar.gz`.
     - Test (TestRunner_WritesAuditAndBackupRun): backup writes one backup_run row (status='completed') + audit rows 'backup.start' and 'backup.complete'; both audit rows have entity_type='backup_run' and entity_id=backup_run.id.
@@ -140,7 +140,9 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
     - Test (TestConfig_BackupDir): viper reads SHIFTER_BACKUP_DIR env var; default `/var/lib/shifter/backups`.
   </behavior>
   <action>
-    **Migration 0044_backup_run.up.sql:**
+    **Migration coordination:** Plan 06-08 claims migration `0045` (Plan 06-01 owns 0037-0043, Plan 06-05 owns 0044, Plan 06-10 owns 0046, Plan 06-11 owns 0047).
+
+    **Migration 0045_backup_run.up.sql:**
     ```sql
     CREATE TABLE backup_run (
         id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -175,7 +177,7 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
         InstallSlug          string            `json:"install_slug"`
         StartedAt            time.Time         `json:"started_at"`
         FinishedAt           time.Time         `json:"finished_at"`
-        Included             []string          `json:"included"`               // ["db/shifter.bak", "db/chirpstack.bak", "floor-plans/"]
+        Included             []string          `json:"included"`               // ["db/shifter.dump", "db/chirpstack.dump", "floor-plans/"]
         SHA256Sums           map[string]string `json:"sha256_sums"`            // per-file sha256
     }
     ```
@@ -214,11 +216,11 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
         // 2. Commit (so external observers see the in-progress row)
         // 3. Build tarball name: shifter-backup-{slug}-{YYYYMMDD-HHMM}-{schema}.tar.gz
         // 4. Open file + gzip + tar writers
-        // 5. pg_dump shifter DB via exec.CommandContext("pg_dump", "--host", r.Cfg.DBHost, "--port", strconv.Itoa(r.Cfg.DBPort), "--username", r.Cfg.DBUser, "--dbname", r.Cfg.DBName, "--format=custom", "--no-owner", "--no-acl", "--file", tmpShifterBak); cmd.Env = append(os.Environ(), "PGPASSWORD="+r.Cfg.DBPassword)
+        // 5. pg_dump shifter DB via exec.CommandContext("pg_dump", "--host", r.Cfg.DBHost, "--port", strconv.Itoa(r.Cfg.DBPort), "--username", r.Cfg.DBUser, "--dbname", r.Cfg.DBName, "--format=custom", "--no-owner", "--no-acl", "--file", tmpShifterDump); cmd.Env = append(os.Environ(), "PGPASSWORD="+r.Cfg.DBPassword)
         //    Capture stdout/stderr to log; check exit code.
         //    ASSERT: never `--jobs` / `-j` in the args slice — Pitfall 1 lint.
-        // 6. addFileToTar(tw, tmpShifterBak, "db/shifter.bak", manifest.SHA256Sums)
-        // 7. IF chirpstack_mode == "bundled": pg_dump chirpstack DB → db/chirpstack.bak (same flags)
+        // 6. addFileToTar(tw, tmpShifterDump, "db/shifter.dump", manifest.SHA256Sums)
+        // 7. IF chirpstack_mode == "bundled": pg_dump chirpstack DB → db/chirpstack.dump (same flags)
         // 8. addDirToTar(tw, r.Cfg.FloorPlansDir, "floor-plans/", manifest.SHA256Sums)
         // 9. manifest.FinishedAt = time.Now().UTC(); marshal + write to tar as last entry
         // 10. Close writers; stat tarball for size; compute outer sha256 of the whole tar.gz
@@ -305,7 +307,7 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
     <automated>go test ./internal/backup/... -count=1 -timeout=180s && docker build -t shifter:phase6-test . && docker run --rm --entrypoint pg_dump shifter:phase6-test --version</automated>
   </verify>
   <acceptance_criteria>
-    - `internal/db/migrations/0044_backup_run.up.sql` contains `CREATE TABLE backup_run (` and `CHECK (status IN ('running','completed','failed'))` and `CHECK (trigger_kind IN ('cli','cron','api'))`
+    - `internal/db/migrations/0045_backup_run.up.sql` contains `CREATE TABLE backup_run (` and `CHECK (status IN ('running','completed','failed'))` and `CHECK (trigger_kind IN ('cli','cron','api'))`
     - `internal/backup/manifest.go` exports `Manifest` struct with all 11 fields from RESEARCH §Decision A
     - `internal/backup/runner.go` contains `exec.CommandContext` call with literal flags `--format=custom`, `--no-owner`, `--no-acl`; grep proves NO `--jobs` or `-j` argument anywhere in the file (Pitfall 1 lint)
     - `internal/backup/store.go` exports `InsertStartedTx`, `UpdateCompletedTx`, `UpdateFailedTx`, `ListRecent`, `Last`, `Get`
@@ -331,7 +333,7 @@ internal/auth/authz.go: add ActionBackupRun, ActionBackupRead actions; admin onl
   </read_first>
   <behavior>
     - Test (TestCLIBackup_FlagParsing): `shifter backup --to /tmp/x --trigger=cli` parses; missing `--to` returns usage error.
-    - Test (TestCLIBackup_RunsToCompletion): with testcontainer DB seeded, `shifter backup --to /tmp/dest` exits 0; `/tmp/dest/shifter-backup-*.tar.gz` exists; `tar -tzf <file>` lists `manifest.json` + `db/shifter.bak`.
+    - Test (TestCLIBackup_RunsToCompletion): with testcontainer DB seeded, `shifter backup --to /tmp/dest` exits 0; `/tmp/dest/shifter-backup-*.tar.gz` exists; `tar -tzf <file>` lists `manifest.json` + `db/shifter.dump`.
     - Test (TestCLIBackup_NonZeroOnFailure): bad DB host → exits non-zero; backup_run row status='failed' present.
     - Test (TestAuthz_BackupActions): RoleAdmin has ActionBackupRun + ActionBackupRead; viewer has neither.
     - Test (TestHandler_RunNow_ReturnsBackupRunID): POST /api/backup/run-now → 202 `{job_id: uuid, status:"running"}`; subsequent GET /api/backup/jobs/{id} returns the row.

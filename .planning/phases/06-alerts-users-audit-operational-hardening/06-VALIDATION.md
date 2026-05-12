@@ -2,6 +2,11 @@
 phase: 6
 slug: alerts-users-audit-operational-hardening
 status: draft
+# nyquist_compliant flips false -> true after the executor populates the
+# Per-Task Verification Map below during Wave 0 of execute-phase. Until then
+# the planner-emitted plans contain MISSING markers for any task whose test
+# file does not yet exist; Wave 0 creates those scaffolds. wave_0_complete
+# flips true once every MISSING marker is resolved.
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-05-12

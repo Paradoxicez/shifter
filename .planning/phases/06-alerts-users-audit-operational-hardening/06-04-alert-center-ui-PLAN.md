@@ -17,6 +17,7 @@ files_modified:
   - internal/http/router.go
   - internal/events/topics.go
   - internal/events/handler.go
+  - internal/cli/serve.go
   - web/src/routes/alerts/index.tsx
   - web/src/routes/alerts/index.test.tsx
   - web/src/routes/alerts/AlertCenterFilters.tsx
@@ -176,7 +177,7 @@ export const alertsParams = z.object({
 
 <task type="auto" tdd="true">
   <name>Task 1: Backend handlers for /api/alerts + /api/alerts/rules + /api/anomaly-roster + test_fire</name>
-  <files>internal/alert/handler.go, internal/alert/handler_test.go, internal/alert/rule_handler.go, internal/alert/rule_handler_test.go, internal/alert/test_fire.go, internal/alert/test_fire_test.go, internal/alert/queries.sql, internal/auth/authz.go, internal/auth/authz_test.go, internal/http/router.go, internal/events/topics.go, internal/events/handler.go</files>
+  <files>internal/alert/handler.go, internal/alert/handler_test.go, internal/alert/rule_handler.go, internal/alert/rule_handler_test.go, internal/alert/test_fire.go, internal/alert/test_fire_test.go, internal/alert/queries.sql, internal/auth/authz.go, internal/auth/authz_test.go, internal/http/router.go, internal/events/topics.go, internal/events/handler.go, internal/cli/serve.go</files>
   <read_first>
     - internal/auth/authz.go (Action constants pattern + roleBundles map structure; lines 30-280)
     - internal/http/router.go (existing route group + RequireAction wrapper pattern)
@@ -283,6 +284,39 @@ export const alertsParams = z.object({
     ```
     The 60s auto-clear uses a one-shot River job (kind="alert_test_fire_clear", InsertOpts.ScheduledAt = now()+60s); register a `TestFireClearWorker` that calls `AlertStore.ClearAlert(ctx, tx, alertID)` + writes 'alert.cleared' audit.
 
+    **internal/cli/serve.go:** Register the worker in the existing `river.NewWorkers()` block (~lines 320-360) — add this line alongside the other `river.AddWorker` calls (e.g., immediately after the alert.AuditPruneWorker registration from Plan 06-01):
+    ```go
+    river.AddWorker(workers, &alert.TestFireClearWorker{Store: alertStore, Audit: auditStore, Log: log})
+    ```
+    No periodic schedule needed (one-shot job scheduled by `TestFireHandler` via `InsertOpts.ScheduledAt`). The worker definition lives in `internal/alert/test_fire.go` (declared alongside the handler):
+    ```go
+    type TestFireClearArgs struct {
+        AlertID uuid.UUID `json:"alert_id"`
+    }
+    func (TestFireClearArgs) Kind() string { return "alert_test_fire_clear" }
+    func (TestFireClearArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{MaxAttempts: 3} }
+
+    type TestFireClearWorker struct {
+        river.WorkerDefaults[TestFireClearArgs]
+        Store *AlertStore
+        Audit *audit.Store
+        Log   *slog.Logger
+    }
+
+    func (w *TestFireClearWorker) Work(ctx context.Context, job *river.Job[TestFireClearArgs]) error {
+        tx, err := w.Store.Pool().BeginTx(ctx, pgx.TxOptions{})
+        if err != nil { return err }
+        defer tx.Rollback(ctx)
+        if err := w.Store.ClearAlert(ctx, tx, job.Args.AlertID); err != nil { return err }
+        if err := audit.WriteEntry(ctx, tx, audit.Entry{
+            Action: audit.ActionAlertCleared, EntityType: audit.EntityTypeAlert,
+            EntityID: job.Args.AlertID,
+            Notes: "auto-cleared after 60s test-fire window (D-19)",
+        }); err != nil { return err }
+        return tx.Commit(ctx)
+    }
+    ```
+
     **internal/events/topics.go:** Add `var AlertTopic = Topic("alert")`. Update `internal/events/handler.go` SSE handler to accept `?topic=alert` and subscribe to AlertTopic; publish payload as JSON for drawer auto-refresh. This is optional optimization per D-20 — the drawer can also use React Query polling (30s interval).
 
     **internal/http/router.go:** Add route group:
@@ -317,6 +351,8 @@ export const alertsParams = z.object({
     - `internal/alert/handler.go` contains all 5 handlers: `ListHandler`, `GetHandler`, `AckHandler`, `SnoozeHandler`, `RecentForDrawerHandler`
     - `internal/alert/rule_handler.go` contains: `ListRulesHandler`, `CreateRuleHandler`, `UpdateRuleHandler`, `DisableRuleHandler`, `EnableRuleHandler`, `RosterHandler`, `MPAnomalyStateHandler`, `ToggleMPAnomalyHandler`
     - `internal/alert/test_fire.go` contains `TestFireHandler` and the comment `Does NOT call rules.TouchLastFiredAt`
+    - `internal/alert/test_fire.go` contains `type TestFireClearWorker struct` with `Work(ctx context.Context, job *river.Job[TestFireClearArgs])` method
+    - `internal/cli/serve.go` registers the auto-clear worker: `grep "TestFireClearWorker" internal/cli/serve.go` returns ≥ 1 line
     - `internal/events/topics.go` contains `AlertTopic = Topic("alert")`
     - `internal/http/router.go` contains 14 routes mapped (count of `auth.RequireAction(sm, auth.ActionAlert` matches >= 12)
     - All 13 listed tests pass: `go test ./internal/alert/... ./internal/auth/... -count=1 -timeout=120s` exits 0
@@ -327,6 +363,39 @@ export const alertsParams = z.object({
 
 <task type="auto" tdd="true">
   <name>Task 2: Alert bell + drawer + /alerts page + Settings → Alerts + MP detail anomaly card + sidebar reorder + degraded banner</name>
+  <execution_split>
+    This task is too large for a single Claude execution window (23 files). The executor MUST commit-split into 2a + 2b for safer execution:
+
+    **Sub-task 2a — Shell + nav + state files (~11 files; commit when green):**
+    - web/src/components/shell/AlertBell.tsx
+    - web/src/components/shell/AlertDrawer.tsx
+    - web/src/components/shell/AlertWorkerBanner.tsx
+    - web/src/components/shell/topbar.tsx
+    - web/src/components/shell/sidebar.tsx
+    - web/src/components/alerts/SeverityPill.tsx
+    - web/src/hooks/useAlerts.ts
+    - web/src/lib/alertParams.ts
+    - web/src/App.tsx (only the route imports + mount points; no /alerts route component yet — placeholder ok)
+    - All `_test.tsx` files for the above components
+    Verify after 2a: `pnpm -C web test --run web/src/components/shell web/src/components/alerts` exits 0.
+
+    **Sub-task 2b — Route components + rule library + MP detail card + Playwright (~12 files; commit when green):**
+    - web/src/routes/alerts/index.tsx
+    - web/src/routes/alerts/AlertCenterFilters.tsx
+    - web/src/routes/alerts/AlertRow.tsx
+    - web/src/routes/alerts/SnoozeMenu.tsx
+    - web/src/routes/alerts/AlertDetailDialog.tsx
+    - web/src/routes/settings/alerts.tsx
+    - web/src/routes/settings/AddRuleDialog.tsx
+    - web/src/routes/settings/AnomalyRosterSection.tsx
+    - web/src/components/metering-point/AnomalyStateCard.tsx + .test.tsx
+    - web/playwright/specs/alerts-center.spec.ts
+    - web/src/App.tsx (update — wire the actual /alerts and /settings/alerts route elements)
+    - All `_test.tsx` files for the above components
+    Verify after 2b: the FULL automated command below.
+
+    Both sub-tasks share the `<read_first>`, `<behavior>`, `<action>`, `<verify>`, `<acceptance_criteria>`, and `<done>` sections — they describe ONE feature delivered in two commits.
+  </execution_split>
   <files>web/src/components/shell/AlertBell.tsx, web/src/components/shell/AlertDrawer.tsx, web/src/components/shell/AlertWorkerBanner.tsx, web/src/components/shell/topbar.tsx, web/src/components/shell/sidebar.tsx, web/src/components/alerts/SeverityPill.tsx, web/src/components/metering-point/AnomalyStateCard.tsx, web/src/components/metering-point/AnomalyStateCard.test.tsx, web/src/routes/alerts/index.tsx, web/src/routes/alerts/index.test.tsx, web/src/routes/alerts/AlertCenterFilters.tsx, web/src/routes/alerts/AlertRow.tsx, web/src/routes/alerts/SnoozeMenu.tsx, web/src/routes/alerts/AlertDetailDialog.tsx, web/src/routes/settings/alerts.tsx, web/src/routes/settings/alerts.test.tsx, web/src/routes/settings/AddRuleDialog.tsx, web/src/routes/settings/AnomalyRosterSection.tsx, web/src/hooks/useAlerts.ts, web/src/lib/alertParams.ts, web/src/App.tsx</files>
   <read_first>
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-UI-SPEC.md (all 8 surfaces; copy CTA labels and chip orderings verbatim)

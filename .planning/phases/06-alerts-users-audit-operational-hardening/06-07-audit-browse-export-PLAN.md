@@ -13,6 +13,8 @@ files_modified:
   - internal/audit/export_test.go
   - internal/audit/export_worker.go
   - internal/audit/export_worker_test.go
+  - internal/report/job.go
+  - internal/report/job_test.go
   - internal/audit/queries.sql
   - internal/http/router.go
   - internal/cli/serve.go
@@ -281,7 +283,7 @@ const auditParams = z.object({
 
 <task type="auto" tdd="true">
   <name>Task 2: CSV export — inline ≤50k + River AuditExportWorker for >50k</name>
-  <files>internal/audit/export.go, internal/audit/export_test.go, internal/audit/export_worker.go, internal/audit/export_worker_test.go, internal/cli/serve.go</files>
+  <files>internal/audit/export.go, internal/audit/export_test.go, internal/audit/export_worker.go, internal/audit/export_worker_test.go, internal/report/job.go, internal/report/job_test.go, internal/cli/serve.go</files>
   <read_first>
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-RESEARCH.md §Decision F "CSV Export with Streaming + 50k cap (D-35)"
     - internal/report/csv.go (REPT-03 spec: UTF-8 BOM + ISO-8601 + timezone header — reuse the pattern)
@@ -300,7 +302,8 @@ const auditParams = z.object({
     - Test (TestExport_50kCap_Returns413): seed 50001 rows (use bulk INSERT) → GET /api/audit/export returns 413 with JSON `{error:"too_many_rows", suggest:"async", total: 50001}` and NO CSV bytes.
     - Test (TestExportAsync_EnqueuesRiverJob): POST /api/audit/export-async with same 50001 → 202 with `{job_id: uuid, status:"queued"}`; River job kind="audit_export" inserted; eventually writes /var/lib/shifter/reports/{uuid}/audit-export.csv.
     - Test (TestExportAsync_24HCleanup): the reports cleanup PeriodicJob (Phase 5) deletes audit-export.csv 24h after creation — assert the worker writes the file with the same path pattern report cleanup picks up.
-    - Test (TestExportAsync_AuditRow): the export-async enqueue writes audit row 'report.generate' (or a new 'audit.export' action — pick one; this plan does NOT add a new audit action; reuse `report.generate` with entity_type='audit_log' or skip the audit since exports don't mutate state).
+    - Test (TestExportAsync_AuditRow): the export-async enqueue writes audit row 'audit.export' (the new action added by Plan 06-01 migration 0037; entity_type='audit_log', entity_id=gen_random_uuid() meta-id, notes contains row count + filter summary).
+    - Test (TestExportInline_AuditRow): the sync ≤50k path ALSO writes 'audit.export' audit row (admin downloading PII is operator-visible and deserves an audit trail per D-35 review).
   </behavior>
   <action>
     **internal/audit/export.go:**
@@ -391,6 +394,21 @@ const auditParams = z.object({
                 return
             }
             installTZ, _ := loadInstallTZ(r.Context(), deps.Pool)
+            // D-35 audit: admin downloading PII is operator-visible; write audit.export
+            // row BEFORE streaming so failures during streaming still leave a trail.
+            actingUser, _ := auth.UserFromContext(r.Context())
+            tx, err := deps.Pool.BeginTx(r.Context(), pgx.TxOptions{})
+            if err == nil {
+                _ = audit.WriteEntry(r.Context(), tx, audit.Entry{
+                    UserID:     mustParseUUID(actingUser.ID),
+                    Action:     audit.ActionAuditExport,       // Plan 06-01 const
+                    EntityType: audit.EntityTypeAuditLog,
+                    EntityID:   uuid.New(),                     // meta-id, no real FK
+                    Notes:      fmt.Sprintf("Inline export of %d rows; filter=%s", count, filterSummary(filter)),
+                    RequestID:  middleware.GetReqID(r.Context()),
+                })
+                _ = tx.Commit(r.Context())
+            }
             if err := StreamCSVExport(r.Context(), w, deps.Pool, filter, installTZ); err != nil {
                 deps.Log.Error("audit_export_stream", "err", err)
             }
@@ -407,8 +425,21 @@ const auditParams = z.object({
                 JobID:  jobID.String(),
                 Filter: filter, // serialized as JSON in River args
             }
-            _, err = deps.RiverClient.Insert(r.Context(), args, nil)
-            if err != nil { writeError(w, 500, "enqueue"); return }
+            actingUser, _ := auth.UserFromContext(r.Context())
+            tx, err := deps.Pool.BeginTx(r.Context(), pgx.TxOptions{})
+            if err != nil { writeError(w, 500, "db_begin"); return }
+            defer tx.Rollback(r.Context())
+            // D-35: write audit.export row for the async enqueue.
+            if err := audit.WriteEntry(r.Context(), tx, audit.Entry{
+                UserID:     mustParseUUID(actingUser.ID),
+                Action:     audit.ActionAuditExport,
+                EntityType: audit.EntityTypeAuditLog,
+                EntityID:   jobID,                                  // job_id doubles as audit entity_id for traceability
+                Notes:      fmt.Sprintf("Async export queued; filter=%s", filterSummary(filter)),
+                RequestID:  middleware.GetReqID(r.Context()),
+            }); err != nil { writeError(w, 500, "audit"); return }
+            if _, err := deps.RiverClient.InsertTx(r.Context(), tx, args, nil); err != nil { writeError(w, 500, "enqueue"); return }
+            if err := tx.Commit(r.Context()); err != nil { writeError(w, 500, "db_commit"); return }
             writeJSON(w, 202, map[string]any{"job_id": jobID, "status": "queued"})
         }
     }
@@ -457,7 +488,7 @@ const auditParams = z.object({
     ```
     No periodic schedule — this worker is on-demand only. Reuse the Phase 5 24h cleanup PeriodicJob; the cleanup pattern globs `/var/lib/shifter/reports/*/*.{pdf,csv}` per Phase 5 D-07.
 
-    **Reports cleanup glob extension:** confirm internal/report/job.go's CleanupExpiredReportsWorker walks every subdir under reports/ and deletes files older than 24h. If it's PDF-only by glob (`*.pdf`), extend the glob to include `*.csv` so audit-export.csv files get pruned. If unclear, ADD the .csv glob safely.
+    **Reports cleanup glob extension (unconditional):** Edit `internal/report/job.go`'s `CleanupExpiredReportsWorker` to extend its filename glob from `*.pdf` to match BOTH `*.pdf` AND `*.csv` files in `/var/lib/shifter/reports/*/`. The Phase 6 `audit-export.csv` files MUST be pruned by the same 24h TTL job — do not branch on extension assumptions. Concretely: change the filepath.Glob pattern (or the `path.Ext` switch) so `.csv` files are included in the prune walk. Add a test `TestCleanupExpiredReportsWorker_PrunesCSV` in `internal/report/job_test.go` that seeds an `audit-export-X.csv` with mtime > 24h and asserts the worker deletes it.
   </action>
   <verify>
     <automated>go test ./internal/audit/... -run "TestExport" -count=1 -timeout=120s</automated>
@@ -469,8 +500,10 @@ const auditParams = z.object({
     - Export streams via `csv.NewWriter(w)` (stdlib); time rendered via `t.In(installTZ).Format(time.RFC3339)`
     - `internal/audit/export_worker.go` defines `AuditExportArgs` with `Kind()` returning `"audit_export"` and `InsertOpts` with MaxAttempts=3
     - `internal/cli/serve.go` registers `&audit.AuditExportWorker{`
-    - The Phase 5 `CleanupExpiredReportsWorker` glob includes `*.csv` (verify with grep) OR a new note in internal/report/job.go references the audit-export.csv cleanup
-    - All 11 listed tests pass: `go test ./internal/audit/... -run TestExport -count=1` exits 0
+    - `internal/report/job.go` `CleanupExpiredReportsWorker` glob unconditionally includes `*.csv` extension: `grep "\.csv" internal/report/job.go` returns ≥ 1 line
+    - `internal/report/job_test.go` has `TestCleanupExpiredReportsWorker_PrunesCSV` asserting an aged `audit-export-*.csv` file is deleted by the worker
+    - `internal/audit/export.go` writes an `audit.WriteEntry` for `ActionAuditExport` on BOTH the inline path AND the async-enqueue path: grep `audit.ActionAuditExport` in `internal/audit/export.go` returns ≥ 2
+    - All 12 listed tests pass: `go test ./internal/audit/... -run TestExport -count=1` exits 0
     - `TestExport_CSVInjection_PrependsApostrophe` proves the `'` prefix is added for cells starting with `=`, `+`, `-`, `@`
     - `TestExport_50kCap_Returns413` asserts 413 status code and no CSV bytes
     - `TestExportAsync_24HCleanup` asserts the file path matches the Phase 5 cleanup glob pattern

@@ -5,6 +5,8 @@ type: execute
 wave: 2
 depends_on: [06-01, 06-08]
 files_modified:
+  - internal/db/migrations/0046_backup_thresholds.up.sql
+  - internal/db/migrations/0046_backup_thresholds.down.sql
   - internal/settings/retention.go
   - internal/settings/retention_test.go
   - internal/settings/backup_card.go
@@ -123,7 +125,7 @@ UI-SPEC §Surface 7 (Backup card layout) + §Empty States "Backup never run" + f
 
 <task type="auto" tdd="true">
   <name>Task 1: Extend retention.go with alerts_days + audit_log_days fields; PATCH validation; Backup card backend (status + thresholds)</name>
-  <files>internal/settings/retention.go, internal/settings/retention_test.go, internal/settings/backup_card.go, internal/settings/backup_card_test.go, internal/settings/identity.go, internal/settings/routes.go, internal/auth/authz.go, internal/http/router.go, internal/db/migrations/0045_backup_thresholds.up.sql, internal/db/migrations/0045_backup_thresholds.down.sql</files>
+  <files>internal/settings/retention.go, internal/settings/retention_test.go, internal/settings/backup_card.go, internal/settings/backup_card_test.go, internal/settings/identity.go, internal/settings/routes.go, internal/auth/authz.go, internal/http/router.go, internal/db/migrations/0046_backup_thresholds.up.sql, internal/db/migrations/0046_backup_thresholds.down.sql</files>
   <read_first>
     - internal/settings/retention.go (current implementation pattern)
     - internal/settings/retention_test.go (Phase 5 test pattern; this plan extends it)
@@ -142,10 +144,12 @@ UI-SPEC §Surface 7 (Backup card layout) + §Empty States "Backup never run" + f
     - Test (TestGetBackupStatus_PopulatedAndAge): with backup_run rows seeded → response includes `last: {file_name, size_bytes, sha256, started_at, finished_at, age_seconds}` + `recent: [...5 most recent...]`.
     - Test (TestPatchBackupThresholds_Validation): warn=24, crit=168 → 200. warn=200, crit=100 (warn >= crit) → 422. warn=-1 → 422. both must be int.
     - Test (TestAuthz_BackupConfigure_AdminOnly): viewer PATCH /api/settings/backup/thresholds → 403; admin → 200.
-    - Test (TestMigration0045_CreatesThresholdsRow): new migration creates a singleton row in retention_config (or new table) with backup_warn_threshold_hours + backup_crit_threshold_hours columns; defaults 24 + 168.
+    - Test (TestMigration0046_CreatesThresholdsRow): new migration creates a singleton row in retention_config (or new table) with backup_warn_threshold_hours + backup_crit_threshold_hours columns; defaults 24 + 168.
   </behavior>
   <action>
-    **Migration 0045_backup_thresholds.up.sql:** Extend `retention_config` with the two new columns (singleton pattern):
+    **Migration coordination:** Plan 06-10 claims migration `0046` (Plan 06-01 owns 0037-0043, Plan 06-05 owns 0044, Plan 06-08 owns 0045, Plan 06-11 owns 0047).
+
+    **Migration 0046_backup_thresholds.up.sql:** Extend `retention_config` with the two new columns (singleton pattern):
     ```sql
     ALTER TABLE retention_config
         ADD COLUMN backup_warn_threshold_hours INTEGER NOT NULL DEFAULT 24 CHECK (backup_warn_threshold_hours > 0 AND backup_warn_threshold_hours <= 8760),
@@ -242,10 +246,10 @@ UI-SPEC §Surface 7 (Backup card layout) + §Empty States "Backup never run" + f
     **internal/settings/identity.go (NEW or extend existing file):** add a simple `IdentityPropagationNoteResponse` that the frontend reads — or just have the frontend render the static D-47 copy "Changes apply to future reports." The simplest: no backend change; the frontend renders the copy directly.
   </action>
   <verify>
-    <automated>go test ./internal/settings/... ./internal/auth/... -run "TestGetRetention_IncludesPhase6|TestPatchRetention|TestGetBackupStatus|TestPatchBackupThresholds|TestAuthz_BackupConfigure|TestMigration0045" -count=1 -timeout=90s</automated>
+    <automated>go test ./internal/settings/... ./internal/auth/... -run "TestGetRetention_IncludesPhase6|TestPatchRetention|TestGetBackupStatus|TestPatchBackupThresholds|TestAuthz_BackupConfigure|TestMigration0046" -count=1 -timeout=90s</automated>
   </verify>
   <acceptance_criteria>
-    - `internal/db/migrations/0045_backup_thresholds.up.sql` contains both `backup_warn_threshold_hours INTEGER` and `backup_crit_threshold_hours INTEGER` columns + the `backup_warn_lt_crit` CHECK constraint
+    - `internal/db/migrations/0046_backup_thresholds.up.sql` contains both `backup_warn_threshold_hours INTEGER` and `backup_crit_threshold_hours INTEGER` columns + the `backup_warn_lt_crit` CHECK constraint
     - `internal/settings/retention.go` `RetentionResponse` struct has `AlertsDays int32` AND `AuditLogDays int32` fields (with json tags)
     - `internal/settings/retention.go` `RetentionPatch` struct has `AlertsDays *int32` AND `AuditLogDays *int32` fields
     - PATCH handler validates ranges: grep for `< 30` AND `> 3650` (alerts_days range) AND `< 90` AND `> 18250` (audit_log_days range)
