@@ -64,8 +64,8 @@ func TestPDFJob(t *testing.T) {
 
 	userID := uuid.New()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		VALUES ($1, 'worker@test.com', 'hashed', 'admin')
+		INSERT INTO "user" (id, email, name, password_hash, role)
+		VALUES ($1, 'worker@test.com', 'Worker Admin', 'hashed', 'admin')
 	`, userID)
 	require.NoError(t, err)
 
@@ -140,8 +140,8 @@ func TestCleanupWorker(t *testing.T) {
 
 	userID := uuid.New()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		VALUES ($1, 'cleanup@test.com', 'hashed', 'admin')
+		INSERT INTO "user" (id, email, name, password_hash, role)
+		VALUES ($1, 'cleanup@test.com', 'Cleanup Admin', 'hashed', 'admin')
 	`, userID)
 	require.NoError(t, err)
 

@@ -77,7 +77,7 @@ func (w *PDFReportWorker) Work(ctx context.Context, job *river.Job[PDFReportArgs
 	}
 
 	// 4) Re-build the report data from CAGGs.
-	cfg := planRowToConfig(plan, identity.Timezone)
+	cfg := planRowToConfig(plan, identity)
 	rpt, err := BuildReport(ctx, w.Queries, cfg)
 	if err != nil {
 		return fmt.Errorf("build report: %w", err)
@@ -113,9 +113,10 @@ func (w *PDFReportWorker) Work(ctx context.Context, job *river.Job[PDFReportArgs
 }
 
 // planRowToConfig converts a sqlc Report row back to a ReportConfig suitable
-// for passing to BuildReport. The timezone comes from the install identity
-// since the report table stores the config as opaque columns, not a tz string.
-func planRowToConfig(plan sqlc.Report, tz *time.Location) ReportConfig {
+// for passing to BuildReport. The timezone and capabilities come from the
+// install identity since the report table stores the config as opaque columns.
+func planRowToConfig(plan sqlc.Report, identity InstallIdentity) ReportConfig {
+	tz := identity.Timezone
 	if tz == nil {
 		tz = time.UTC
 	}
@@ -153,7 +154,7 @@ func planRowToConfig(plan sqlc.Report, tz *time.Location) ReportConfig {
 		RangeKind:       plan.RangeKind,
 		Start:           start,
 		End:             end,
-		Capabilities:    "both", // worker always generates full report; auth already checked at handler time
+		Capabilities: identity.Capabilities, // D-09; from install_identity (Plan 05-13 gap closure)
 		Timezone:        tz,
 	}
 }

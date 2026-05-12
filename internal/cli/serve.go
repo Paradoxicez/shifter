@@ -46,12 +46,14 @@ import (
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/events"
+	"github.com/shifter-io/shifter/internal/floorplan"
 	"github.com/shifter-io/shifter/internal/gateway"
 	httpapi "github.com/shifter-io/shifter/internal/http"
 	importpkg "github.com/shifter-io/shifter/internal/import"
 	"github.com/shifter-io/shifter/internal/ingest"
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/logging"
+	mapapi "github.com/shifter-io/shifter/internal/map"
 	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/report"
 	"github.com/shifter-io/shifter/internal/resolver"
@@ -412,6 +414,17 @@ var serveCmd = &cobra.Command{
 				Pool:    pool,
 				Queries: q,
 			},
+			MapDeps: &mapapi.Deps{
+				Pool:       pool,
+				Logger:     log.With("component", "mapapi"),
+				SessionMgr: sm,
+			},
+			FloorPlanDeps: &floorplan.Deps{
+				Pool:       pool,
+				Queries:    q,
+				SessionMgr: sm,
+				ImageRoot:  cfg.FloorPlanRoot,
+			},
 			SPA: httpapi.SPAHandler(),
 		})
 
@@ -576,10 +589,10 @@ func (f bootstrapperFunc) EnsureTenantAndApplication(ctx context.Context) (strin
 type sqlcIdentityProvider struct{ pool *pgxpool.Pool }
 
 func (p *sqlcIdentityProvider) Load(ctx context.Context) (report.InstallIdentity, error) {
-	var displayName, address, tzName string
+	var displayName, address, tzName, capabilities string
 	err := p.pool.QueryRow(ctx,
-		`SELECT display_name, COALESCE(address, ''), timezone FROM install_identity WHERE id = 1`,
-	).Scan(&displayName, &address, &tzName)
+		`SELECT display_name, COALESCE(address, ''), timezone, capabilities FROM install_identity WHERE id = 1`,
+	).Scan(&displayName, &address, &tzName, &capabilities)
 	if err != nil {
 		return report.InstallIdentity{}, fmt.Errorf("load identity: %w", err)
 	}
@@ -588,9 +601,10 @@ func (p *sqlcIdentityProvider) Load(ctx context.Context) (report.InstallIdentity
 		tz = time.UTC
 	}
 	return report.InstallIdentity{
-		DisplayName: displayName,
-		Address:     address,
-		Timezone:    tz,
+		DisplayName:  displayName,
+		Address:      address,
+		Timezone:     tz,
+		Capabilities: capabilities,
 	}, nil
 }
 

@@ -11,11 +11,12 @@ import (
 // needed for CSV and Excel report headers. Sourced from install_identity table
 // (Phase 1 D-06 / Phase 5 context).
 type InstallIdentity struct {
-	DisplayName string
-	Address     string
-	Timezone    *time.Location // install_identity.timezone (D-07)
-	Units       string         // "metric" | "imperial" — drives consumption unit label
-	LogoPath    string         // used only by PDF writer (plan 05-06)
+	DisplayName  string
+	Address      string
+	Timezone     *time.Location // install_identity.timezone (D-07)
+	Units        string         // "metric" | "imperial" — drives consumption unit label
+	LogoPath     string         // used only by PDF writer (plan 05-06)
+	Capabilities string         // "water" | "electricity" | "both" — D-09 capability gating (Plan 05-13)
 }
 
 // WriteCSV emits a UTF-8 BOM, a 3-row metadata header, then per-period detail

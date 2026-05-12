@@ -174,8 +174,8 @@ func TestStatusHandler_ViewerCannotSeeOthers(t *testing.T) {
 	// Seed a second viewer user.
 	viewer2ID := uuid.New()
 	_, err := deps.Pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		VALUES ($1, 'viewer2@test.com', 'hashed', 'viewer')
+		INSERT INTO "user" (id, email, name, password_hash, role)
+		VALUES ($1, 'viewer2@test.com', 'Viewer2', 'hashed', 'viewer')
 	`, viewer2ID)
 	require.NoError(t, err)
 
@@ -230,8 +230,8 @@ func setupHandlerTest(t *testing.T) (Deps, *scs.SessionManager, string) {
 	// Seed an admin user.
 	userID := uuid.New()
 	_, err = pool.Exec(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		VALUES ($1, 'admin@test.com', 'hashed', 'admin')
+		INSERT INTO "user" (id, email, name, password_hash, role)
+		VALUES ($1, 'admin@test.com', 'Test Admin', 'hashed', 'admin')
 	`, userID)
 	require.NoError(t, err)
 
@@ -444,20 +444,38 @@ func TestGenerateHandler_CSVAndExcelLandOnDisk(t *testing.T) {
 	require.NoError(t, err, "report.xlsx must exist on disk")
 }
 
-// injectUser puts an admin auth.User into the SCS session context so the
-// handler's auth.GetUser call succeeds (without needing a real HTTP session
-// round-trip).
+// injectUser puts an admin auth.User into a properly-initialized SCS session
+// context so the handler's auth.GetUser call succeeds. SCS requires the context
+// to be initialized via sm.LoadAndSave before sm.Put can be called — calling
+// sm.Put on a plain context panics with "no session data in context".
+// [Rule 1 fix — Plan 05-13: pre-existing test design bug; injectUser was calling
+// sm.Put on a plain context without LoadAndSave initialization.]
 func injectUser(ctx context.Context, sm *scs.SessionManager, userID string) context.Context {
-	sm.Put(ctx, "user_id", userID)
-	sm.Put(ctx, "role", "admin")
-	return ctx
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	var resultCtx context.Context
+	sm.LoadAndSave(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		sm.Put(req.Context(), "user_id", userID)
+		sm.Put(req.Context(), "role", "admin")
+		resultCtx = req.Context()
+	})).ServeHTTP(w, r)
+	_ = ctx // original ctx arg ignored; SCS needs its own initialized context
+	return resultCtx
 }
 
-// injectViewer puts a viewer auth.User into the SCS session context.
+// injectViewer puts a viewer auth.User into a properly-initialized SCS session
+// context. Mirrors the LoadAndSave pattern from injectUser above.
 func injectViewer(ctx context.Context, sm *scs.SessionManager, userID string) context.Context {
-	sm.Put(ctx, "user_id", userID)
-	sm.Put(ctx, "role", "viewer")
-	return ctx
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	var resultCtx context.Context
+	sm.LoadAndSave(http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		sm.Put(req.Context(), "user_id", userID)
+		sm.Put(req.Context(), "role", "viewer")
+		resultCtx = req.Context()
+	})).ServeHTTP(w, r)
+	_ = ctx
+	return resultCtx
 }
 
 // RegisterRoutes integration smoke — verifies the chi router mounts the route.

@@ -182,10 +182,16 @@ func GenerateHandler(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		// Set capabilities from identity so the assembler filters correctly (D-09).
-		// The capabilities field would normally come from install_identity.capabilities;
-		// for now we use a default of "both" and plan 05-09 can wire the real value.
-		cfg.Capabilities = "both"
+		// D-09: capability gating from install_identity.capabilities.
+		// Plan 05-13 gap closure — verifier gap 3. A water-only install must
+		// NOT show electricity sections in reports; an electricity-only install
+		// must NOT show water sections.
+		capabilities, err := deps.Queries.GetCapabilities(ctx)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capabilities_load_failed"})
+			return
+		}
+		cfg.Capabilities = capabilities
 
 		// Build report synchronously from CAGGs — this is CPU + DB only, no I/O.
 		rpt, err := BuildReport(ctx, deps.Queries, *cfg)
