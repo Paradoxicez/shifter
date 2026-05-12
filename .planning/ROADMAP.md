@@ -15,7 +15,7 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation â€
 - [x] **Phase 2: Domain Model & Canonical Schema** - Metering point + reading-offset + canonical measurement schema with end-to-end ingest path and meter-swap UI
 - [x] **Phase 3: Provisioning (Gateways, Devices, Bulk Import)** - Daily-driver provisioning surface so the binary runs at realistic fleet size
 - [ ] **Phase 4: Realtime & Dashboard** - SSE-driven live updates, adaptive dashboard, per-meter detail
-- [ ] **Phase 5: Aggregates, Reports, Map & Floor Plans** - Continuous aggregates, branded exports, OSM map, normalized fractional floor-plan placement
+- [x] **Phase 5: Aggregates, Reports, Map & Floor Plans** - Continuous aggregates, branded exports, OSM map, normalized fractional floor-plan placement (completed 2026-05-12)
 - [ ] **Phase 6: Alerts, Users, Audit & Operational Hardening** - The "ship to a paying customer" gate (alerts, user mgmt, audit UI, backup/restore, secrets, upgrade runbook)
 - [ ] **Phase 7: Multi-Vendor Breadth & v1.x Differentiators** - Pre-seeded profile catalog, codec test-runner, statistical anomaly detection, install-validation polish
 
@@ -267,7 +267,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
-| 5. Aggregates, Reports, Map & Floor Plans | 12/12 | Complete | 2026-05-12 |
+| 5. Aggregates, Reports, Map & Floor Plans | 12/12 | Complete   | 2026-05-12 |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
