@@ -62,13 +62,17 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 	// taken by 06-02; Rule 3 deviation documented in 06-08 SUMMARY.
 	// Plan 06-10 adds 0047_backup_thresholds bringing us to 47 — 0046 was
 	// taken by 06-08; Rule 3 deviation documented in 06-10 SUMMARY).
+	// Plan 06-11 adds 0048_audit_vocab_alert_prune bringing us to 48 — 0047 was
+	// taken by 06-10; Rule 3 deviation documented in 06-11 SUMMARY.
+	// Plan 06-12 gap closure adds 0049_audit_vocab_identity bringing us to 49
+	// (settings.identity_update action + install_identity entity type for SETT-02).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(48), v)
+	require.Equal(t, uint(49), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int

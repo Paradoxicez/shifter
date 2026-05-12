@@ -37,6 +37,9 @@ func RegisterRoutes(r chi.Router, deps Deps, sm *scs.SessionManager) {
 		rt.Use(auth.RequireAction(sm, auth.ActionSettingsUpdate))
 		rt.Patch("/api/settings/retention", PatchHandler(deps, sm))
 	})
+
+	// Identity (SETT-02 gap closure — Plan 06-12).
+	RegisterIdentityRoutes(r, deps, sm)
 }
 
 // RegisterRoutesWithBackup mounts all settings routes including the Plan 06-10

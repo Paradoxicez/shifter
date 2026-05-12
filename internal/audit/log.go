@@ -161,6 +161,19 @@ const (
 	ActionAlertPruned = "alert.pruned"
 )
 
+// Gap closure Plan 06-12 — SETT-02: install identity update audit.
+// The PatchIdentityHandler writes a settings.identity_update audit row
+// inside the same Serializable tx as the UpsertInstallIdentity call.
+const (
+	ActionSettingsIdentityUpdate = "settings.identity_update"
+)
+
+// Gap closure Plan 06-12 — SETT-02: install_identity entity type.
+// Used as EntityType in audit.Entry for identity update rows.
+const (
+	EntityTypeInstallIdentity = "install_identity"
+)
+
 // Phase 6 — Plan 06-01: new entity types (mirrors 0037 CHECK literals).
 // EntityTypeAuditLog is reserved for the D-51 audit.prune meta-row whose
 // entity_id self-references the meta-row's own UUID.

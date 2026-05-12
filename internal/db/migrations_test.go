@@ -104,11 +104,14 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// 'alert.pruned' action to audit_log CHECK; plan 06-11 originally claimed 0047
 	// but that was taken by 06-10 — Rule 3 deviation, documented in
 	// 06-11-ops-hardening-doctor-runbook-SUMMARY.md).
+	// Bumped 48 → 49 in plan 06-12 gap closure (0049_audit_vocab_identity — adds
+	// 'settings.identity_update' action + 'install_identity' entity type to
+	// audit_log CHECK constraints for SETT-02 gap closure).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 48, version, "expected schema_migrations.version = 48 (latest after plan 06-11 task 1)")
+	require.Equal(t, 49, version, "expected schema_migrations.version = 49 (latest after plan 06-12 gap closure)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.

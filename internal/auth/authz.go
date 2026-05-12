@@ -128,6 +128,13 @@ const (
 	ActionSettingsUpdate Action = "settings.update"
 )
 
+// Gap closure Plan 06-12 — SETT-02: identity update (admin only).
+// GET /api/settings/identity uses ActionConnectionTest (any authed user).
+// PATCH /api/settings/identity uses ActionSettingsIdentityUpdate (admin only).
+const (
+	ActionSettingsIdentityUpdate Action = "settings.identity_update"
+)
+
 // Phase 6 — Plan 06-08: backup actions (OPS-02 / OPS-03 / SETT-05).
 //
 // ActionBackupRun gates POST /api/backup/run-now — admin-only (T-06-08-01).
@@ -302,6 +309,11 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionBackupRun:       true,
 		ActionBackupRead:      true,
 		ActionBackupConfigure: true,
+
+		// Gap closure Plan 06-12 — SETT-02: identity update.
+		// PATCH /api/settings/identity is admin-only (T-06-12-02).
+		// GET /api/settings/identity uses ActionConnectionTest (granted above).
+		ActionSettingsIdentityUpdate: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
