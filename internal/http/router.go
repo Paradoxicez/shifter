@@ -212,6 +212,16 @@ type Deps struct {
 	// creating a rule; backtest is part of the configure-rule flow).
 	// nil in early-boot / router unit tests that don't need the backtest route.
 	BacktestDeps *apipkg.BacktestDeps
+
+	// ReportTemplateDeps wires Plan 07-11a's /api/reports/templates REST surface
+	// (UX-POWER Surface 6 — Saved Report Templates):
+	//   GET    /api/reports/templates        — ActionReportTemplateRead (admin + viewer)
+	//   GET    /api/reports/templates/{id}   — ActionReportTemplateRead (admin + viewer)
+	//   POST   /api/reports/templates        — ActionReportTemplateCreate (admin only)
+	//   PATCH  /api/reports/templates/{id}   — ActionReportTemplateUpdate (admin only)
+	//   DELETE /api/reports/templates/{id}   — ActionReportTemplateDelete (admin only)
+	// nil in early-boot / router unit tests that don't need template routes.
+	ReportTemplateDeps *apipkg.ReportTemplateDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -555,6 +565,17 @@ func NewRouter(deps Deps) http.Handler {
 			rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
 			rt.Post("/api/alerts/backtest", apipkg.BacktestHandler(*deps.BacktestDeps))
 		})
+	}
+
+	if deps.ReportTemplateDeps != nil {
+		// Plan 07-11a: saved report templates (UX-POWER Surface 6).
+		//   GET    /api/reports/templates        — ActionReportTemplateRead (admin + viewer)
+		//   GET    /api/reports/templates/{id}   — ActionReportTemplateRead (admin + viewer)
+		//   POST   /api/reports/templates        — ActionReportTemplateCreate (admin only)
+		//   PATCH  /api/reports/templates/{id}   — ActionReportTemplateUpdate (admin only)
+		//   DELETE /api/reports/templates/{id}   — ActionReportTemplateDelete (admin only)
+		// Mounted before SPA fallback (PITFALL #4).
+		apipkg.RegisterReportTemplateRoutes(r, *deps.ReportTemplateDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
