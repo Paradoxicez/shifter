@@ -11,6 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const applyCatalogUpdate = `-- name: ApplyCatalogUpdate :exec
+UPDATE device_profile
+SET catalog_source_version           = $2,
+    codec_js                         = $3,
+    capabilities                     = $4,
+    battery_curve                    = $5,
+    expected_uplink_interval_seconds = $6,
+    offline_threshold_multiplier     = $7,
+    anomaly_compatibility            = $8,
+    counter_modulus                  = $9,
+    mac_version                      = $10,
+    region                           = $11,
+    codec_js_synced_at               = NULL,
+    updated_at                       = now()
+WHERE id = $1
+`
+
+type ApplyCatalogUpdateParams struct {
+	ID                            pgtype.UUID
+	CatalogSourceVersion          *string
+	CodecJs                       string
+	Capabilities                  []string
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
+	CounterModulus                int64
+	MacVersion                    string
+	Region                        *string
+}
+
+// Plan 07-04 catalog Update flow: writes the merged fields and clears
+// codec_js_synced_at to NULL so the Phase 2 seed routine re-pushes to
+// ChirpStack (D-36).
+func (q *Queries) ApplyCatalogUpdate(ctx context.Context, arg ApplyCatalogUpdateParams) error {
+	_, err := q.db.Exec(ctx, applyCatalogUpdate,
+		arg.ID,
+		arg.CatalogSourceVersion,
+		arg.CodecJs,
+		arg.Capabilities,
+		arg.BatteryCurve,
+		arg.ExpectedUplinkIntervalSeconds,
+		arg.OfflineThresholdMultiplier,
+		arg.AnomalyCompatibility,
+		arg.CounterModulus,
+		arg.MacVersion,
+		arg.Region,
+	)
+	return err
+}
+
 const archiveDeviceProfile = `-- name: ArchiveDeviceProfile :one
 UPDATE device_profile SET archived_at = now()
 WHERE id = $1 AND archived_at IS NULL
@@ -124,6 +175,102 @@ func (q *Queries) CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfi
 	return i, err
 }
 
+const createDeviceProfileFromCatalog = `-- name: CreateDeviceProfileFromCatalog :one
+INSERT INTO device_profile (
+    name,
+    codec_js,
+    capabilities,
+    catalog_source,
+    catalog_source_version,
+    battery_curve,
+    expected_uplink_interval_seconds,
+    offline_threshold_multiplier,
+    anomaly_compatibility,
+    customer_edited,
+    slug,
+    vendor,
+    family,
+    counter_modulus,
+    mac_version,
+    region,
+    codec_js_synced_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,           -- name
+    $2,           -- codec_js
+    $3,           -- capabilities (text[])
+    $4,           -- catalog_source (slug)
+    $5,           -- catalog_source_version
+    $6,           -- battery_curve
+    $7,           -- expected_uplink_interval_seconds
+    $8,           -- offline_threshold_multiplier
+    $9,           -- anomaly_compatibility
+    FALSE,        -- customer_edited starts FALSE on fresh import
+    $10,          -- slug
+    $11,          -- vendor
+    $12,          -- family
+    $13,          -- counter_modulus
+    $14,          -- mac_version
+    $15,          -- region (nullable TEXT)
+    NULL,         -- codec_js_synced_at; Phase 2 seed pushes to ChirpStack
+    now(),
+    now()
+)
+RETURNING id, updated_at
+`
+
+type CreateDeviceProfileFromCatalogParams struct {
+	Name                          string
+	CodecJs                       string
+	Capabilities                  []string
+	CatalogSource                 *string
+	CatalogSourceVersion          *string
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
+	Slug                          string
+	Vendor                        string
+	Family                        *string
+	CounterModulus                int64
+	MacVersion                    string
+	Region                        *string
+}
+
+type CreateDeviceProfileFromCatalogRow struct {
+	ID        pgtype.UUID
+	UpdatedAt pgtype.Timestamptz
+}
+
+// Plan 07-04 ImportFromCatalogHandler calls this when an operator imports a
+// catalog entry. Inserts a NEW device_profile row populated from the catalog
+// entry; customer_edited starts FALSE; codec_js_synced_at is left NULL so the
+// Phase 2 seed routine pushes the codec to ChirpStack on next pass.
+// Param order matches plan 07-04 Task 2 db.CreateDeviceProfileFromCatalogParams struct.
+func (q *Queries) CreateDeviceProfileFromCatalog(ctx context.Context, arg CreateDeviceProfileFromCatalogParams) (CreateDeviceProfileFromCatalogRow, error) {
+	row := q.db.QueryRow(ctx, createDeviceProfileFromCatalog,
+		arg.Name,
+		arg.CodecJs,
+		arg.Capabilities,
+		arg.CatalogSource,
+		arg.CatalogSourceVersion,
+		arg.BatteryCurve,
+		arg.ExpectedUplinkIntervalSeconds,
+		arg.OfflineThresholdMultiplier,
+		arg.AnomalyCompatibility,
+		arg.Slug,
+		arg.Vendor,
+		arg.Family,
+		arg.CounterModulus,
+		arg.MacVersion,
+		arg.Region,
+	)
+	var i CreateDeviceProfileFromCatalogRow
+	err := row.Scan(&i.ID, &i.UpdatedAt)
+	return i, err
+}
+
 const getDeviceProfile = `-- name: GetDeviceProfile :one
 SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s, catalog_source, catalog_source_version, customer_edited, battery_curve, expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility FROM device_profile WHERE id = $1
 `
@@ -196,6 +343,56 @@ func (q *Queries) GetDeviceProfileBySlug(ctx context.Context, slug string) (Devi
 	return i, err
 }
 
+const getProfileCatalogMetadata = `-- name: GetProfileCatalogMetadata :one
+SELECT
+    id, slug, name, vendor, family, capabilities,
+    codec_js,
+    catalog_source, catalog_source_version, customer_edited,
+    battery_curve, expected_uplink_interval_seconds,
+    offline_threshold_multiplier, anomaly_compatibility
+FROM device_profile
+WHERE id = $1
+`
+
+type GetProfileCatalogMetadataRow struct {
+	ID                            pgtype.UUID
+	Slug                          string
+	Name                          string
+	Vendor                        string
+	Family                        *string
+	Capabilities                  []string
+	CodecJs                       string
+	CatalogSource                 *string
+	CatalogSourceVersion          *string
+	CustomerEdited                bool
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
+}
+
+func (q *Queries) GetProfileCatalogMetadata(ctx context.Context, id pgtype.UUID) (GetProfileCatalogMetadataRow, error) {
+	row := q.db.QueryRow(ctx, getProfileCatalogMetadata, id)
+	var i GetProfileCatalogMetadataRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Vendor,
+		&i.Family,
+		&i.Capabilities,
+		&i.CodecJs,
+		&i.CatalogSource,
+		&i.CatalogSourceVersion,
+		&i.CustomerEdited,
+		&i.BatteryCurve,
+		&i.ExpectedUplinkIntervalSeconds,
+		&i.OfflineThresholdMultiplier,
+		&i.AnomalyCompatibility,
+	)
+	return i, err
+}
+
 const listActiveDeviceProfiles = `-- name: ListActiveDeviceProfiles :many
 SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s, catalog_source, catalog_source_version, customer_edited, battery_curve, expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility FROM device_profile
 WHERE archived_at IS NULL
@@ -237,6 +434,82 @@ func (q *Queries) ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile
 			&i.ExpectedUplinkIntervalSeconds,
 			&i.OfflineThresholdMultiplier,
 			&i.AnomalyCompatibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProfilesWithCatalogMetadata = `-- name: ListProfilesWithCatalogMetadata :many
+SELECT
+    id, slug, name, vendor, family, capabilities,
+    codec_js_synced_at,
+    catalog_source, catalog_source_version, customer_edited,
+    battery_curve, expected_uplink_interval_seconds,
+    offline_threshold_multiplier, anomaly_compatibility,
+    counter_modulus, mac_version, region,
+    created_at, updated_at
+FROM device_profile
+ORDER BY vendor ASC, family ASC
+`
+
+type ListProfilesWithCatalogMetadataRow struct {
+	ID                            pgtype.UUID
+	Slug                          string
+	Name                          string
+	Vendor                        string
+	Family                        *string
+	Capabilities                  []string
+	CodecJsSyncedAt               pgtype.Timestamptz
+	CatalogSource                 *string
+	CatalogSourceVersion          *string
+	CustomerEdited                bool
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
+	CounterModulus                int64
+	MacVersion                    string
+	Region                        *string
+	CreatedAt                     pgtype.Timestamptz
+	UpdatedAt                     pgtype.Timestamptz
+}
+
+// Plan 07-02 — Vendor Catalog Settings tab reads this to render the table.
+func (q *Queries) ListProfilesWithCatalogMetadata(ctx context.Context) ([]ListProfilesWithCatalogMetadataRow, error) {
+	rows, err := q.db.Query(ctx, listProfilesWithCatalogMetadata)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProfilesWithCatalogMetadataRow
+	for rows.Next() {
+		var i ListProfilesWithCatalogMetadataRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Vendor,
+			&i.Family,
+			&i.Capabilities,
+			&i.CodecJsSyncedAt,
+			&i.CatalogSource,
+			&i.CatalogSourceVersion,
+			&i.CustomerEdited,
+			&i.BatteryCurve,
+			&i.ExpectedUplinkIntervalSeconds,
+			&i.OfflineThresholdMultiplier,
+			&i.AnomalyCompatibility,
+			&i.CounterModulus,
+			&i.MacVersion,
+			&i.Region,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -303,6 +576,20 @@ func (q *Queries) ListUnsyncedProfiles(ctx context.Context) ([]DeviceProfile, er
 	return items, nil
 }
 
+const markProfileCustomerEdited = `-- name: MarkProfileCustomerEdited :exec
+UPDATE device_profile
+SET customer_edited = TRUE,
+    updated_at      = now()
+WHERE id = $1
+`
+
+// Plan 07-04 invokes this when an operator saves an edit to a catalog-sourced
+// profile so future catalog Updates show the "you edited this" flag.
+func (q *Queries) MarkProfileCustomerEdited(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markProfileCustomerEdited, id)
+	return err
+}
+
 const markProfileSyncedToChirpStack = `-- name: MarkProfileSyncedToChirpStack :exec
 UPDATE device_profile
 SET cs_profile_id = $2, codec_js_synced_at = now()
@@ -319,6 +606,33 @@ type MarkProfileSyncedToChirpStackParams struct {
 // next boot's ListUnsyncedProfiles query no longer returns this row.
 func (q *Queries) MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error {
 	_, err := q.db.Exec(ctx, markProfileSyncedToChirpStack, arg.ID, arg.CsProfileID)
+	return err
+}
+
+const setProfileCatalogSource = `-- name: SetProfileCatalogSource :exec
+UPDATE device_profile
+SET catalog_source         = $2,
+    catalog_source_version = $3,
+    customer_edited        = $4,
+    updated_at             = now()
+WHERE id = $1
+`
+
+type SetProfileCatalogSourceParams struct {
+	ID                   pgtype.UUID
+	CatalogSource        *string
+	CatalogSourceVersion *string
+	CustomerEdited       bool
+}
+
+// Plan 07-04 invokes this after a catalog Import or Update succeeds.
+func (q *Queries) SetProfileCatalogSource(ctx context.Context, arg SetProfileCatalogSourceParams) error {
+	_, err := q.db.Exec(ctx, setProfileCatalogSource,
+		arg.ID,
+		arg.CatalogSource,
+		arg.CatalogSourceVersion,
+		arg.CustomerEdited,
+	)
 	return err
 }
 

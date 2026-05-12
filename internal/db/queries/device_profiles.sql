@@ -76,3 +76,111 @@ WHERE archived_at IS NULL
 UPDATE device_profile
 SET codec_js = $2, codec_js_synced_at = NULL
 WHERE id = $1;
+
+-- name: ListProfilesWithCatalogMetadata :many
+-- Plan 07-02 — Vendor Catalog Settings tab reads this to render the table.
+SELECT
+    id, slug, name, vendor, family, capabilities,
+    codec_js_synced_at,
+    catalog_source, catalog_source_version, customer_edited,
+    battery_curve, expected_uplink_interval_seconds,
+    offline_threshold_multiplier, anomaly_compatibility,
+    counter_modulus, mac_version, region,
+    created_at, updated_at
+FROM device_profile
+ORDER BY vendor ASC, family ASC;
+
+-- name: GetProfileCatalogMetadata :one
+SELECT
+    id, slug, name, vendor, family, capabilities,
+    codec_js,
+    catalog_source, catalog_source_version, customer_edited,
+    battery_curve, expected_uplink_interval_seconds,
+    offline_threshold_multiplier, anomaly_compatibility
+FROM device_profile
+WHERE id = $1;
+
+-- name: SetProfileCatalogSource :exec
+-- Plan 07-04 invokes this after a catalog Import or Update succeeds.
+UPDATE device_profile
+SET catalog_source         = $2,
+    catalog_source_version = $3,
+    customer_edited        = $4,
+    updated_at             = now()
+WHERE id = $1;
+
+-- name: MarkProfileCustomerEdited :exec
+-- Plan 07-04 invokes this when an operator saves an edit to a catalog-sourced
+-- profile so future catalog Updates show the "you edited this" flag.
+UPDATE device_profile
+SET customer_edited = TRUE,
+    updated_at      = now()
+WHERE id = $1;
+
+-- name: ApplyCatalogUpdate :exec
+-- Plan 07-04 catalog Update flow: writes the merged fields and clears
+-- codec_js_synced_at to NULL so the Phase 2 seed routine re-pushes to
+-- ChirpStack (D-36).
+UPDATE device_profile
+SET catalog_source_version           = $2,
+    codec_js                         = $3,
+    capabilities                     = $4,
+    battery_curve                    = $5,
+    expected_uplink_interval_seconds = $6,
+    offline_threshold_multiplier     = $7,
+    anomaly_compatibility            = $8,
+    counter_modulus                  = $9,
+    mac_version                      = $10,
+    region                           = $11,
+    codec_js_synced_at               = NULL,
+    updated_at                       = now()
+WHERE id = $1;
+
+-- name: CreateDeviceProfileFromCatalog :one
+-- Plan 07-04 ImportFromCatalogHandler calls this when an operator imports a
+-- catalog entry. Inserts a NEW device_profile row populated from the catalog
+-- entry; customer_edited starts FALSE; codec_js_synced_at is left NULL so the
+-- Phase 2 seed routine pushes the codec to ChirpStack on next pass.
+-- Param order matches plan 07-04 Task 2 db.CreateDeviceProfileFromCatalogParams struct.
+INSERT INTO device_profile (
+    name,
+    codec_js,
+    capabilities,
+    catalog_source,
+    catalog_source_version,
+    battery_curve,
+    expected_uplink_interval_seconds,
+    offline_threshold_multiplier,
+    anomaly_compatibility,
+    customer_edited,
+    slug,
+    vendor,
+    family,
+    counter_modulus,
+    mac_version,
+    region,
+    codec_js_synced_at,
+    created_at,
+    updated_at
+) VALUES (
+    $1,           -- name
+    $2,           -- codec_js
+    $3,           -- capabilities (text[])
+    $4,           -- catalog_source (slug)
+    $5,           -- catalog_source_version
+    $6,           -- battery_curve
+    $7,           -- expected_uplink_interval_seconds
+    $8,           -- offline_threshold_multiplier
+    $9,           -- anomaly_compatibility
+    FALSE,        -- customer_edited starts FALSE on fresh import
+    $10,          -- slug
+    $11,          -- vendor
+    $12,          -- family
+    $13,          -- counter_modulus
+    $14,          -- mac_version
+    $15,          -- region (nullable TEXT)
+    NULL,         -- codec_js_synced_at; Phase 2 seed pushes to ChirpStack
+    now(),
+    now()
+)
+RETURNING id, updated_at;

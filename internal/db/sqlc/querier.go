@@ -46,6 +46,10 @@ type Querier interface {
 	//   $20 binding_id (forward-compat for Phase 4/5; NULL when no binding
 	//               covers the timestamp — quality='missing_canonical' per Q#3)
 	AppendMeasurement(ctx context.Context, arg AppendMeasurementParams) error
+	// Plan 07-04 catalog Update flow: writes the merged fields and clears
+	// codec_js_synced_at to NULL so the Phase 2 seed routine re-pushes to
+	// ChirpStack (D-36).
+	ApplyCatalogUpdate(ctx context.Context, arg ApplyCatalogUpdateParams) error
 	// D-20 soft-delete for profiles. Note: device.device_profile_id has
 	// ON DELETE RESTRICT, so the row stays referenceable even when archived
 	// (existing devices keep working; archive only hides from the create-device
@@ -119,6 +123,12 @@ type Querier interface {
 	// seeded profiles cover Phase 2 — operator-authored profiles unlock in
 	// Phase 6). codec_js may be empty at creation; the seed routine fills it.
 	CreateDeviceProfile(ctx context.Context, arg CreateDeviceProfileParams) (DeviceProfile, error)
+	// Plan 07-04 ImportFromCatalogHandler calls this when an operator imports a
+	// catalog entry. Inserts a NEW device_profile row populated from the catalog
+	// entry; customer_edited starts FALSE; codec_js_synced_at is left NULL so the
+	// Phase 2 seed routine pushes the codec to ChirpStack on next pass.
+	// Param order matches plan 07-04 Task 2 db.CreateDeviceProfileFromCatalogParams struct.
+	CreateDeviceProfileFromCatalog(ctx context.Context, arg CreateDeviceProfileFromCatalogParams) (CreateDeviceProfileFromCatalogRow, error)
 	// floor_plan.sql — Phase 5 SITE-02/03 (D-16 schema + D-18 image storage).
 	// Serves upload (CreateFloorPlan), listing (ListFloorPlansBySite), detail
 	// (GetFloorPlan), image replace (UpdateFloorPlanImage), rename (UpdateFloorPlanLabel),
@@ -354,6 +364,7 @@ type Querier interface {
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
 	GetPlacementByDevice(ctx context.Context, deviceID pgtype.UUID) (DeviceFloorPlanPlacement, error)
+	GetProfileCatalogMetadata(ctx context.Context, id pgtype.UUID) (GetProfileCatalogMetadataRow, error)
 	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
 	// internal/db/queries/settings.sql
 	// Retention configuration queries (DATA-13 / D-09 / Plan 05-11).
@@ -535,6 +546,8 @@ type Querier interface {
 	// battery_pct and rssi come from the latest measurement row for the active
 	// metering point (measurement has no device_id per DATA-01 invariant).
 	ListPlacementsByPlan(ctx context.Context, floorPlanID pgtype.UUID) ([]ListPlacementsByPlanRow, error)
+	// Plan 07-02 — Vendor Catalog Settings tab reads this to render the table.
+	ListProfilesWithCatalogMetadata(ctx context.Context) ([]ListProfilesWithCatalogMetadataRow, error)
 	// Top 10 currently-active alerts for the slide-over drawer (UI-SPEC §Surface 1).
 	// Sort: critical > warning > info, then most-recent first within each tier.
 	ListRecentAlertsForDrawer(ctx context.Context) ([]ListRecentAlertsForDrawerRow, error)
@@ -576,6 +589,9 @@ type Querier interface {
 	// $1 = mp_id, $2 = limit (<=500), $3 = before (nullable timestamptz cursor),
 	// $4 = quality filter (TEXT[]; NULL or empty = no filter).
 	ListUplinksByMP(ctx context.Context, arg ListUplinksByMPParams) ([]ListUplinksByMPRow, error)
+	// Plan 07-04 invokes this when an operator saves an edit to a catalog-sourced
+	// profile so future catalog Updates show the "you edited this" flag.
+	MarkProfileCustomerEdited(ctx context.Context, id pgtype.UUID) error
 	// Plan 02-08 seed routine — called after a successful CS DeviceProfileService
 	// Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
 	// next boot's ListUnsyncedProfiles query no longer returns this row.
@@ -662,6 +678,8 @@ type Querier interface {
 	// the device — fills the cs_device_uuid column so subsequent gRPC calls can
 	// address by UUID rather than dev_eui.
 	SetDeviceCSUUID(ctx context.Context, arg SetDeviceCSUUIDParams) error
+	// Plan 07-04 invokes this after a catalog Import or Update succeeds.
+	SetProfileCatalogSource(ctx context.Context, arg SetProfileCatalogSourceParams) error
 	// Plan 02-08 seed routine — writes the //go:embed-ed codec body into the row
 	// and clears codec_js_synced_at so the next pass re-pushes to ChirpStack.
 	SetProfileCodecJS(ctx context.Context, arg SetProfileCodecJSParams) error
