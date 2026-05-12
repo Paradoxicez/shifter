@@ -681,3 +681,21 @@ Logic preserved verbatim: byte offsets, bit masks, ÷1000 (raw liters → m³), 
 ## Architectural correction logged
 
 D-19 originally said "Codec source = embedded Go functions in `internal/codec/{vendor}/`." Codebase scout surfaced contradiction: actual Phase 2 architecture is JS codecs (`internal/profile/codecs/*.js`) embedded via `//go:embed`, pushed to ChirpStack v4 via gRPC, executed in ChirpStack's QuickJS sandbox. D-19 corrected in CONTEXT.md update. Cascades into D-26..D-28 (test-runner = local goja), D-32 (shared codec_js_path), D-36 (re-sync via codec_js_synced_at NULL).
+
+## Late scope cut — vendor count reduction
+
+**Trigger:** After locking D-18 (ship 7 vendors), operator reviewed effort estimate ("ไม่ต้องเขียน Kamstrup/Diehl/Sagemcom/Schneider — จะได้เสร็จเร็ว") and requested ship-what-we-have-now.
+
+**Decision (D-18 REVISED 2026-05-12):** Ship **4 catalog entries from 3 existing codec files** instead of 7 from 7. Catalog includes Axioma W1 + Acrel ADL200 + Acrel ADW300 (sharing acrel_family.js per D-32) + Itron+KINMY. Defer Kamstrup MULTICAL, Diehl, Sagemcom, Schneider IEM3xxx to v1.1+ via D-20 PR workflow when a real customer install requires them.
+
+**Rationale:**
+1. Ship Phase 7 faster — no time spent authoring speculative codecs without customer demand.
+2. Catalog architecture fully validated with 4 real entries — adding more is PR-workflow application, not system change.
+3. Speculative codecs ship with untested payload formats; risk of shipping wrong defaults that operators correct via D-04 customer-edit path.
+4. Matches v1.x release cadence — vendor expansion becomes per-release dot updates (v1.1.0, v1.2.0, etc.) tracked by per-profile semver (D-02).
+
+**Impact on other decisions:**
+- D-18 wording updated (was "Ship 7 vendor profiles") → 4 entries / 3 codec files.
+- D-20 PR workflow remains unchanged — that's exactly what handles v1.1+ vendor additions now.
+- `<deferred>` section adds explicit "Additional vendor catalog entries (Kamstrup/Diehl/Sagemcom/Schneider)" → v1.1+.
+- ROADMAP SC#1 wording ("vendor #N is admin-UI work") remains scope-revised per D-20 note. No ROADMAP edit needed — Phase 7 success criteria still met by the 4-entry shipping list (the SC says "catalog ships as versioned data file," not "7 entries").
