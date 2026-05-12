@@ -93,11 +93,14 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// Bumped 44 → 45 in plan 06-02 task 1 (0045_device_gateway_link — schema
 	// bridge for ALERT-02 + ALERT-03 D-14 gateway-down suppression: adds
 	// device.gateway_id + gateway.last_seen_at).
+	// Bumped 45 → 46 in plan 06-08 task 1 (0046_backup_run — backup history
+	// table; plan 06-08 claimed 0045 but that was already taken by 06-02 —
+	// Rule 3 deviation, documented in 06-08-backup-cli-cron-SUMMARY.md).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 45, version, "expected schema_migrations.version = 45 (latest after plan 06-02 task 1)")
+	require.Equal(t, 46, version, "expected schema_migrations.version = 46 (latest after plan 06-08 task 1)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.

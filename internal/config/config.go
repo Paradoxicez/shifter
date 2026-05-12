@@ -28,6 +28,7 @@ type Config struct {
 	LogoStorageDir string `mapstructure:"logo_storage_dir"`
 	ReportsRoot    string `mapstructure:"reports_root"`
 	FloorPlanRoot  string `mapstructure:"floor_plan_root"`
+	BackupDir      string `mapstructure:"backup_dir"` // SHIFTER_BACKUP_DIR; default /var/lib/shifter/backups
 
 	DB         DBConfig      `mapstructure:"db"`
 	ChirpStack CSConfig      `mapstructure:"chirpstack"`
@@ -121,6 +122,7 @@ func Load() (*Config, error) {
 	v.SetDefault("logo_storage_dir", "/var/lib/shifter/logos")
 	v.SetDefault("reports_root", "/var/lib/shifter/reports")
 	v.SetDefault("floor_plan_root", "/var/lib/shifter/floor-plans")
+	v.SetDefault("backup_dir", "/var/lib/shifter/backups")
 	v.SetDefault("db.host", "postgres")
 	v.SetDefault("db.port", 5432)
 	v.SetDefault("db.database", "shifter")
