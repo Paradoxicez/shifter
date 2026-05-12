@@ -243,7 +243,7 @@ describe('AuditExportButton', () => {
     vi.mocked(useExportAuditAsync).mockReturnValue({
       mutate: mockMutate,
       isPending: false,
-    } as ReturnType<typeof useExportAuditAsync>)
+    } as unknown as ReturnType<typeof useExportAuditAsync>)
 
     const { AuditExportButton } = await import('./AuditExportButton')
     render(

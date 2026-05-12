@@ -17,6 +17,7 @@
     "test": "vitest",
     "test:run": "vitest --run",
     "test:ui": "vitest --ui",
+    "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:list": "playwright test --list"
   },

@@ -65,8 +65,8 @@ function patchThresholds(data: {
 
 const thresholdSchema = z
   .object({
-    warn_threshold_hours: z.coerce.number().int().min(1, 'Must be at least 1').max(8760),
-    crit_threshold_hours: z.coerce.number().int().min(1, 'Must be at least 1').max(8760),
+    warn_threshold_hours: z.number().int().min(1, 'Must be at least 1').max(8760),
+    crit_threshold_hours: z.number().int().min(1, 'Must be at least 1').max(8760),
   })
   .refine((d) => d.warn_threshold_hours < d.crit_threshold_hours, {
     message: 'Warning threshold must be less than critical threshold',
@@ -131,7 +131,7 @@ function ThresholdForm({
             id="warn_threshold_hours"
             type="number"
             className="h-8 w-24 text-sm"
-            {...register('warn_threshold_hours')}
+            {...register('warn_threshold_hours', { valueAsNumber: true })}
             data-testid="input-warn-hours"
           />
           {errors.warn_threshold_hours && (
@@ -146,7 +146,7 @@ function ThresholdForm({
             id="crit_threshold_hours"
             type="number"
             className="h-8 w-24 text-sm"
-            {...register('crit_threshold_hours')}
+            {...register('crit_threshold_hours', { valueAsNumber: true })}
             data-testid="input-crit-hours"
           />
           {errors.crit_threshold_hours && (
