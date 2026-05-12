@@ -301,6 +301,23 @@ type AuditLog struct {
 	RequestID  *string
 }
 
+type BackupRun struct {
+	ID             pgtype.UUID
+	TriggerKind    string
+	TriggeredBy    pgtype.UUID
+	Status         string
+	DestinationDir string
+	FileName       *string
+	FileSizeBytes  *int64
+	Sha256         *string
+	ManifestJson   []byte
+	ChirpstackMode *string
+	SchemaVersion  *string
+	StartedAt      pgtype.Timestamptz
+	FinishedAt     pgtype.Timestamptz
+	ErrorMessage   *string
+}
+
 type Binding struct {
 	ID              pgtype.UUID
 	MeteringPointID pgtype.UUID
@@ -600,6 +617,10 @@ type RetentionConfig struct {
 	AlertsDays int32
 	// D-38: audit_log retention. Default 1825d (5 years). Pruned via admin_prune_audit_rows() — see 0043.
 	AuditLogDays int32
+	// D-46: yellow age threshold (Settings Backup card). Default 24h. Must be < backup_crit_threshold_hours.
+	BackupWarnThresholdHours int32
+	// D-46: red age threshold (Settings Backup card). Default 168h (7d). Must be > backup_warn_threshold_hours.
+	BackupCritThresholdHours int32
 }
 
 type RiverClient struct {

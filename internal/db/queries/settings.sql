@@ -17,7 +17,9 @@
 -- SELECT column set matches the table 1:1; otherwise it generates a
 -- per-query row alias that breaks downstream code expecting the table type.
 SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
-       alerts_days, audit_log_days, updated_at
+       alerts_days, audit_log_days,
+       backup_warn_threshold_hours, backup_crit_threshold_hours,
+       updated_at
 FROM retention_config
 WHERE id = 1;
 
@@ -28,15 +30,21 @@ WHERE id = 1;
 -- flag to distinguish "omitted" from "explicitly set to null". See Plan 05-11
 -- doc.go for the sentinel protocol.
 --
--- $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
--- the existing value. $5 yearly_days is always explicit (nil = forever).
+-- Phase 6 Plan 06-10: alerts_days and audit_log_days added. Both use COALESCE
+-- (omitting them from PATCH preserves the existing value). The Phase 5
+-- TimescaleDB policy reconciliation does NOT apply to alerts/audit_log — those
+-- tables are NOT hypertables; their retention is enforced by the alerts-prune
+-- worker (Plan 06-11 task 1) and the AuditPruneWorker (Plan 06-01). The
+-- config row is the sole source of truth; the workers read it on each run.
 UPDATE retention_config
-SET raw_days     = COALESCE(sqlc.narg('raw_days')::integer, raw_days),
-    hourly_days  = COALESCE(sqlc.narg('hourly_days')::integer, hourly_days),
-    daily_days   = COALESCE(sqlc.narg('daily_days')::integer, daily_days),
-    monthly_days = COALESCE(sqlc.narg('monthly_days')::integer, monthly_days),
-    yearly_days  = sqlc.narg('yearly_days')::integer,
-    updated_at   = now()
+SET raw_days      = COALESCE(sqlc.narg('raw_days')::integer, raw_days),
+    hourly_days   = COALESCE(sqlc.narg('hourly_days')::integer, hourly_days),
+    daily_days    = COALESCE(sqlc.narg('daily_days')::integer, daily_days),
+    monthly_days  = COALESCE(sqlc.narg('monthly_days')::integer, monthly_days),
+    yearly_days   = sqlc.narg('yearly_days')::integer,
+    alerts_days   = COALESCE(sqlc.narg('alerts_days')::integer, alerts_days),
+    audit_log_days = COALESCE(sqlc.narg('audit_log_days')::integer, audit_log_days),
+    updated_at    = now()
 WHERE id = 1
 RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
           alerts_days, audit_log_days, updated_at;

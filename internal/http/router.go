@@ -130,6 +130,14 @@ type Deps struct {
 	// nil in early-boot / router unit tests that don't need retention routes.
 	SettingsDeps *settings.Deps
 
+	// BackupStore + BackupCardCfg wire Plan 06-10's backup status + threshold
+	// endpoints (SETT-05):
+	//   GET   /api/settings/backup              — ActionBackupRead (admin + viewer)
+	//   PATCH /api/settings/backup/thresholds   — ActionBackupConfigure (admin only)
+	// Mounted alongside SettingsDeps when non-nil. Both must be set together.
+	BackupStore   *backup.Store
+	BackupCardCfg settings.BackupCardConfig
+
 	// MapDeps wires Plan 05-04's map data endpoint:
 	//   GET /api/map/data — admin + viewer (auth.ActionSiteRead)
 	// nil in early-boot / router unit tests that don't need the map route.
@@ -367,8 +375,16 @@ func NewRouter(deps Deps) http.Handler {
 		// SettingsDeps mounts Plan 05-11's data retention endpoints:
 		//   GET   /api/settings/retention — admin + viewer
 		//   PATCH /api/settings/retention — admin only (T-05-11-01)
+		// Plan 06-10 extends with backup status + threshold endpoints when
+		// BackupStore is wired:
+		//   GET   /api/settings/backup              — ActionBackupRead (admin + viewer)
+		//   PATCH /api/settings/backup/thresholds   — ActionBackupConfigure (admin)
 		// Mounted before the SPA fallback (PITFALL #4).
-		settings.RegisterRoutes(r, *deps.SettingsDeps, deps.SessionMgr)
+		if deps.BackupStore != nil {
+			settings.RegisterRoutesWithBackup(r, *deps.SettingsDeps, deps.SessionMgr, deps.BackupStore, deps.BackupCardCfg)
+		} else {
+			settings.RegisterRoutes(r, *deps.SettingsDeps, deps.SessionMgr)
+		}
 	}
 	if deps.MapDeps != nil {
 		// MapDeps mounts Plan 05-04's GET /api/map/data endpoint.

@@ -96,11 +96,15 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// Bumped 45 → 46 in plan 06-08 task 1 (0046_backup_run — backup history
 	// table; plan 06-08 claimed 0045 but that was already taken by 06-02 —
 	// Rule 3 deviation, documented in 06-08-backup-cli-cron-SUMMARY.md).
+	// Bumped 46 → 47 in plan 06-10 task 1 (0047_backup_thresholds — adds
+	// backup_warn_threshold_hours + backup_crit_threshold_hours to retention_config;
+	// plan 06-10 originally claimed 0046 but that was taken by 06-08 —
+	// Rule 3 deviation, documented in 06-10-settings-extensions-SUMMARY.md).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 46, version, "expected schema_migrations.version = 46 (latest after plan 06-08 task 1)")
+	require.Equal(t, 47, version, "expected schema_migrations.version = 47 (latest after plan 06-10 task 1)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.

@@ -747,8 +747,12 @@ type Querier interface {
 	// flag to distinguish "omitted" from "explicitly set to null". See Plan 05-11
 	// doc.go for the sentinel protocol.
 	//
-	// $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
-	// the existing value. $5 yearly_days is always explicit (nil = forever).
+	// Phase 6 Plan 06-10: alerts_days and audit_log_days added. Both use COALESCE
+	// (omitting them from PATCH preserves the existing value). The Phase 5
+	// TimescaleDB policy reconciliation does NOT apply to alerts/audit_log — those
+	// tables are NOT hypertables; their retention is enforced by the alerts-prune
+	// worker (Plan 06-11 task 1) and the AuditPruneWorker (Plan 06-01). The
+	// config row is the sole source of truth; the workers read it on each run.
 	UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (UpdateRetentionConfigRow, error)
 	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
 	// moving a site between parents is a separate "reparent" flow with audit

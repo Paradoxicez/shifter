@@ -42,6 +42,7 @@ import (
 	"github.com/shifter-io/shifter/internal/alert"
 	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
+	"github.com/shifter-io/shifter/internal/backup"
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
 	"github.com/shifter-io/shifter/internal/dashboard"
@@ -567,6 +568,10 @@ var serveCmd = &cobra.Command{
 			SettingsDeps: &settings.Deps{
 				Pool:    pool,
 				Queries: q,
+			},
+			BackupStore: backup.NewStore(pool),
+			BackupCardCfg: settings.BackupCardConfig{
+				BackupDir: cfg.BackupDir,
 			},
 			MapDeps: &mapapi.Deps{
 				Pool:       pool,

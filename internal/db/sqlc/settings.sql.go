@@ -14,21 +14,25 @@ import (
 const getRetentionConfig = `-- name: GetRetentionConfig :one
 
 SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
-       alerts_days, audit_log_days, updated_at
+       alerts_days, audit_log_days,
+       backup_warn_threshold_hours, backup_crit_threshold_hours,
+       updated_at
 FROM retention_config
 WHERE id = 1
 `
 
 type GetRetentionConfigRow struct {
-	ID           int32
-	RawDays      int32
-	HourlyDays   int32
-	DailyDays    int32
-	MonthlyDays  int32
-	YearlyDays   *int32
-	AlertsDays   int32
-	AuditLogDays int32
-	UpdatedAt    pgtype.Timestamptz
+	ID                       int32
+	RawDays                  int32
+	HourlyDays               int32
+	DailyDays                int32
+	MonthlyDays              int32
+	YearlyDays               *int32
+	AlertsDays               int32
+	AuditLogDays             int32
+	BackupWarnThresholdHours int32
+	BackupCritThresholdHours int32
+	UpdatedAt                pgtype.Timestamptz
 }
 
 // internal/db/queries/settings.sql
@@ -59,6 +63,8 @@ func (q *Queries) GetRetentionConfig(ctx context.Context) (GetRetentionConfigRow
 		&i.YearlyDays,
 		&i.AlertsDays,
 		&i.AuditLogDays,
+		&i.BackupWarnThresholdHours,
+		&i.BackupCritThresholdHours,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -66,23 +72,27 @@ func (q *Queries) GetRetentionConfig(ctx context.Context) (GetRetentionConfigRow
 
 const updateRetentionConfig = `-- name: UpdateRetentionConfig :one
 UPDATE retention_config
-SET raw_days     = COALESCE($1::integer, raw_days),
-    hourly_days  = COALESCE($2::integer, hourly_days),
-    daily_days   = COALESCE($3::integer, daily_days),
-    monthly_days = COALESCE($4::integer, monthly_days),
-    yearly_days  = $5::integer,
-    updated_at   = now()
+SET raw_days      = COALESCE($1::integer, raw_days),
+    hourly_days   = COALESCE($2::integer, hourly_days),
+    daily_days    = COALESCE($3::integer, daily_days),
+    monthly_days  = COALESCE($4::integer, monthly_days),
+    yearly_days   = $5::integer,
+    alerts_days   = COALESCE($6::integer, alerts_days),
+    audit_log_days = COALESCE($7::integer, audit_log_days),
+    updated_at    = now()
 WHERE id = 1
 RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
           alerts_days, audit_log_days, updated_at
 `
 
 type UpdateRetentionConfigParams struct {
-	RawDays     *int32
-	HourlyDays  *int32
-	DailyDays   *int32
-	MonthlyDays *int32
-	YearlyDays  *int32
+	RawDays      *int32
+	HourlyDays   *int32
+	DailyDays    *int32
+	MonthlyDays  *int32
+	YearlyDays   *int32
+	AlertsDays   *int32
+	AuditLogDays *int32
 }
 
 type UpdateRetentionConfigRow struct {
@@ -103,8 +113,12 @@ type UpdateRetentionConfigRow struct {
 // flag to distinguish "omitted" from "explicitly set to null". See Plan 05-11
 // doc.go for the sentinel protocol.
 //
-// $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
-// the existing value. $5 yearly_days is always explicit (nil = forever).
+// Phase 6 Plan 06-10: alerts_days and audit_log_days added. Both use COALESCE
+// (omitting them from PATCH preserves the existing value). The Phase 5
+// TimescaleDB policy reconciliation does NOT apply to alerts/audit_log — those
+// tables are NOT hypertables; their retention is enforced by the alerts-prune
+// worker (Plan 06-11 task 1) and the AuditPruneWorker (Plan 06-01). The
+// config row is the sole source of truth; the workers read it on each run.
 func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (UpdateRetentionConfigRow, error) {
 	row := q.db.QueryRow(ctx, updateRetentionConfig,
 		arg.RawDays,
@@ -112,6 +126,8 @@ func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetention
 		arg.DailyDays,
 		arg.MonthlyDays,
 		arg.YearlyDays,
+		arg.AlertsDays,
+		arg.AuditLogDays,
 	)
 	var i UpdateRetentionConfigRow
 	err := row.Scan(

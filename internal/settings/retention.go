@@ -44,14 +44,20 @@ type retentionSnapshot struct {
 	DailyDays   int32
 	MonthlyDays int32
 	YearlyDays  *int32
-	UpdatedAt   pgtype.Timestamptz
+	// Phase 6 additions (Plan 06-10 / migration 0040):
+	AlertsDays   int32
+	AuditLogDays int32
+	UpdatedAt    pgtype.Timestamptz
 }
 
 func fromGetRow(r sqlc.GetRetentionConfigRow) retentionSnapshot {
 	return retentionSnapshot{
 		ID: r.ID, RawDays: r.RawDays, HourlyDays: r.HourlyDays,
 		DailyDays: r.DailyDays, MonthlyDays: r.MonthlyDays,
-		YearlyDays: r.YearlyDays, UpdatedAt: r.UpdatedAt,
+		YearlyDays:   r.YearlyDays,
+		AlertsDays:   r.AlertsDays,
+		AuditLogDays: r.AuditLogDays,
+		UpdatedAt:    r.UpdatedAt,
 	}
 }
 
@@ -59,7 +65,10 @@ func fromUpdateRow(r sqlc.UpdateRetentionConfigRow) retentionSnapshot {
 	return retentionSnapshot{
 		ID: r.ID, RawDays: r.RawDays, HourlyDays: r.HourlyDays,
 		DailyDays: r.DailyDays, MonthlyDays: r.MonthlyDays,
-		YearlyDays: r.YearlyDays, UpdatedAt: r.UpdatedAt,
+		YearlyDays:   r.YearlyDays,
+		AlertsDays:   r.AlertsDays,
+		AuditLogDays: r.AuditLogDays,
+		UpdatedAt:    r.UpdatedAt,
 	}
 }
 
@@ -70,7 +79,10 @@ type RetentionResponse struct {
 	DailyDays   int32  `json:"daily_days"`
 	MonthlyDays int32  `json:"monthly_days"`
 	YearlyDays  *int32 `json:"yearly_days"` // null = forever (D-09)
-	UpdatedAt   string `json:"updated_at"`
+	// Phase 6 additions (Plan 06-10 / migration 0040):
+	AlertsDays   int32  `json:"alerts_days"`    // D-13 default 365
+	AuditLogDays int32  `json:"audit_log_days"` // D-38 default 1825
+	UpdatedAt    string `json:"updated_at"`
 }
 
 // RetentionPatch is the wire shape for PATCH /api/settings/retention.
@@ -85,6 +97,9 @@ type RetentionPatch struct {
 	MonthlyDays   *int32 `json:"monthly_days"`
 	YearlyDays    *int32 `json:"yearly_days"`
 	YearlyForever *bool  `json:"yearly_forever"` // sentinel: true → NULL out yearly_days
+	// Phase 6 additions (Plan 06-10 / migration 0040):
+	AlertsDays   *int32 `json:"alerts_days"`
+	AuditLogDays *int32 `json:"audit_log_days"`
 }
 
 // GetHandler serves GET /api/settings/retention.
@@ -104,6 +119,12 @@ func GetHandler(deps Deps) http.HandlerFunc {
 // Admin-only (T-05-11-01). Validates ranges, updates retention_config and
 // reconciles TimescaleDB policies inside the same pgx.Tx, then writes an
 // audit entry before commit.
+//
+// Phase 6 Plan 06-10: alerts_days and audit_log_days are updated in the same
+// transaction as the Phase 5 fields. TimescaleDB policy reconciliation does
+// NOT apply to alerts/audit_log — those tables are not hypertables; their
+// retention is enforced by dedicated pruning workers that read retention_config.
+// TODO (Plan 06-11 task 1): wire the alerts-prune worker that reads alerts_days.
 func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Auth: admin-only per T-05-11-01. RequireAction middleware at the router
@@ -152,11 +173,13 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 		yearlyDays := resolveYearly(patch, before.YearlyDays)
 
 		updatedRow, err := q.UpdateRetentionConfig(r.Context(), sqlc.UpdateRetentionConfigParams{
-			RawDays:     patch.RawDays,
-			HourlyDays:  patch.HourlyDays,
-			DailyDays:   patch.DailyDays,
-			MonthlyDays: patch.MonthlyDays,
-			YearlyDays:  yearlyDays,
+			RawDays:      patch.RawDays,
+			HourlyDays:   patch.HourlyDays,
+			DailyDays:    patch.DailyDays,
+			MonthlyDays:  patch.MonthlyDays,
+			YearlyDays:   yearlyDays,
+			AlertsDays:   patch.AlertsDays,
+			AuditLogDays: patch.AuditLogDays,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "update_failed")
@@ -167,6 +190,9 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 		// Same-tx policy reconciliation: remove + re-add TimescaleDB retention
 		// policies for every level that changed. If any policy call fails, the
 		// whole tx rolls back — retention_config and actual policies stay in sync.
+		// NOTE: alerts/audit_log are NOT hypertables; ReconcilePolicies only
+		// reconciles the 5 measurement hypertables — alerts/audit_log are pruned
+		// by dedicated workers that read retention_config directly.
 		if err := ReconcilePolicies(r.Context(), tx, before, updated); err != nil {
 			writeError(w, http.StatusInternalServerError, "policy_reconcile_failed")
 			return
@@ -220,6 +246,11 @@ func ReconcilePolicies(ctx context.Context, tx pgx.Tx, before, after retentionSn
 		{"measurement_daily", &before.DailyDays, &after.DailyDays},
 		{"measurement_monthly", &before.MonthlyDays, &after.MonthlyDays},
 		{"measurement_yearly", before.YearlyDays, after.YearlyDays},
+		// alerts_days and audit_log_days are intentionally NOT here:
+		// those tables are not TimescaleDB hypertables and do not have
+		// TimescaleDB retention policies. Their retention is enforced by
+		// dedicated workers (AuditPruneWorker in Plan 06-01; alerts-prune
+		// worker in Plan 06-11 task 1) that read retention_config directly.
 	}
 
 	for _, l := range levels {
@@ -286,6 +317,14 @@ func validatePatch(p RetentionPatch) error {
 	if p.YearlyDays != nil && *p.YearlyDays < 1825 {
 		return errors.New("yearly_days_out_of_range")
 	}
+	// Phase 6 additions (Plan 06-10): alerts_days and audit_log_days range checks.
+	// Mirrors the CHECK constraints added by migration 0040.
+	if p.AlertsDays != nil && (*p.AlertsDays < 30 || *p.AlertsDays > 3650) {
+		return errors.New("alerts_days_out_of_range")
+	}
+	if p.AuditLogDays != nil && (*p.AuditLogDays < 90 || *p.AuditLogDays > 18250) {
+		return errors.New("audit_log_days_out_of_range")
+	}
 	return nil
 }
 
@@ -327,18 +366,29 @@ func diffFields(before, after retentionSnapshot) (beforeMap, afterMap map[string
 		beforeMap["yearly_days"] = before.YearlyDays
 		afterMap["yearly_days"] = after.YearlyDays
 	}
+	// Phase 6 additions:
+	if before.AlertsDays != after.AlertsDays {
+		beforeMap["alerts_days"] = before.AlertsDays
+		afterMap["alerts_days"] = after.AlertsDays
+	}
+	if before.AuditLogDays != after.AuditLogDays {
+		beforeMap["audit_log_days"] = before.AuditLogDays
+		afterMap["audit_log_days"] = after.AuditLogDays
+	}
 	return beforeMap, afterMap
 }
 
 // toResponse converts a retentionSnapshot to the wire response shape.
 func toResponse(cfg retentionSnapshot) RetentionResponse {
 	return RetentionResponse{
-		RawDays:     cfg.RawDays,
-		HourlyDays:  cfg.HourlyDays,
-		DailyDays:   cfg.DailyDays,
-		MonthlyDays: cfg.MonthlyDays,
-		YearlyDays:  cfg.YearlyDays,
-		UpdatedAt:   cfg.UpdatedAt.Time.Format(time.RFC3339),
+		RawDays:      cfg.RawDays,
+		HourlyDays:   cfg.HourlyDays,
+		DailyDays:    cfg.DailyDays,
+		MonthlyDays:  cfg.MonthlyDays,
+		YearlyDays:   cfg.YearlyDays,
+		AlertsDays:   cfg.AlertsDays,
+		AuditLogDays: cfg.AuditLogDays,
+		UpdatedAt:    cfg.UpdatedAt.Time.Format(time.RFC3339),
 	}
 }
 

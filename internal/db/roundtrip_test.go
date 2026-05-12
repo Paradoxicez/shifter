@@ -52,21 +52,23 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 46 (Plan 06-01 bumped from 37 to 43:
+	// Reapply. Should succeed back up to 47 (Plan 06-01 bumped from 37 to 43:
 	// 0038_alert_rule / 0039_alert / 0040_retention_config_phase6 /
 	// 0042_alert_worker_state / 0043_admin_prune_audit_rows — 0041 is a
 	// deliberate gap so the SECURITY DEFINER prune function gets terminal
 	// number 0043. Plan 06-05 adds 0044_user_last_login bringing us to 44.
 	// Plan 06-02 adds 0045_device_gateway_link bringing us to 45.
 	// Plan 06-08 adds 0046_backup_run bringing us to 46 — 0045 was already
-	// taken by 06-02; Rule 3 deviation documented in 06-08 SUMMARY).
+	// taken by 06-02; Rule 3 deviation documented in 06-08 SUMMARY.
+	// Plan 06-10 adds 0047_backup_thresholds bringing us to 47 — 0046 was
+	// taken by 06-08; Rule 3 deviation documented in 06-10 SUMMARY).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(46), v)
+	require.Equal(t, uint(47), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int
