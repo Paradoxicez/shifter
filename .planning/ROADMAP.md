@@ -193,7 +193,7 @@ Plans:
 - [x] 05-09-reports-frontend-PLAN.md — /reports route with config panel + result panel + PDF poll + toast (REPT-01..07 frontend)
 - [x] 05-10-floor-plan-frontend-PLAN.md — Site detail Floor plan tab + canvas with fractional coords + DevicePin drag + popover + pdf.js conversion + live SSE health (SITE-02..06 frontend)
 - [x] 05-11-settings-data-retention-PLAN.md — Settings Data Retention card + PATCH /api/settings/retention with same-tx policy reconciliation + SETT-04 traceability flip (DATA-13 UI)
-- [ ] 05-12-phase-closure-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS/ROADMAP/VALIDATION/RESEARCH reconciliation + UX-03 vocabulary audit
+- [x] 05-12-phase-closure-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS/ROADMAP/VALIDATION/RESEARCH reconciliation + UX-03 vocabulary audit
 
 **UI hint**: yes
 
@@ -267,7 +267,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
-| 5. Aggregates, Reports, Map & Floor Plans | 11/12 | In Progress|  |
+| 5. Aggregates, Reports, Map & Floor Plans | 12/12 | Complete | 2026-05-12 |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 

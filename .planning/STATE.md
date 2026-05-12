@@ -24,8 +24,25 @@ progress:
 
 ## Current Position
 
-Phase: 05 (aggregates-reports-map-floor-plans) — EXECUTING
-Plan: 12 of 12
+Phase: 06 (alerts-users-audit-ops-hardening) — NEXT
+Plan: 1 of TBD (Phase 5 complete 2026-05-12)
+
+> **Phase 5 closure (2026-05-12):** Plans 05-01..12 shipped 12 plans covering DATA-11..13, REPT-01..07, MAP-01..04, SITE-02..06, plus SETT-04 (migrated from Phase 6).
+> - 05-01 Wave 0: maroto/v2 + river + leaflet/pdfjs deps; River schema as migration 0024; pdfjs worker shim; cumulative_delta pre-check
+> - 05-02: 4-level CAGG hierarchy (hourly→daily→monthly→yearly) + retention_config table + install seed + refresh policies
+> - 05-03: Reports CSV/Excel backend + sqlc queries against CAGGs + delta math (D-03 silent YoY fallback)
+> - 05-04: Map data endpoint with capability-gated rollups + OSM tile URL
+> - 05-05: Floor plan migrations 0031/0032 + image upload validator (MIME sniff + dim probe + 10MB cap) + compose volume mount
+> - 05-06: maroto/v2 PDF writer + River worker + 24h cleanup PeriodicJob + download handler with UUID validation
+> - 05-07: Placement CRUD (Upsert/Update/Delete/List) + same-site integrity guard + auth-gated static image serve + D-25 decommission cascade
+> - 05-08: Map frontend (react-leaflet v5 + clustering + OSM) + sidebar nav + GW-04 MapPicker side-effect
+> - 05-09: Reports frontend (/reports route + config panel + result panel + PDF poll + Sonner toast)
+> - 05-10: Floor plan canvas + fractional coords + DevicePin drag + popover + pdf.js conversion + SSE marker health state
+> - 05-11: Settings Data Retention card + PATCH /api/settings/retention with same-tx policy reconciliation (SETT-04)
+> - 05-12: 6 E2E spec bodies + phase5-fleet.ts fixture + REQUIREMENTS/ROADMAP/VALIDATION/RESEARCH reconciliation + UX-03 vocab audit
+>
+> Final test suite (Plan 05-12 Task 3): `go test ./... -race -count=1` PASSED; `pnpm --dir web test:run` PASSED; UX-03 vocabulary audit clean (zero ChirpStack-native terms in Phase 5 surfaces).
+> All 19 Phase 5 requirement IDs (SITE-02..06, MAP-01..04, REPT-01..07, DATA-11..13) + SETT-04 marked Complete with evidence trail in REQUIREMENTS.md.
 
 > **Phase 2 closure (2026-05-04):** Plans 02-11..15 closed every gap surfaced by the Phase 2 verifier:
 > - 02-11: swap + profile HTTP route surface

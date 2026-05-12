@@ -1256,6 +1256,18 @@ Option B: Add a second LISTEN channel (`device_health_changed`) driven by a PG t
 
 ---
 
+## Open Questions (RESOLVED)
+
+1. **Cumulative delta computation in CAGG** — **RESOLVED** (Plan 05-01 Task 1 + Plan 05-02 Task 1): `cumulative_delta` was NOT present in the measurement hypertable (confirmed by inspecting `internal/db/migrations/0015_measurement.up.sql` and `internal/ingest/handler.go` — no delta column is stored at ingest time). Plan 05-02's hourly CAGG computes the delta inline via `LAG(cumulative_value) OVER (PARTITION BY metering_point_id ORDER BY time)`. Cross-bucket correctness verified by `TestCAGGChain_DeltaCorrectness` (hour-09 delta = 45, hour-10 delta = 55 across the bucket boundary). The cumulative_delta verdict is documented at `internal/aggregate/CUMULATIVE_DELTA.md`.
+
+2. **River migration embedding vs CLI** — **RESOLVED** (Plan 05-01 Task 2): River's schema was captured by running `river migrate-up` against a clean Postgres instance + `pg_dump -s -t 'river_*'`, then converted to idempotent `CREATE TABLE IF NOT EXISTS` form and landed as `internal/db/migrations/0024_river_tables.up.sql`. Round-trip test `TestRunMigrations_RiverDownUpClean` pins behavior. No `river migrate-up` CLI step is required at install time — golang-migrate handles River's tables as part of the standard migration sequence.
+
+3. **Maroto v2 page X of Y placeholder syntax** — **RESOLVED** (Plan 05-06 Task 1): The `{page}` / `{pages}` placeholder syntax from v1 is NOT available as a simple string interpolation in maroto v2.4.0. The resolved strategy uses a two-pass approach: generate the PDF body first to determine total page count via `doc.GetPages()`, then regenerate with the count injected as a literal string into the footer text (e.g., `fmt.Sprintf("Page %d of %d", pageNum, totalPages)`). This is implemented in `internal/report/pdf.go::buildReportPDF`. See Plan 05-06 SUMMARY.md for the full resolution and test coverage in `internal/report/pdf_test.go::TestPDFBranding`.
+
+4. **SETT-04 vs SETT-04 scope in Phase 5** — **RESOLVED** (Plan 05-11): SETT-04 migrated from Phase 6 → Phase 5 in REQUIREMENTS.md. The `retention_config` table, default D-09 seed values (raw 90d, hourly 1y, daily 5y, monthly 20y, yearly never drops), PATCH endpoint with same-transaction TimescaleDB policy reconciliation, and the Settings Data Retention card + EditRetentionDialog all shipped together in Plan 05-11. REQUIREMENTS.md traceability table updated: SETT-04 row now shows Phase 5. The motivation: operators need to see and adjust retention values immediately after CAGGs are configured — shipping the UI in Phase 6 would leave the backend without operator-facing controls for a full phase.
+
+---
+
 ## Assumptions Log
 
 | # | Claim | Section | Risk if Wrong |
