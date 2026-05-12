@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.3.22
 milestone_name: milestone
-status: Phase complete — ready for verification
-last_updated: "2026-05-12T13:52:54.203Z"
+status: Ready to plan
+last_updated: "2026-05-12T13:58:51.335Z"
 progress:
   total_phases: 7
   completed_phases: 6
@@ -24,8 +24,8 @@ progress:
 
 ## Current Position
 
-Phase: 06 (alerts-users-audit-operational-hardening) — EXECUTING
-Plan: 11 of 11
+Phase: 07
+Plan: Not started
 
 > **Phase 5 closure (2026-05-12):** Plans 05-01..12 shipped 12 plans covering DATA-11..13, REPT-01..07, MAP-01..04, SITE-02..06, plus SETT-04 (migrated from Phase 6).
 > - 05-01 Wave 0: maroto/v2 + river + leaflet/pdfjs deps; River schema as migration 0024; pdfjs worker shim; cumulative_delta pre-check
