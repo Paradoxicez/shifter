@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/shifter-io/shifter/internal/codec"
 	"github.com/shifter-io/shifter/internal/db"
 	"github.com/shifter-io/shifter/internal/profile/codecs"
 	"github.com/shifter-io/shifter/internal/testsupport"
@@ -57,7 +58,7 @@ func TestDriftCheck_HashesMatch_NoChange(t *testing.T) {
 
 	seedDriftProfile(t, pool, slug+"-match", embeddedJS, slug)
 
-	err := RunCatalogDriftCheck(ctx, pool)
+	err := codec.RunCatalogDriftCheck(ctx, pool)
 	require.NoError(t, err)
 
 	var customerEdited bool
@@ -84,7 +85,7 @@ func TestDriftCheck_HashesDiffer_MarksCustomerEdited(t *testing.T) {
 
 	seedDriftProfile(t, pool, slug+"-edited", operatorEdit, slug)
 
-	err := RunCatalogDriftCheck(ctx, pool)
+	err := codec.RunCatalogDriftCheck(ctx, pool)
 	require.NoError(t, err)
 
 	var customerEdited bool
@@ -113,7 +114,7 @@ func TestDriftCheck_PlaceholderMarker_OverwritesCodec(t *testing.T) {
 
 	seedDriftProfile(t, pool, slug+"-placeholder", placeholder, slug)
 
-	err := RunCatalogDriftCheck(ctx, pool)
+	err := codec.RunCatalogDriftCheck(ctx, pool)
 	require.NoError(t, err)
 
 	var customerEdited bool
