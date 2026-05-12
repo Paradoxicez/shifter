@@ -321,6 +321,16 @@ type Querier interface {
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
 	GetPlacementByDevice(ctx context.Context, deviceID pgtype.UUID) (DeviceFloorPlanPlacement, error)
 	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
+	// internal/db/queries/settings.sql
+	// Retention configuration queries (DATA-13 / D-09 / Plan 05-11).
+	//
+	// The retention_config table is a singleton (id=1) seeded at install time
+	// by internal/install/finish.go. Queries here power the Settings → Data
+	// Retention card GET + PATCH handlers.
+	// Returns the singleton retention configuration row (id=1).
+	// Called by both GET /api/settings/retention (read) and the PATCH handler
+	// (to snapshot before-state for the audit diff).
+	GetRetentionConfig(ctx context.Context) (RetentionConfig, error)
 	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.
@@ -616,6 +626,15 @@ type Querier interface {
 	// Drag-to-nudge: only x_frac / y_frac change; floor_plan_id stays.
 	UpdatePlacement(ctx context.Context, arg UpdatePlacementParams) (DeviceFloorPlanPlacement, error)
 	UpdateReportPDFStatus(ctx context.Context, arg UpdateReportPDFStatusParams) error
+	// Partial update via COALESCE: only fields whose $N is non-NULL are changed.
+	// yearly_days is NOT wrapped in COALESCE — the handler passes the resolved
+	// value explicitly (including NULL to express "forever"), using a sentinel
+	// flag to distinguish "omitted" from "explicitly set to null". See Plan 05-11
+	// doc.go for the sentinel protocol.
+	//
+	// $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
+	// the existing value. $5 yearly_days is always explicit (nil = forever).
+	UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (RetentionConfig, error)
 	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
 	// moving a site between parents is a separate "reparent" flow with audit
 	// implications and is deferred to Phase 6.

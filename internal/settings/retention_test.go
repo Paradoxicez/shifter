@@ -37,6 +37,14 @@ func startTestDB(t *testing.T) *pgxpool.Pool {
 	if err := db.RunMigrations(context.Background(), pool, log); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
+	// Seed the singleton retention_config row (inserted by install.FinishSetup
+	// in production; tests don't run FinishSetup so we seed it directly).
+	_, seedErr := pool.Exec(context.Background(),
+		`INSERT INTO retention_config (id, raw_days, hourly_days, daily_days, monthly_days, yearly_days)
+		 VALUES (1, 90, 365, 1825, 7300, NULL) ON CONFLICT (id) DO NOTHING`)
+	if seedErr != nil {
+		t.Fatalf("seed retention_config: %v", seedErr)
+	}
 	return pool
 }
 
@@ -48,6 +56,26 @@ func buildTestRouter(pool *pgxpool.Pool, sm *scs.SessionManager) http.Handler {
 	r.Use(sm.LoadAndSave)
 	RegisterRoutes(r, deps, sm)
 	return r
+}
+
+// seedTestUser inserts a minimal user row into the test DB so that audit_log
+// FK constraints (user_id REFERENCES "user"(id)) accept the session user ID.
+// Call this for any test that exercises the PATCH handler (which writes an
+// audit row). Tests that only exercise GET or 422/403 paths do not need a
+// real user row because those paths never reach audit.WriteEntry.
+func seedTestUser(t *testing.T, pool *pgxpool.Pool, userID, role string) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO "user" (id, email, name, password_hash, role)
+		 VALUES ($1, $2, 'Test User', 'x', $3::user_role)
+		 ON CONFLICT (id) DO NOTHING`,
+		userID,
+		fmt.Sprintf("test-%s@test.local", userID),
+		role,
+	)
+	if err != nil {
+		t.Fatalf("seedTestUser: %v", err)
+	}
 }
 
 // injectSession writes user_id + role into a new session and returns the
@@ -110,6 +138,7 @@ func TestRetentionConfigCRUD(t *testing.T) {
 	router := buildTestRouter(pool, sm)
 
 	adminID := uuid.New().String()
+	seedTestUser(t, pool, adminID, "admin")
 	adminCookie := injectSession(t, sm, adminID, "admin")
 
 	// Test 1: GET returns the seeded defaults (90, 365, 1825, 7300, null).
@@ -200,7 +229,9 @@ func TestRetentionConfig_YearlyForever_RemovesPolicy(t *testing.T) {
 	pool := startTestDB(t)
 	sm := scs.New()
 	router := buildTestRouter(pool, sm)
-	adminCookie := injectSession(t, sm, uuid.New().String(), "admin")
+	adminID := uuid.New().String()
+	seedTestUser(t, pool, adminID, "admin")
+	adminCookie := injectSession(t, sm, adminID, "admin")
 
 	// First set yearly_days to a concrete value.
 	w1 := doReq(t, router, http.MethodPatch, "/api/settings/retention",
@@ -293,7 +324,9 @@ func TestRetentionConfig_AuditEntryWritten(t *testing.T) {
 	pool := startTestDB(t)
 	sm := scs.New()
 	router := buildTestRouter(pool, sm)
-	adminCookie := injectSession(t, sm, uuid.New().String(), "admin")
+	adminID := uuid.New().String()
+	seedTestUser(t, pool, adminID, "admin")
+	adminCookie := injectSession(t, sm, adminID, "admin")
 
 	w := doReq(t, router, http.MethodPatch, "/api/settings/retention",
 		map[string]any{"raw_days": 60}, adminCookie)
@@ -302,10 +335,12 @@ func TestRetentionConfig_AuditEntryWritten(t *testing.T) {
 	}
 
 	// Verify audit row exists.
+	// EntityID is uuid.Nil (all-zeros) stored as a valid non-null UUID —
+	// the audit.WriteEntry call encodes uuid.Nil with Valid=true (not NULL).
 	q := sqlc.New(pool)
 	entries, err := q.ListAuditEntriesByEntity(context.Background(), sqlc.ListAuditEntriesByEntityParams{
 		EntityType: "retention_config",
-		EntityID:   pgtype.UUID{Valid: false}, // uuid.Nil stored as NULL
+		EntityID:   pgtype.UUID{Bytes: [16]byte{}, Valid: true}, // uuid.Nil, stored as valid all-zeros UUID
 		Limit:      10,
 		Offset:     0,
 	})
