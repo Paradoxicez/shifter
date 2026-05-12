@@ -163,3 +163,80 @@ previous version.
 (seed → backup → drop schema → restore → smoke) on every PR touching
 `internal/backup/**` or `internal/db/migrations/**`, and on every push to main.
 The workflow fails CI if backup or restore produces invalid output.
+
+## Compose conventions
+
+All Shifter Compose files follow these conventions (enforced by `go test ./internal/compose/...`):
+
+- **Pinned image tags only.** No `:latest` anywhere. Every service has a specific version
+  (e.g., `timescale/timescaledb:2.26.0-pg16`, `mcuadros/ofelia:v0.3.22`).
+- **json-file logging caps.** Every service block contains `logging: *json-logging`
+  (the YAML anchor defined at the top of each compose file). This applies the
+  `json-file` driver with `max-size: 10m` + `max-file: 3` to prevent unbounded
+  disk usage (OPS-05).
+- **Secrets via `secrets:` declarations.** Credentials are read from
+  `/run/secrets/<name>` files (mounted by Compose from `../secrets/*.txt`), NOT
+  from environment variables. Never use `${SHIFTER_DB_PASSWORD}` in compose files
+  — use `SHIFTER_DB_PASSWORD_FILE: /run/secrets/postgres_password` instead (D-06).
+- **No exposed internal services.** Postgres, Mosquitto, Redis, ChirpStack do NOT
+  bind host ports. Only Caddy (80/443) and the ChirpStack gateway bridge (1700/udp)
+  bind externally (T-20-03).
+- **Backups volume.** Both compose flavors mount `/var/lib/shifter/backups` via a
+  named volume `backups`. Bundled mode adds the `mcuadros/ofelia` cron sidecar
+  (read-only Docker socket); external mode operators use their own scheduler.
+
+When editing a compose file, run `go test ./internal/compose/...` to confirm
+conventions hold before committing.
+
+## Upgrading Shifter
+
+Operator-driven five-step procedure per Shifter release (no in-app upgrade in v1):
+
+1. **Take a backup** (per the Backup & Restore section above):
+   ```sh
+   docker compose -f compose/bundled.yml exec shifter \
+     shifter backup --to /var/lib/shifter/backups
+   ```
+   Confirm the tarball is written and the `backup_run` row shows `status='completed'`
+   via `GET /api/backup/last` or the Settings → Backup card.
+
+2. **Bump the image tag.** Edit `compose/bundled.yml` (or `compose/external.yml`)
+   and change `image: shifter:0.X.Y` to the new release tag. **Never use `:latest`** —
+   the compose conventions test will fail and block the PR.
+
+3. **Pull and restart Shifter only.** Other services (Postgres, ChirpStack, etc.)
+   stay running during the upgrade:
+   ```sh
+   docker compose -f compose/bundled.yml pull shifter
+   docker compose -f compose/bundled.yml up -d shifter
+   ```
+   Expected downtime: ≤ 5 seconds. Uplinks queued in MQTT during the restart are
+   processed on resume (MQTT broker stays up throughout).
+
+4. **Verify the upgrade.** Check `/health` (public) and `/health/detailed` (admin):
+   ```sh
+   curl https://shifter.example.com/health
+   # expected: {"status":"ok","version":"0.X.Y","uptime_seconds":...}
+   ```
+   Sign in to the UI and confirm the `/health/detailed` response reports:
+   - `alert_workers[*].degraded = false` for every worker
+   - `last_backup.age_seconds < backup_warn_threshold_hours * 3600`
+   - `checks.db = true`
+
+   If any signal is red, follow the rollback procedure (step 5).
+
+5. **Rollback procedure** (if step 4 fails or any blocker surfaces within 24 h):
+   ```sh
+   docker compose -f compose/bundled.yml stop shifter
+   docker compose -f compose/bundled.yml run --rm shifter \
+     shifter restore --from /var/lib/shifter/backups/<pre-upgrade>.tar.gz
+   # Edit compose file: revert image tag to the previous version
+   docker compose -f compose/bundled.yml up -d shifter
+   ```
+
+### Per-release migration notes
+
+Each Shifter release appends migration notes here when schema changes require
+operator awareness. Phase 6 (v0.6.0) adds migrations 0037–0048 (audit vocabulary,
+alert engine substrate, retention extensions, backup history, backup thresholds,
+alert retention prune vocabulary). All are additive — no data migration risk.
