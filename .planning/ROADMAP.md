@@ -213,7 +213,7 @@ Plans:
   4. Admin can list, create, edit, and disable users via dialogs (no hard-delete — preserves audit trail), assign or change a user's role (admin / viewer), set initial passwords inline (no SMTP dependency, user forced to change on next login), and revoke all of a user's sessions ("logout everywhere"); settings are organized into clear categories — install identity, ChirpStack connection, units, timezone, alerts, data retention, backup status — and surfacing the most recent backup timestamp with a warning if older than threshold.
   5. The install kit ships a TimescaleDB-aware logical backup script (rsync of floor-plan volume + `pg_dump`, configurable to local path or S3-compatible URL), restore is round-trip tested in CI (backup → fresh DB → restore → smoke test), container logs use `json-file` with size and file-count caps, all secrets are mounted via Docker Compose `secrets` (not `.env`), every container image tag is pinned (no `:latest`), and the project ships a per-release upgrade runbook with rollback procedure.
 
-**Plans**: 11 plans
+**Plans**: 12 plans (11 original + 1 gap-closure)
 
 Plans:
 - [x] 06-01-alert-engine-substrate-PLAN.md — Wave 1: migrations 0037 (audit vocab) + 0038/0039 (alert_rule + alert tables) + 0040 (retention_config extensions) + 0042 (alert_worker_state) + 0043 (admin_prune_audit_rows SECURITY DEFINER per D-51) + internal/alert engine substrate (engine/rule_store/alert_store/degraded subscriber/audit prune worker) (D-01..D-06, D-12, D-13, D-21, D-22, D-38, D-51)
@@ -227,6 +227,7 @@ Plans:
 - [x] 06-09-restore-cli-ci-roundtrip-PLAN.md — Wave 3: internal/backup/restore.go (PG advisory lock + sha256 verify + timescaledb_pre_restore/post_restore + no -j) + `shifter restore --from` Cobra + .github/workflows/backup-restore-roundtrip.yml CI gate + operator runbook Backup & Restore section (D-44, D-45, OPS-04)
 - [x] 06-10-settings-extensions-PLAN.md — Wave 2: retention.go extension (alerts_days + audit_log_days fields) + migration 0045 (backup_warn/crit_threshold_hours) + Backup status card backend + DataRetentionCard frontend (7 rows) + BackupStatusCard + BackupHistoryList + RestoreGuidanceCard + InstallIdentityCard note + Playwright (D-13, D-38, D-46, D-47, SETT-02/05; preserves SETT-01/03/04)
 - [x] 06-11-ops-hardening-doctor-runbook-PLAN.md — Wave 3: AlertsPruneWorker (03:30 cron) + audit vocab migration 0046 (alert.pruned) + /health/detailed extension (alert_workers[] + last_backup) + `shifter doctor` CLI + redaction package + compose conventions audit + automated lint test + operator-runbook sections (Compose conventions + Upgrading Shifter) (D-21, D-22, D-48..D-50, OPS-05/06/07/08, AUDIT-02 reinforcement)
+- [ ] 06-12-install-identity-surface-PLAN.md — Gap closure: migration 0049 (settings.identity_update audit vocab) + GET/PATCH /api/settings/identity handlers + ActionSettingsIdentityUpdate RBAC + audit-in-tx + mount InstallIdentityCard + admin edit dialog (SETT-01, SETT-02)
 
 **UI hint**: yes
 
@@ -283,7 +284,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
-| 6. Alerts, Users, Audit & Operational Hardening | 8/11 | In Progress|  |
+| 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
 ## Coverage Summary
@@ -332,4 +333,4 @@ PROJECT.md currently lists "Pixel-coordinate device placement on floor plans" as
 
 ---
 *Roadmap created: 2026-04-27*
-*Last updated: 2026-04-27*
+*Last updated: 2026-05-12*
