@@ -22,6 +22,16 @@ Object.defineProperty(window, 'matchMedia', {
 // not a function" + "scrollIntoView is not a function" during userEvent.click
 // of a SelectTrigger. Mocking them as no-ops is the canonical workaround
 // recommended in Radix's own test docs.
+// ResizeObserver polyfill — cmdk (Command component) uses ResizeObserver internally;
+// jsdom does not implement it. Mock as a no-op so Popover+Command tests don't crash.
+if (typeof ResizeObserver === 'undefined') {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
 if (typeof Element !== 'undefined') {
   if (!Element.prototype.hasPointerCapture) {
     Element.prototype.hasPointerCapture = () => false

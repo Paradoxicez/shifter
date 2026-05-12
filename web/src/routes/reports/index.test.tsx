@@ -58,6 +58,21 @@ vi.mock('./MeterCombobox', () => ({
   ),
 }))
 
+// Mock TemplatesDropdown — avoids useQuery + useRouteLoaderData complexity in unit tests
+vi.mock('./TemplatesDropdown', () => ({
+  TemplatesDropdown: () => <button type="button">Templates</button>,
+}))
+
+// Mock SaveTemplateDialog — avoids dialog complexity in unit tests
+vi.mock('./SaveTemplateDialog', () => ({
+  SaveTemplateDialog: () => null,
+}))
+
+// Mock useCurrentUser — ReportConfigPanel calls this; MemoryRouter doesn't provide root loader data
+vi.mock('@/lib/use-current-user', () => ({
+  useCurrentUser: () => ({ id: 'u1', email: 'admin@test.local', role: 'admin', must_change_password: false }),
+}))
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

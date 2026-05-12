@@ -10,7 +10,7 @@
 
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, CalendarIcon } from 'lucide-react'
+import { Loader2, CalendarIcon, Save } from 'lucide-react'
 import { format } from 'date-fns'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
@@ -27,7 +27,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { MeterCombobox } from './MeterCombobox'
+import { TemplatesDropdown } from './TemplatesDropdown'
+import { SaveTemplateDialog } from './SaveTemplateDialog'
 import { apiFetch } from '@/lib/api'
+import { useCurrentUser } from '@/lib/use-current-user'
 import type { ReportConfig } from './index'
 import type { ReportGenerateRequest } from './useReportGenerate'
 
@@ -120,6 +123,10 @@ interface MeteringPoint {
 // ---------------------------------------------------------------------------
 
 export function ReportConfigPanel({ cfg, onChange, onGenerate, isPending }: ReportConfigPanelProps) {
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser?.role === 'admin'
+  const [saveOpen, setSaveOpen] = useState(false)
+
   const { data: sites = [] } = useQuery<Site[]>({
     queryKey: ['sites'],
     queryFn: () => apiFetch<Site[]>('/api/sites'),
@@ -147,9 +154,31 @@ export function ReportConfigPanel({ cfg, onChange, onGenerate, isPending }: Repo
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
-        <CardTitle>Configure report</CardTitle>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <CardTitle>Configure report</CardTitle>
+          <div className="flex items-center gap-2">
+            <TemplatesDropdown
+              currentState={cfg}
+              onLoadTemplate={(state) => onChange(state as ReportConfig)}
+              isAdmin={isAdmin}
+            />
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                type="button"
+                onClick={() => setSaveOpen(true)}
+              >
+                <Save className="h-3.5 w-3.5" />
+                Save as template
+              </Button>
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
 
@@ -269,5 +298,12 @@ export function ReportConfigPanel({ cfg, onChange, onGenerate, isPending }: Repo
         </Button>
       </CardContent>
     </Card>
+
+    <SaveTemplateDialog
+      open={saveOpen}
+      onOpenChange={setSaveOpen}
+      currentState={cfg}
+    />
+    </>
   )
 }
