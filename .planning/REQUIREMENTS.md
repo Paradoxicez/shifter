@@ -135,10 +135,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### User Management
 
-- [ ] **USER-01**: Admin can list, create, edit, and disable users via dialogs (no hard-delete — preserves audit trail)
-- [ ] **USER-02**: Admin can assign or change a user's role (admin / viewer)
-- [ ] **USER-03**: Admin can revoke all sessions for a user ("logout everywhere")
-- [ ] **USER-04**: Admin sets initial passwords inline (no SMTP dependency); user is forced to change on next login
+- [x] **USER-01**: Admin can list, create, edit, and disable users via dialogs (no hard-delete — preserves audit trail)
+- [x] **USER-02**: Admin can assign or change a user's role (admin / viewer)
+- [x] **USER-03**: Admin can revoke all sessions for a user ("logout everywhere")
+- [x] **USER-04**: Admin sets initial passwords inline (no SMTP dependency); user is forced to change on next login
 
 ### Audit Log
 
@@ -306,10 +306,10 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | SETT-03 | Phase 6 | Complete |
 | SETT-04 | Phase 5 | Complete |
 | SETT-05 | Phase 6 | Pending |
-| USER-01 | Phase 6 | Pending |
-| USER-02 | Phase 6 | Pending |
-| USER-03 | Phase 6 | Pending |
-| USER-04 | Phase 6 | Pending |
+| USER-01 | Phase 6 | Complete |
+| USER-02 | Phase 6 | Complete |
+| USER-03 | Phase 6 | Complete |
+| USER-04 | Phase 6 | Complete |
 | AUDIT-01 | Phase 2 | Complete |
 | AUDIT-02 | Phase 6 | Pending |
 | AUDIT-03 | Phase 6 | Pending |
