@@ -143,8 +143,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Audit Log
 
 - [x] **AUDIT-01**: System records an audit entry for every create / update / delete and for every meter swap, capturing user, timestamp, entity, and before/after where relevant
-- [ ] **AUDIT-02**: Admin can view the audit log with filters (date range, user, entity type)
-- [ ] **AUDIT-03**: Admin can export the audit log as CSV
+- [x] **AUDIT-02**: Admin can view the audit log with filters (date range, user, entity type)
+- [x] **AUDIT-03**: Admin can export the audit log as CSV
 
 ### Operational Hardening
 
@@ -311,8 +311,8 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | USER-03 | Phase 6 | Complete |
 | USER-04 | Phase 6 | Complete |
 | AUDIT-01 | Phase 2 | Complete |
-| AUDIT-02 | Phase 6 | Pending |
-| AUDIT-03 | Phase 6 | Pending |
+| AUDIT-02 | Phase 6 | Complete |
+| AUDIT-03 | Phase 6 | Complete |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 6 | Pending |
 | OPS-03 | Phase 6 | Complete |
