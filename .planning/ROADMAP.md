@@ -188,7 +188,7 @@ Plans:
 - [x] 05-04-map-backend-PLAN.md — /api/map/data endpoint with capability-gated rollups (MAP-01, MAP-04)
 - [x] 05-05-floor-plan-schema-upload-PLAN.md — Migrations 0031 (floor_plan) + 0032 (placement) + image upload validator (MIME sniff + dim probe + 10MB cap) + compose volume mount (SITE-02, SITE-03)
 - [x] 05-06-reports-pdf-river-worker-PLAN.md — maroto/v2 PDF writer + River worker + 24h cleanup PeriodicJob + download handler with UUID validation (REPT-05, REPT-06)
-- [ ] 05-07-floor-plan-placement-decommission-PLAN.md — Placement CRUD (Upsert/Update/Delete/List) + same-site integrity guard + auth-gated static image serve + D-25 decommission cascade (SITE-04, SITE-06)
+- [x] 05-07-floor-plan-placement-decommission-PLAN.md — Placement CRUD (Upsert/Update/Delete/List) + same-site integrity guard + auth-gated static image serve + D-25 decommission cascade (SITE-04, SITE-06)
 - [ ] 05-08-map-frontend-gw04-picker-PLAN.md — /map route + Leaflet + clustering + sidebar nav + GW-04 "Pick on map" picker side-effect (MAP-01..04, SITE-06)
 - [ ] 05-09-reports-frontend-PLAN.md — /reports route with config panel + result panel + PDF poll + toast (REPT-01..07 frontend)
 - [ ] 05-10-floor-plan-frontend-PLAN.md — Site detail Floor plan tab + canvas with fractional coords + DevicePin drag + popover + pdf.js conversion + live SSE health (SITE-02..06 frontend)
@@ -267,7 +267,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
-| 5. Aggregates, Reports, Map & Floor Plans | 6/12 | In Progress|  |
+| 5. Aggregates, Reports, Map & Floor Plans | 7/12 | In Progress|  |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
