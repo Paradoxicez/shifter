@@ -332,6 +332,17 @@ type Querier interface {
 	// index scan + LIMIT 1.
 	GetLatestMeasurementForMP(ctx context.Context, meteringPointID pgtype.UUID) (GetLatestMeasurementForMPRow, error)
 	GetMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
+	// ============================================================================
+	// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
+	// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
+	// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
+	// Alerts warmup section).
+	// ============================================================================
+	// Phase 7 D-42: returns the anomaly_compatibility + expected_uplink_interval_seconds
+	// for the device profile currently bound to this metering point (via the active
+	// binding — valid_to IS NULL). Used by IsMPEligibleForAnomaly and
+	// CreateRuleHandler (I-2 server-side guard).
+	GetMPAnomalyCompatibility(ctx context.Context, id pgtype.UUID) (GetMPAnomalyCompatibilityRow, error)
 	// Returns the three anomaly rules (p95, iqr, quiet_hour) that target this MP
 	// (scope_kind='metering_point' AND scope_id=$1) or are global (scope_kind='global').
 	// Used by the MP detail Anomaly Detection card (Plan 06-04) to render per-rule
@@ -401,16 +412,15 @@ type Querier interface {
 	// Commit pass later UPDATEs the row to created|failed via
 	// UpdateImportJobRowOutcome.
 	InsertImportJobRow(ctx context.Context, arg InsertImportJobRowParams) (ImportJobRow, error)
-	// ============================================================================
-	// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
-	// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
-	// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
-	// Alerts warmup section).
-	// ============================================================================
 	// D-16: True iff the metering point has at least one measurement ≥ 21 days
 	// old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
-	// retention_config column.
+	// retention_config column. Kept for backward compatibility with existing callers
+	// (e.g. warmup roster UI path which always uses 21d).
 	IsMPEligibleForAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (bool, error)
+	// Phase 7 D-42: parameterized version of IsMPEligibleForAnomaly — accepts
+	// warmup_days as $2 so IsMPEligibleForAnomaly() can use 21d for 'full'
+	// profiles and 60d for 'limited' profiles.
+	IsMPEligibleForAnomalyDays(ctx context.Context, arg IsMPEligibleForAnomalyDaysParams) (bool, error)
 	// Anomaly evaluators need just the latest instant_value (numeric → float in
 	// Go via numericToFloat). Distinct from GetLatestMeasurementForMP because the
 	// column projection is narrower.
@@ -501,11 +511,13 @@ type Querier interface {
 	// first, then active rows by created_at DESC.
 	ListGatewaysIncludingArchived(ctx context.Context, arg ListGatewaysIncludingArchivedParams) ([]Gateway, error)
 	// D-15 hysteresis: devices currently 'firing' an offline alert whose
-	// last_uplink is back inside 2× expected_interval — those clear.
+	// last_uplink is back inside 1× expected_uplink_interval_seconds — those clear.
 	//
-	// Compared to D-15's STRICTER fire threshold (3×), the clear threshold is
-	// LOOSER (<2×) so a device that just barely recovered does not immediately
-	// re-fire on the next cycle if its uplinks bounce back into the 2×–3× band.
+	// Clear threshold = 1× interval (device uplinked within its normal cadence).
+	// Fire threshold = profile.offline_threshold_multiplier × interval (≥ 1.8×).
+	// This guarantees the clear threshold is ALWAYS strictly less than the fire
+	// threshold regardless of the per-profile multiplier, preventing both
+	// immediate auto-clear (the Phase 7 Itron bug) and hysteresis flapping.
 	ListHysteresisClearOffline(ctx context.Context) ([]ListHysteresisClearOfflineRow, error)
 	// Used by errors.xlsx generator. Returns only invalid + failed rows so the
 	// operator gets back the cells that need fixing plus the reason.
@@ -544,9 +556,8 @@ type Querier interface {
 	//
 	// The single LEFT JOIN keeps this an O(active-devices) query — without it
 	// the worker would N+1-fetch gateway last_seen_at per row. The boolean
-	// expression for gateway_offline mirrors D-15's 3× threshold (i.e. a
-	// gateway is "offline" when it has been silent for 3 × the device's
-	// expected interval — same yardstick the device uses).
+	// expression for gateway_offline mirrors the per-profile offline threshold
+	// (D-41/D-43 Phase 7: expected_uplink_interval_seconds × offline_threshold_multiplier).
 	ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]ListOfflineDevicesWithGatewayStatusRow, error)
 	// Returns placements joined with the device + device_profile data needed for
 	// client-side D-22 health computation (state colors) without a follow-up call.

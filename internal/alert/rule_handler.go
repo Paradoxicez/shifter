@@ -403,7 +403,7 @@ func MPAnomalyStateHandler(deps HTTPDeps) http.HandlerFunc {
 			return
 		}
 		queries := sqlcdb.New(deps.Pool)
-		eligible, err := IsMPEligibleForAnomaly(r.Context(), queries, mpID)
+		eligible, err := IsMPEligibleForAnomaly(r.Context(), queries, mpID, "anomaly_p95")
 		if err != nil {
 			internalError(deps.Log, w, "is mp eligible", err)
 			return

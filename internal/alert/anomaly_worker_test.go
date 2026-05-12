@@ -3,6 +3,7 @@ package alert
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -63,6 +64,26 @@ func newAnomalyTestEnv(t *testing.T) *anomalyTestEnv {
 	).Scan(&mpIDStr))
 	mpID, err := uuid.Parse(mpIDStr)
 	require.NoError(t, err)
+
+	// Bind default MP to a 'full' profile so IsMPEligibleForAnomaly returns
+	// based on measurement age only (D-42: 'full' → 21d warmup for all kinds).
+	var profileIDStr, devIDStr string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device_profile (slug, name, vendor, family, capabilities, codec_js,
+		    expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility,
+		    battery_curve)
+		 VALUES ('an-full-profile', 'Anomaly Test Full Profile', 'TestVendor', 'test-family',
+		         ARRAY['cumulative'], '// test', 3600, 3.0, 'full', 'linear_pct')
+		 RETURNING id`,
+	).Scan(&profileIDStr))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ('aabbccddeeff0011', 'an-dev', $1) RETURNING id`,
+		profileIDStr,
+	).Scan(&devIDStr))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO binding (device_id, metering_point_id, valid_from) VALUES ($1, $2, now()) RETURNING id`,
+		devIDStr, mpIDStr,
+	).Scan(new(string)))
 
 	queries := sqlc.New(pool)
 	rules := NewRuleStore(pool)
@@ -430,4 +451,120 @@ func TestAnomaly_OptInPerMP(t *testing.T) {
 	a, err := env.alerts.ListFiringByRuleTarget(context.Background(), rule.ID, env.mpID)
 	require.NoError(t, err)
 	require.Nil(t, a, "disabled rule must not fire even on eligible MP with breach data")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 7 Plan 09b Task 2: profile-aware anomaly_compatibility filtering
+// ─────────────────────────────────────────────────────────────────────────────
+
+// seedMPWithAnomalyProfile creates a metering_point + device + binding where
+// the device is bound to a profile with the given anomaly_compatibility value.
+// Returns the MP id. The MP has a seeded measurement old enough to pass any
+// warmup threshold so the only gate is the compatibility check.
+func (e *anomalyTestEnv) seedMPWithAnomalyProfile(t *testing.T, label string, anomalyCompat string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	slug := "test-ancompat-" + label
+	var profileIDStr string
+	perr := e.pool.QueryRow(ctx, `SELECT id FROM device_profile WHERE slug = $1`, slug).Scan(&profileIDStr)
+	if perr != nil {
+		require.NoError(t, e.pool.QueryRow(ctx,
+			`INSERT INTO device_profile (slug, name, vendor, family, capabilities, codec_js,
+			    expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility,
+			    battery_curve)
+			 VALUES ($1, $2, 'TestVendor', 'test-family', ARRAY['cumulative'], '// test', 3600, 3.0, $3, 'linear_pct')
+			 RETURNING id`,
+			slug, "Test "+label, anomalyCompat,
+		).Scan(&profileIDStr))
+	}
+	profileID, err := uuid.Parse(profileIDStr)
+	require.NoError(t, err)
+
+	eui := fmt.Sprintf("%016x", fnvHash("ancompat-"+label))
+	var devIDStr string
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ($1, $2, $3) RETURNING id`,
+		eui, "dev-"+label, profileID,
+	).Scan(&devIDStr))
+	devID, err := uuid.Parse(devIDStr)
+	require.NoError(t, err)
+
+	var mpIDStr string
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, $2, 'water') RETURNING id`,
+		e.siteID, "ancompat-"+label,
+	).Scan(&mpIDStr))
+	mpID, err := uuid.Parse(mpIDStr)
+	require.NoError(t, err)
+
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO binding (device_id, metering_point_id, valid_from)
+		 VALUES ($1, $2, now()) RETURNING id`,
+		devID, mpID,
+	).Scan(new(string)))
+
+	// Seed a measurement old enough to pass any warmup threshold (90d).
+	_, err = e.pool.Exec(ctx,
+		`INSERT INTO measurement (time, metering_point_id, raw_value, cumulative_value, instant_value,
+		    extra, raw_payload, decoded_object, quality)
+		 VALUES ($1, $2, 1.0, 1.0, 1.0, '{}'::jsonb, '\x00'::bytea, '{}'::jsonb, 'ok')`,
+		time.Now().UTC().Add(-90*24*time.Hour), mpID,
+	)
+	require.NoError(t, err)
+
+	return mpID
+}
+
+// TestAnomalyWorker_SkipsQuietHour_OnLimitedProfile: when the MP's bound profile
+// has anomaly_compatibility='limited', the anomaly_quiet_hour rule must not fire
+// even when conditions would normally trigger it.
+func TestAnomalyWorker_SkipsQuietHour_OnLimitedProfile(t *testing.T) {
+	env := newAnomalyTestEnv(t)
+	ctx := context.Background()
+
+	// Override env.mpID to an MP bound to a 'limited' profile.
+	limitedMPID := env.seedMPWithAnomalyProfile(t, "limited-qh", "limited")
+
+	// Seed 60d+ of measurements so the 60-day limited warmup is satisfied.
+	now := time.Now().UTC()
+	for i := 1; i <= 10; i++ {
+		env.pool.Exec(ctx, //nolint:errcheck
+			`INSERT INTO measurement (time, metering_point_id, raw_value, cumulative_value, instant_value,
+			    extra, raw_payload, decoded_object, quality)
+			 VALUES ($1, $2, 5.0, 5.0, 5.0, '{}'::jsonb, '\x00'::bytea, '{}'::jsonb, 'ok')`,
+			now.Add(-time.Duration(i)*7*24*time.Hour), limitedMPID,
+		)
+	}
+
+	// Arm anomaly_quiet_hour rule scoped to the limited MP.
+	tx, err := env.pool.BeginTx(ctx, pgx.TxOptions{})
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	qs := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) // 00:00
+	qe := time.Date(2000, 1, 1, 23, 59, 0, 0, time.UTC) // 23:59 — all-day window
+	ft := 0.0
+	cd := int32(0)
+	_, rerr := env.rules.CreateRule(ctx, tx, CreateRuleParams{
+		RuleKind:         "anomaly_quiet_hour",
+		ScopeKind:        "metering_point",
+		ScopeID:          &limitedMPID,
+		Severity:         "warning",
+		CooldownSeconds:  &cd,
+		QuietWindowStart: &qs,
+		QuietWindowEnd:   &qe,
+		FlowThreshold:    &ft,
+	})
+	require.NoError(t, rerr)
+	require.NoError(t, tx.Commit(ctx))
+
+	env.runWorker(t)
+
+	// No alert must have fired for the limited profile's MP.
+	var firingCount int
+	require.NoError(t, env.pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert WHERE target_entity_id = $1 AND rule_kind = 'anomaly_quiet_hour' AND state = 'firing'`,
+		limitedMPID,
+	).Scan(&firingCount))
+	require.Equal(t, 0, firingCount, "anomaly_quiet_hour must not fire on limited-profile MP")
 }

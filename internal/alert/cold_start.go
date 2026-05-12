@@ -22,24 +22,63 @@ import (
 // MP detail "Anomaly detection" card (warming_up | eligible_inactive |
 // active states) and the Settings → Alerts warmup roster (Plan 06-10).
 
-// AnomalyWarmupDays is the cold-start gate threshold (D-16). v1 constant;
-// Phase 7 may promote to retention_config.
+// AnomalyWarmupDays is the cold-start gate threshold for 'full' profiles (D-16).
+// Phase 7 D-42: limited profiles use anomalyWarmupDaysLimited instead.
 const AnomalyWarmupDays = 21
 
-// IsMPEligibleForAnomaly returns true when the metering point has at least
-// one measurement ≥ AnomalyWarmupDays days old. This is the D-16 cold-start
-// gate the AnomalyWorker MUST check before every per-MP evaluation.
+const (
+	anomalyWarmupDaysFull    = 21
+	anomalyWarmupDaysLimited = 60
+)
+
+// IsMPEligibleForAnomaly returns true when the metering point is eligible to
+// run the given anomaly rule kind.
 //
-// Thin wrapper over the sqlc-generated query — kept as a named function so
-// the worker code reads as a domain operation ("is this MP eligible?")
-// rather than a query call.
-func IsMPEligibleForAnomaly(ctx context.Context, q *sqlc.Queries, mpID uuid.UUID) (bool, error) {
+// Phase 7 D-42 profile-aware logic:
+//   - 'unsupported' profiles → false for all kinds
+//   - 'limited' profiles → false for 'anomaly_quiet_hour'; for p95/iqr,
+//     requires ≥ 60 days of measurement history
+//   - 'full' profiles → requires ≥ 21 days of measurement history for all kinds
+//
+// Returns (false, nil) when the MP has no active binding (profile unknown).
+func IsMPEligibleForAnomaly(ctx context.Context, q *sqlc.Queries, mpID uuid.UUID, ruleKind string) (bool, error) {
 	if q == nil {
 		return false, fmt.Errorf("alert: nil queries handle")
 	}
-	eligible, err := q.IsMPEligibleForAnomaly(ctx, pgUUID(mpID))
+
+	compat, err := q.GetMPAnomalyCompatibility(ctx, pgUUID(mpID))
 	if err != nil {
-		return false, fmt.Errorf("alert: is mp eligible for anomaly: %w", err)
+		// No active binding → treat as not eligible (MP not yet provisioned).
+		return false, nil
+	}
+
+	// 'unsupported' — no anomaly rules ever fire.
+	if compat.AnomalyCompatibility == "unsupported" {
+		return false, nil
+	}
+
+	// 'limited' — quiet_hour is always ineligible; p95/iqr need 60d warmup.
+	if compat.AnomalyCompatibility == "limited" {
+		if ruleKind == "anomaly_quiet_hour" {
+			return false, nil
+		}
+		eligible, err := q.IsMPEligibleForAnomalyDays(ctx, sqlc.IsMPEligibleForAnomalyDaysParams{
+			MeteringPointID: pgUUID(mpID),
+			WarmupDays:      int32(anomalyWarmupDaysLimited),
+		})
+		if err != nil {
+			return false, fmt.Errorf("alert: is mp eligible for anomaly (limited): %w", err)
+		}
+		return eligible, nil
+	}
+
+	// 'full' — all kinds, 21d warmup.
+	eligible, err := q.IsMPEligibleForAnomalyDays(ctx, sqlc.IsMPEligibleForAnomalyDaysParams{
+		MeteringPointID: pgUUID(mpID),
+		WarmupDays:      int32(anomalyWarmupDaysFull),
+	})
+	if err != nil {
+		return false, fmt.Errorf("alert: is mp eligible for anomaly (full): %w", err)
 	}
 	return eligible, nil
 }

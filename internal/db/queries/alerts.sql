@@ -149,14 +149,37 @@ WHERE id = 1;
 -- Alerts warmup section).
 -- ============================================================================
 
+-- name: GetMPAnomalyCompatibility :one
+-- Phase 7 D-42: returns the anomaly_compatibility + expected_uplink_interval_seconds
+-- for the device profile currently bound to this metering point (via the active
+-- binding — valid_to IS NULL). Used by IsMPEligibleForAnomaly and
+-- CreateRuleHandler (I-2 server-side guard).
+SELECT dp.anomaly_compatibility, dp.expected_uplink_interval_seconds
+FROM metering_point mp
+JOIN binding b    ON b.metering_point_id = mp.id AND b.valid_to IS NULL
+JOIN device d     ON d.id = b.device_id
+JOIN device_profile dp ON dp.id = d.device_profile_id
+WHERE mp.id = $1;
+
 -- name: IsMPEligibleForAnomaly :one
 -- D-16: True iff the metering point has at least one measurement ≥ 21 days
 -- old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
--- retention_config column.
+-- retention_config column. Kept for backward compatibility with existing callers
+-- (e.g. warmup roster UI path which always uses 21d).
 SELECT EXISTS(
     SELECT 1 FROM measurement
     WHERE metering_point_id = $1
       AND time < now() - INTERVAL '21 days'
+) AS eligible;
+
+-- name: IsMPEligibleForAnomalyDays :one
+-- Phase 7 D-42: parameterized version of IsMPEligibleForAnomaly — accepts
+-- warmup_days as $2 so IsMPEligibleForAnomaly() can use 21d for 'full'
+-- profiles and 60d for 'limited' profiles.
+SELECT EXISTS(
+    SELECT 1 FROM measurement
+    WHERE metering_point_id = sqlc.arg(metering_point_id)::UUID
+      AND time < now() - make_interval(days => sqlc.arg(warmup_days)::INT)
 ) AS eligible;
 
 -- name: ListAnomalyWarmupRoster :many

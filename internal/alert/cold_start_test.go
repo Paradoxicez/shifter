@@ -2,6 +2,7 @@ package alert
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"testing"
@@ -90,31 +91,31 @@ func TestColdStart_NewMPNotEligible(t *testing.T) {
 	env := newColdStartTestEnv(t)
 	ctx := context.Background()
 
-	// Case 1: MP with no measurements at all.
-	noData := env.seedMP(t, "cs-no-data")
-	eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, noData)
+	// Case 1: MP bound to 'full' profile but no measurements at all.
+	noData := env.seedMPWithProfile(t, "cs-no-data", "full", 3600)
+	eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, noData, "anomaly_p95")
 	require.NoError(t, err)
 	require.False(t, eligible, "MP with no measurement history must not be eligible")
 
-	// Case 2: MP with oldest measurement only 5 days old.
-	fresh := env.seedMP(t, "cs-fresh")
+	// Case 2: MP bound to 'full' profile with oldest measurement only 5 days old.
+	fresh := env.seedMPWithProfile(t, "cs-fresh", "full", 3600)
 	env.seedMeasurement(t, fresh, time.Now().UTC().Add(-5*24*time.Hour))
-	eligible, err = IsMPEligibleForAnomaly(ctx, env.queries, fresh)
+	eligible, err = IsMPEligibleForAnomaly(ctx, env.queries, fresh, "anomaly_p95")
 	require.NoError(t, err)
 	require.False(t, eligible, "MP with < 21d history must not be eligible")
 }
 
-// TestColdStart_OldMPIsEligible: MP with measurements ≥ 21 days ago is
-// eligible.
+// TestColdStart_OldMPIsEligible: MP bound to 'full' profile with measurements
+// ≥ 21 days ago is eligible.
 func TestColdStart_OldMPIsEligible(t *testing.T) {
 	env := newColdStartTestEnv(t)
 	ctx := context.Background()
 
-	mp := env.seedMP(t, "cs-old")
+	mp := env.seedMPWithProfile(t, "cs-old", "full", 3600)
 	// Seed at 22 days back, strictly older than 21 days.
 	env.seedMeasurement(t, mp, time.Now().UTC().Add(-22*24*time.Hour))
 
-	eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, mp)
+	eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, mp, "anomaly_p95")
 	require.NoError(t, err)
 	require.True(t, eligible, "MP with ≥ 21d history must be eligible")
 }
@@ -152,6 +153,142 @@ func TestWarmupRoster_DaysUntilEligible(t *testing.T) {
 
 	require.Contains(t, byID, mpEligible)
 	require.Equal(t, int32(0), byID[mpEligible].DaysUntilEligible, "eligible MP must report 0")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 7 Plan 09b: profile-aware cold-start gate (Task 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// seedMPWithProfile creates a metering_point bound to a specific device profile
+// via a device + binding chain.
+func (e *coldStartTestEnv) seedMPWithProfile(t *testing.T, label string, anomalyCompat string, intervalS int) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	// Create profile.
+	var profileIDStr string
+	slug := "test-compat-" + label
+	err := e.pool.QueryRow(ctx, `SELECT id FROM device_profile WHERE slug = $1`, slug).Scan(&profileIDStr)
+	if err != nil {
+		require.NoError(t, e.pool.QueryRow(ctx,
+			`INSERT INTO device_profile (slug, name, vendor, family, capabilities, codec_js,
+			    expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility,
+			    battery_curve)
+			 VALUES ($1, $2, 'TestVendor', 'test-family', ARRAY['cumulative'], '// test', $3, 3.0, $4, 'linear_pct')
+			 RETURNING id`,
+			slug, "Test "+label, intervalS, anomalyCompat,
+		).Scan(&profileIDStr))
+	}
+	profileID, err := uuid.Parse(profileIDStr)
+	require.NoError(t, err)
+
+	// Create device + binding.
+	eui := fmt.Sprintf("%016x", fnvHash(label))
+	var devIDStr string
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ($1, $2, $3) RETURNING id`,
+		eui, "dev-"+label, profileID,
+	).Scan(&devIDStr))
+	devID, err := uuid.Parse(devIDStr)
+	require.NoError(t, err)
+
+	// Create MP.
+	var mpIDStr string
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, $2, 'water') RETURNING id`,
+		e.siteID, label,
+	).Scan(&mpIDStr))
+	mpID, err := uuid.Parse(mpIDStr)
+	require.NoError(t, err)
+
+	// Create binding (valid_to IS NULL = active).
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO binding (device_id, metering_point_id, valid_from)
+		 VALUES ($1, $2, now())
+		 RETURNING id`,
+		devID, mpID,
+	).Scan(new(string)))
+
+	return mpID
+}
+
+// fnvHash is a simple deterministic hash for test EUI generation.
+func fnvHash(s string) uint64 {
+	h := uint64(14695981039346656037)
+	for _, c := range s {
+		h ^= uint64(c)
+		h *= 1099511628211
+	}
+	return h
+}
+
+// TestColdStart_LimitedProfile_60Days: Itron-like profile (anomaly_compatibility='limited').
+// With 30d of history → not eligible. With 70d → eligible for p95/iqr, NOT for quiet_hour.
+func TestColdStart_LimitedProfile_60Days(t *testing.T) {
+	env := newColdStartTestEnv(t)
+	ctx := context.Background()
+
+	// MP bound to 'limited' profile.
+	mpID := env.seedMPWithProfile(t, "cs-limited", "limited", 86400)
+
+	// Case 1: 30d history → not eligible (needs 60d for limited).
+	env.seedMeasurement(t, mpID, time.Now().UTC().Add(-30*24*time.Hour))
+	eligibleP95, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, "anomaly_p95")
+	require.NoError(t, err)
+	require.False(t, eligibleP95, "limited profile with 30d history must not be eligible (needs 60d)")
+
+	eligibleQH, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, "anomaly_quiet_hour")
+	require.NoError(t, err)
+	require.False(t, eligibleQH, "limited profile: quiet_hour always ineligible")
+
+	// Case 2: add a measurement 70d old → p95/iqr become eligible; quiet_hour still not.
+	env.seedMeasurement(t, mpID, time.Now().UTC().Add(-70*24*time.Hour))
+
+	eligibleP95After, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, "anomaly_p95")
+	require.NoError(t, err)
+	require.True(t, eligibleP95After, "limited profile with 70d history must be eligible for p95")
+
+	eligibleIQRAfter, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, "anomaly_iqr")
+	require.NoError(t, err)
+	require.True(t, eligibleIQRAfter, "limited profile with 70d history must be eligible for iqr")
+
+	eligibleQHAfter, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, "anomaly_quiet_hour")
+	require.NoError(t, err)
+	require.False(t, eligibleQHAfter, "limited profile: quiet_hour must always be ineligible")
+}
+
+// TestColdStart_UnsupportedProfile_NeverEligible: profile with anomaly_compatibility='unsupported'
+// → all three anomaly kinds always return false.
+func TestColdStart_UnsupportedProfile_NeverEligible(t *testing.T) {
+	env := newColdStartTestEnv(t)
+	ctx := context.Background()
+
+	mpID := env.seedMPWithProfile(t, "cs-unsupported", "unsupported", 3600)
+	// Seed 90d of history — doesn't matter for unsupported.
+	env.seedMeasurement(t, mpID, time.Now().UTC().Add(-90*24*time.Hour))
+
+	for _, kind := range []string{"anomaly_p95", "anomaly_iqr", "anomaly_quiet_hour"} {
+		eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, kind)
+		require.NoError(t, err)
+		require.False(t, eligible, "unsupported profile must never be eligible for "+kind)
+	}
+}
+
+// TestColdStart_FullProfile_21Days: profile with anomaly_compatibility='full'.
+// With 30d history → eligible for all 3 kinds (21d threshold).
+func TestColdStart_FullProfile_21Days(t *testing.T) {
+	env := newColdStartTestEnv(t)
+	ctx := context.Background()
+
+	mpID := env.seedMPWithProfile(t, "cs-full", "full", 3600)
+	// 30d of history — exceeds 21d warmup.
+	env.seedMeasurement(t, mpID, time.Now().UTC().Add(-30*24*time.Hour))
+
+	for _, kind := range []string{"anomaly_p95", "anomaly_iqr", "anomaly_quiet_hour"} {
+		eligible, err := IsMPEligibleForAnomaly(ctx, env.queries, mpID, kind)
+		require.NoError(t, err)
+		require.True(t, eligible, "full profile with 30d history must be eligible for "+kind)
+	}
 }
 
 // TestWarmupRoster_OrderingByDaysUntilEligible: roster returns rows ASC by

@@ -95,10 +95,11 @@ func (w *AnomalyWorker) Work(ctx context.Context, _ *river.Job[AnomalyArgs]) err
 				continue
 			}
 			for _, target := range targets {
-				// D-16 cold-start gate — skip MPs without ≥ 21 days of
-				// history. Applies to ALL three anomaly rule kinds (the
-				// statistical baseline isn't meaningful on fresh MPs).
-				eligible, err := IsMPEligibleForAnomaly(ctx, w.Eng.Queries, target.MeteringPointID)
+				// D-16/D-42 cold-start gate — skip MPs without enough history
+				// per their bound profile's anomaly_compatibility. Also skips
+				// anomaly_quiet_hour for 'limited' profiles and all kinds for
+				// 'unsupported' profiles (Phase 7 D-42).
+				eligible, err := IsMPEligibleForAnomaly(ctx, w.Eng.Queries, target.MeteringPointID, kind)
 				if err != nil {
 					state.RecordErr(err)
 					continue

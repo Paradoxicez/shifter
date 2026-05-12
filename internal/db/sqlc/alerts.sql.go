@@ -161,6 +161,38 @@ func (q *Queries) GetLatestMeasurementForMP(ctx context.Context, meteringPointID
 	return i, err
 }
 
+const getMPAnomalyCompatibility = `-- name: GetMPAnomalyCompatibility :one
+
+SELECT dp.anomaly_compatibility, dp.expected_uplink_interval_seconds
+FROM metering_point mp
+JOIN binding b    ON b.metering_point_id = mp.id AND b.valid_to IS NULL
+JOIN device d     ON d.id = b.device_id
+JOIN device_profile dp ON dp.id = d.device_profile_id
+WHERE mp.id = $1
+`
+
+type GetMPAnomalyCompatibilityRow struct {
+	AnomalyCompatibility          string
+	ExpectedUplinkIntervalSeconds int32
+}
+
+// ============================================================================
+// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
+// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
+// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
+// Alerts warmup section).
+// ============================================================================
+// Phase 7 D-42: returns the anomaly_compatibility + expected_uplink_interval_seconds
+// for the device profile currently bound to this metering point (via the active
+// binding — valid_to IS NULL). Used by IsMPEligibleForAnomaly and
+// CreateRuleHandler (I-2 server-side guard).
+func (q *Queries) GetMPAnomalyCompatibility(ctx context.Context, id pgtype.UUID) (GetMPAnomalyCompatibilityRow, error) {
+	row := q.db.QueryRow(ctx, getMPAnomalyCompatibility, id)
+	var i GetMPAnomalyCompatibilityRow
+	err := row.Scan(&i.AnomalyCompatibility, &i.ExpectedUplinkIntervalSeconds)
+	return i, err
+}
+
 const getMPAnomalyRules = `-- name: GetMPAnomalyRules :many
 SELECT id,
        rule_kind,
@@ -272,7 +304,6 @@ func (q *Queries) IQRBaselineForMP(ctx context.Context, meteringPointID pgtype.U
 }
 
 const isMPEligibleForAnomaly = `-- name: IsMPEligibleForAnomaly :one
-
 SELECT EXISTS(
     SELECT 1 FROM measurement
     WHERE metering_point_id = $1
@@ -280,17 +311,35 @@ SELECT EXISTS(
 ) AS eligible
 `
 
-// ============================================================================
-// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
-// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
-// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
-// Alerts warmup section).
-// ============================================================================
 // D-16: True iff the metering point has at least one measurement ≥ 21 days
 // old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
-// retention_config column.
+// retention_config column. Kept for backward compatibility with existing callers
+// (e.g. warmup roster UI path which always uses 21d).
 func (q *Queries) IsMPEligibleForAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, isMPEligibleForAnomaly, meteringPointID)
+	var eligible bool
+	err := row.Scan(&eligible)
+	return eligible, err
+}
+
+const isMPEligibleForAnomalyDays = `-- name: IsMPEligibleForAnomalyDays :one
+SELECT EXISTS(
+    SELECT 1 FROM measurement
+    WHERE metering_point_id = $1::UUID
+      AND time < now() - make_interval(days => $2::INT)
+) AS eligible
+`
+
+type IsMPEligibleForAnomalyDaysParams struct {
+	MeteringPointID pgtype.UUID
+	WarmupDays      int32
+}
+
+// Phase 7 D-42: parameterized version of IsMPEligibleForAnomaly — accepts
+// warmup_days as $2 so IsMPEligibleForAnomaly() can use 21d for 'full'
+// profiles and 60d for 'limited' profiles.
+func (q *Queries) IsMPEligibleForAnomalyDays(ctx context.Context, arg IsMPEligibleForAnomalyDaysParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isMPEligibleForAnomalyDays, arg.MeteringPointID, arg.WarmupDays)
 	var eligible bool
 	err := row.Scan(&eligible)
 	return eligible, err
