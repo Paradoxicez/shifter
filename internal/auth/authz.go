@@ -138,6 +138,16 @@ const (
 	ActionCodecTestRun Action = "codec.test_run"
 )
 
+// Phase 7 — Plan 07-12: Compare View (Surface 5).
+// ActionReportRead gates POST /api/reports/compare.
+// Admin + viewer both allowed (same as /api/reports/generate — read-only
+// aggregation query over CAGGs; no state mutation).
+const (
+	// ActionReportRead gates the compare endpoint (and is reused for any
+	// future report-query surfaces that are read-only for all authed users).
+	ActionReportRead Action = "report.read"
+)
+
 // Phase 7 — Plan 07-11a: Saved Report Templates RBAC (UX-POWER Surface 6).
 //
 // ActionReportTemplateRead is granted to admin + viewer — both roles can list
@@ -391,6 +401,10 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionReportTemplateCreate: true,
 		ActionReportTemplateUpdate: true,
 		ActionReportTemplateDelete: true,
+
+		// Phase 7 — Plan 07-12: Compare View. Admin + viewer both allowed.
+		// POST /api/reports/compare is a read-only aggregation; no state mutation.
+		ActionReportRead: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -444,6 +458,10 @@ var roleBundles = map[Role]map[Action]bool{
 		// get). ActionReportTemplateCreate/Update/Delete are intentionally absent —
 		// fail-closed default returns false (T-07-11a-02 mitigation).
 		ActionReportTemplateRead: true,
+
+		// Phase 7 — Plan 07-12: viewer can POST /api/reports/compare.
+		// Compare is a read-only aggregation (same policy as /api/reports/generate).
+		ActionReportRead: true,
 	},
 }
 

@@ -90,6 +90,14 @@ type Querier interface {
 	// D-14: valid_to = swap.confirm_time (operator click) — the closing side of
 	// a swap. Idempotent guard: only closes a still-open binding.
 	CloseBinding(ctx context.Context, arg CloseBindingParams) (Binding, error)
+	// Returns daily consumption totals for a single metering point.
+	CompareMeteringPointDaily(ctx context.Context, arg CompareMeteringPointDailyParams) ([]CompareMeteringPointDailyRow, error)
+	// compare.sql
+	// sqlc-annotated queries for the Plan 07-12 Compare View (Surface 5).
+	// Both queries hit measurement_daily CAGG for day-level bucketing.
+	// Range param semantics: from inclusive, to exclusive (half-open interval).
+	// Returns daily consumption totals for a given site (summing all metering points).
+	CompareSiteDaily(ctx context.Context, arg CompareSiteDailyParams) ([]CompareSiteDailyRow, error)
 	// ============================================================================
 	// Phase 6 Plan 06-04 — alert center HTTP handlers (list / detail / bell
 	// counts / drawer recent).
