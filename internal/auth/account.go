@@ -19,6 +19,10 @@ import (
 	"net/http"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/shifter-io/shifter/internal/audit"
 )
 
 // AccountDeps bundles dependencies for account.go handlers.
@@ -46,9 +50,15 @@ type weakPasswordResp struct {
 //  3. Decode body; reject empty / oversize new_password.
 //  4. Reject weak passwords (Strength == StrengthWeak) → 422.
 //  5. Reload user record by ID, Verify current_password.
-//  6. Hash new_password, UPDATE user.password_hash.
-//  7. Revoke all OTHER sessions for this user (defense-in-depth).
+//  6. Hash new_password; open tx: UpdatePasswordTx + audit rows (D-30) + commit.
+//  7. Post-commit: revoke all OTHER sessions for this user (defense-in-depth).
 //  8. 200 OK.
+//
+// D-30 scope: two audit rows per successful change, both in the same tx as the
+// password update — atomicity means the audit record cannot exist without the
+// password change, and vice versa:
+//   - auth.password_change  (self-initiated change)
+//   - auth.session_revoked  (other sessions will be revoked post-commit)
 func ChangePasswordHandler(deps AccountDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !csrfHeaderPresent(r) {
@@ -105,18 +115,67 @@ func ChangePasswordHandler(deps AccountDeps) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
 			return
 		}
-		if err := deps.Store.UpdatePassword(r.Context(), u.ID, newHash); err != nil {
-			deps.Log.Error("change-password: update", "err", err, "user_id", u.ID)
+
+		ctx := r.Context()
+		tx, err := deps.Store.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err != nil {
+			deps.Log.Error("change-password: begin tx", "err", err, "user_id", u.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		// UpdatePasswordTx (Plan 06-05): updates password_hash + must_change_password
+		// inside the caller's tx. mustChange=false because this is a self-initiated
+		// change (the user chose their own new password).
+		if err := deps.Store.UpdatePasswordTx(ctx, tx, u.ID, newHash, false); err != nil {
+			deps.Log.Error("change-password: update tx", "err", err, "user_id", u.ID)
 			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
 			return
 		}
 
-		// Defense-in-depth: revoke every OTHER session for this user. The
-		// current session stays valid because PutUser already rotated its
-		// token (no — actually we did NOT rotate here; only the other
-		// sessions are dropped). Operator's current cookie continues to work.
-		currentToken := deps.SessionMgr.Token(r.Context())
-		if err := iterateAndRevoke(r.Context(), deps.SessionMgr, deps.Store, u.ID, currentToken); err != nil {
+		userUUID := mustParseUUID(u.ID)
+		reqID := middleware.GetReqID(ctx)
+
+		// Audit: self-initiated password change (D-30).
+		if err := audit.WriteEntry(ctx, tx, audit.Entry{
+			UserID:     userUUID,
+			Action:     audit.ActionAuthPasswordChange,
+			EntityType: audit.EntityTypeUser,
+			EntityID:   userUUID,
+			Notes:      "self_initiated",
+			RequestID:  reqID,
+		}); err != nil {
+			deps.Log.Error("change-password: audit password_change", "err", err, "user_id", u.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+
+		// Audit: other sessions will be revoked after commit (D-30).
+		if err := audit.WriteEntry(ctx, tx, audit.Entry{
+			UserID:     userUUID,
+			Action:     audit.ActionAuthSessionRevoked,
+			EntityType: audit.EntityTypeSession,
+			EntityID:   userUUID,
+			Notes:      "other_sessions_revoked_on_password_change",
+			RequestID:  reqID,
+		}); err != nil {
+			deps.Log.Error("change-password: audit session_revoked", "err", err, "user_id", u.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			deps.Log.Error("change-password: commit tx", "err", err, "user_id", u.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+
+		// Defense-in-depth: revoke every OTHER session for this user AFTER commit.
+		// The current session stays valid because we pass the current token as
+		// keepToken. Operator's current cookie continues to work.
+		currentToken := deps.SessionMgr.Token(ctx)
+		if err := iterateAndRevoke(ctx, deps.SessionMgr, deps.Store, u.ID, currentToken); err != nil {
 			// Log but do not fail the request — the password is already
 			// changed; an unrelated session-cleanup hiccup must not surface
 			// as "your password change failed".
