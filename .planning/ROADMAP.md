@@ -194,7 +194,7 @@ Plans:
 - [x] 05-10-floor-plan-frontend-PLAN.md — Site detail Floor plan tab + canvas with fractional coords + DevicePin drag + popover + pdf.js conversion + live SSE health (SITE-02..06 frontend)
 - [x] 05-11-settings-data-retention-PLAN.md — Settings Data Retention card + PATCH /api/settings/retention with same-tx policy reconciliation + SETT-04 traceability flip (DATA-13 UI)
 - [x] 05-12-phase-closure-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS/ROADMAP/VALIDATION/RESEARCH reconciliation + UX-03 vocabulary audit
-- [ ] 05-13-router-wiring-capabilities-PLAN.md — gap closure: mapapi+floorplan router wiring + real install_identity.capabilities passthrough + REQUIREMENTS.md migration filename corrections (verifier gaps 1-4)
+- [x] 05-13-router-wiring-capabilities-PLAN.md — gap closure: mapapi+floorplan router wiring + real install_identity.capabilities passthrough + REQUIREMENTS.md migration filename corrections (verifier gaps 1-4)
 
 **UI hint**: yes
 
