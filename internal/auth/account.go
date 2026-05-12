@@ -127,6 +127,19 @@ func ChangePasswordHandler(deps AccountDeps) http.HandlerFunc {
 	}
 }
 
+// IterateAndRevoke is the exported alias of iterateAndRevoke for Phase 6 user
+// management handlers (Plan 06-05 D-24): every state-changing user-mgmt
+// handler that needs to "kick the user out everywhere" funnels through this
+// single code path. Callers from outside this package pass an empty
+// keepToken to revoke ALL sessions for the user (no current-session
+// exception).
+//
+// The function is intentionally a thin wrapper around the unexported
+// implementation so account.go's existing internal callers stay untouched.
+func IterateAndRevoke(ctx context.Context, sm *scs.SessionManager, store *Store, userID, keepToken string) error {
+	return iterateAndRevoke(ctx, sm, store, userID, keepToken)
+}
+
 // iterateAndRevoke walks every session via SCS's Iterate, decodes the user_id
 // payload, and DELETEs every session row whose user_id matches `userID` and
 // whose token differs from `keepToken`. The DELETE goes against the raw
