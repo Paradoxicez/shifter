@@ -452,6 +452,10 @@ type Querier interface {
 	// by MP_id to attribute historical readings to the right device. Sorted
 	// newest-first to match the typical "what changed recently" question.
 	ListBindingHistoryByMP(ctx context.Context, meteringPointID pgtype.UUID) ([]ListBindingHistoryByMPRow, error)
+	// Plan 07-03 RunCatalogDriftCheck: list profiles that were imported from the
+	// catalog (catalog_source IS NOT NULL) and have not been customer-edited, so
+	// the drift check can compare codec_js hashes to the embedded catalog source.
+	ListCatalogProfilesForDriftCheck(ctx context.Context) ([]ListCatalogProfilesForDriftCheckRow, error)
 	// Site detail page sub-section: direct children only (one level), so the
 	// breadcrumb expands lazily rather than fetching the whole subtree.
 	ListChildSites(ctx context.Context, parentID pgtype.UUID) ([]Site, error)
@@ -633,6 +637,10 @@ type Querier interface {
 	// binding_no_overlap_per_device) make this race-safe — concurrent commits
 	// on the same MP or same device get 23P01 (exclusion_violation).
 	OpenBinding(ctx context.Context, arg OpenBindingParams) (Binding, error)
+	// Plan 07-03 RunCatalogDriftCheck uses this to replace the Itron+KINMY
+	// migration placeholder with the real embedded codec source. Clears
+	// codec_js_synced_at so the Phase 2 seed routine re-pushes to ChirpStack.
+	OverwriteProfileCodec(ctx context.Context, arg OverwriteProfileCodecParams) error
 	// D-17 Rule 1: trailing-30-day P95 of instant_value for this MP at this
 	// hour-of-day. instant_value is NUMERIC in the schema; cast to DOUBLE
 	// PRECISION so the percentile aggregate's result lands as float64 in Go.

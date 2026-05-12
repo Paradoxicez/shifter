@@ -465,6 +465,49 @@ func (q *Queries) ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile
 	return items, nil
 }
 
+const listCatalogProfilesForDriftCheck = `-- name: ListCatalogProfilesForDriftCheck :many
+SELECT id, slug, codec_js, catalog_source, customer_edited
+FROM device_profile
+WHERE catalog_source IS NOT NULL AND customer_edited = FALSE
+`
+
+type ListCatalogProfilesForDriftCheckRow struct {
+	ID             pgtype.UUID
+	Slug           string
+	CodecJs        string
+	CatalogSource  *string
+	CustomerEdited bool
+}
+
+// Plan 07-03 RunCatalogDriftCheck: list profiles that were imported from the
+// catalog (catalog_source IS NOT NULL) and have not been customer-edited, so
+// the drift check can compare codec_js hashes to the embedded catalog source.
+func (q *Queries) ListCatalogProfilesForDriftCheck(ctx context.Context) ([]ListCatalogProfilesForDriftCheckRow, error) {
+	rows, err := q.db.Query(ctx, listCatalogProfilesForDriftCheck)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCatalogProfilesForDriftCheckRow
+	for rows.Next() {
+		var i ListCatalogProfilesForDriftCheckRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CodecJs,
+			&i.CatalogSource,
+			&i.CustomerEdited,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProfilesWithCatalogMetadata = `-- name: ListProfilesWithCatalogMetadata :many
 SELECT
     id, slug, name, vendor, family, capabilities,
@@ -626,6 +669,27 @@ type MarkProfileSyncedToChirpStackParams struct {
 // next boot's ListUnsyncedProfiles query no longer returns this row.
 func (q *Queries) MarkProfileSyncedToChirpStack(ctx context.Context, arg MarkProfileSyncedToChirpStackParams) error {
 	_, err := q.db.Exec(ctx, markProfileSyncedToChirpStack, arg.ID, arg.CsProfileID)
+	return err
+}
+
+const overwriteProfileCodec = `-- name: OverwriteProfileCodec :exec
+UPDATE device_profile
+SET codec_js           = $2,
+    codec_js_synced_at = NULL,
+    updated_at         = now()
+WHERE id = $1
+`
+
+type OverwriteProfileCodecParams struct {
+	ID      pgtype.UUID
+	CodecJs string
+}
+
+// Plan 07-03 RunCatalogDriftCheck uses this to replace the Itron+KINMY
+// migration placeholder with the real embedded codec source. Clears
+// codec_js_synced_at so the Phase 2 seed routine re-pushes to ChirpStack.
+func (q *Queries) OverwriteProfileCodec(ctx context.Context, arg OverwriteProfileCodecParams) error {
+	_, err := q.db.Exec(ctx, overwriteProfileCodec, arg.ID, arg.CodecJs)
 	return err
 }
 

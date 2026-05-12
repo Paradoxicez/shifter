@@ -190,3 +190,21 @@ RETURNING id, updated_at;
 -- Returns only the columns needed so the handler avoids a full DeviceProfile scan.
 SELECT id, slug, codec_js
 FROM device_profile WHERE id = $1;
+
+-- name: ListCatalogProfilesForDriftCheck :many
+-- Plan 07-03 RunCatalogDriftCheck: list profiles that were imported from the
+-- catalog (catalog_source IS NOT NULL) and have not been customer-edited, so
+-- the drift check can compare codec_js hashes to the embedded catalog source.
+SELECT id, slug, codec_js, catalog_source, customer_edited
+FROM device_profile
+WHERE catalog_source IS NOT NULL AND customer_edited = FALSE;
+
+-- name: OverwriteProfileCodec :exec
+-- Plan 07-03 RunCatalogDriftCheck uses this to replace the Itron+KINMY
+-- migration placeholder with the real embedded codec source. Clears
+-- codec_js_synced_at so the Phase 2 seed routine re-pushes to ChirpStack.
+UPDATE device_profile
+SET codec_js           = $2,
+    codec_js_synced_at = NULL,
+    updated_at         = now()
+WHERE id = $1;
