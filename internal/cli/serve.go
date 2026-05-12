@@ -32,12 +32,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"github.com/shifter-io/shifter/internal/alert"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
@@ -342,11 +344,44 @@ var serveCmd = &cobra.Command{
 			Queries: q,
 			Log:     log.With("component", "report_cleanup"),
 		})
+
+		// Phase 6 — Plan 06-01 (D-38 + D-51): daily audit-log retention prune.
+		// Calls admin_prune_audit_rows() at 03:00 install_tz via River cron.
+		// Reads retention_config.audit_log_days each cycle so a Settings
+		// change takes effect at the next scheduled run.
+		river.AddWorker(riverWorkers, &alert.AuditPruneWorker{
+			Pool:    pool,
+			Queries: q,
+			Log:     log.With("component", "audit_prune"),
+		})
+
+		// Build cron schedule for the audit prune. Install timezone is
+		// pulled from install_identity (singleton id=1) so the operator-
+		// chosen tz at install time drives the schedule. Falls back to
+		// UTC if the row hasn't been seeded yet (pre-FinishSetup boots).
+		installTZName := "UTC"
+		_ = pool.QueryRow(ctx, `SELECT timezone FROM install_identity WHERE id = 1`).Scan(&installTZName)
+		// CRON_TZ prefix is the documented robfig/cron way to bind a
+		// schedule to a non-UTC timezone (see robfig/cron docs §Time Zones).
+		auditPruneSpec := "CRON_TZ=" + installTZName + " 0 3 * * *"
+		auditPruneSchedule, err := cron.ParseStandard(auditPruneSpec)
+		if err != nil {
+			return fmt.Errorf("cron.ParseStandard(%q): %w", auditPruneSpec, err)
+		}
+
 		riverPeriodicJobs := []*river.PeriodicJob{
 			river.NewPeriodicJob(
 				river.PeriodicInterval(1*time.Hour),
 				func() (river.JobArgs, *river.InsertOpts) {
 					return report.CleanupExpiredReportsArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			// Audit retention prune — daily at 03:00 install_tz.
+			river.NewPeriodicJob(
+				auditPruneSchedule,
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.AuditPruneArgs{}, nil
 				},
 				&river.PeriodicJobOpts{RunOnStart: false},
 			),
@@ -369,6 +404,14 @@ var serveCmd = &cobra.Command{
 			defer shutCancel()
 			_ = riverClient.Stop(shutdownCtx)
 		}()
+
+		// Phase 6 — Plan 06-01 (D-22): degraded-state subscriber. Flips
+		// alert_worker_state.degraded=true when a job reaches
+		// rivertype.JobStateDiscarded so the shell can render a banner.
+		alert.StartDegradedSubscriber(
+			ctx, riverClient, alert.NewWorkerStateStore(pool),
+			log.With("component", "alert_degraded_subscriber"),
+		)
 
 		// Report handler deps — EnqueuePDF calls riverClient.InsertTx inside
 		// the same tx as the report INSERT so both are atomic (D-23).
