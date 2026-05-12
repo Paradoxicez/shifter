@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -114,6 +115,23 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Users — Phase 6 / Plan 06-05 (D-29 lives under Settings) */}
+      {meQ.data?.role === 'admin' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Users</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Manage admin and viewer accounts.
+            </span>
+            <Button asChild variant="outline">
+              <Link to="/settings/users">Open</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Data Retention card — D-09 / DATA-13 / Plan 05-11 */}
       <DataRetentionCard />
