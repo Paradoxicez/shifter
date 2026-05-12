@@ -214,6 +214,16 @@ const (
 	EntityTypeReportTemplate = "report_template"
 )
 
+// Phase 7 — Plan 07-13: bulk gateway import audit constants.
+// These strings MUST exactly mirror the CHECK literals added by
+// migration 0055_audit_vocab_gateway_bulk.up.sql — any drift = 23514 at write.
+//
+// AuditActionGatewayBulkImported fires per successfully imported gateway row
+// in POST /api/gateways/bulk-import/commit (one audit row per gateway, same tx).
+const (
+	AuditActionGatewayBulkImported = "gateway.bulk_imported"
+)
+
 // Gap closure Plan 06-12 — SETT-02: install_identity entity type.
 // Used as EntityType in audit.Entry for identity update rows.
 const (

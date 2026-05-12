@@ -276,6 +276,16 @@ const (
 	ActionDeviceRevealSecrets Action = "device.reveal_secrets"
 )
 
+// Phase 7 — Plan 07-13: gateway bulk import (D-17 UX-POWER requirement).
+// ActionGatewayBulkImport gates POST /api/gateways/bulk-import/validate,
+// POST /api/gateways/bulk-import/commit, and GET /api/gateways/bulk-import/template.
+// Admin-only (T-07-13-04 mitigation: viewer bulk-commit attempt → 403).
+const (
+	// ActionGatewayBulkImport gates the gateway CSV bulk-import surface.
+	// Admin-only — writes gateway rows + audit rows per imported gateway.
+	ActionGatewayBulkImport Action = "gateway.bulk_import"
+)
+
 // Role is the typed role identifier mirroring the Postgres user_role enum.
 type Role string
 
@@ -405,6 +415,10 @@ var roleBundles = map[Role]map[Action]bool{
 		// Phase 7 — Plan 07-12: Compare View. Admin + viewer both allowed.
 		// POST /api/reports/compare is a read-only aggregation; no state mutation.
 		ActionReportRead: true,
+
+		// Phase 7 — Plan 07-13: gateway bulk import. Admin-only.
+		// T-07-13-04 mitigation: viewer attempt → 403 from RequireAction before handler.
+		ActionGatewayBulkImport: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.

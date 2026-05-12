@@ -863,6 +863,19 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// Plan 15 wizard finish + Phase 5 settings page edit.
 	UpsertChirpStackConnection(ctx context.Context, arg UpsertChirpStackConnectionParams) (ChirpstackConnection, error)
+	// gateway_import.sql
+	// Phase 7 Plan 13: bulk gateway import upsert query.
+	//
+	// UpsertGatewayForBulkImport performs an idempotent upsert on gateway_id
+	// (the 16-hex EUI). The (xmax = 0) trick distinguishes INSERT vs UPDATE on
+	// conflict so the service can return "created" vs "updated" vs "skipped"
+	// outcome per row.
+	//
+	// "skipped" detection: after an UPDATE, the service compares name/description/
+	// lat/lng/region against the RETURNING row. If all match the input, the row
+	// was effectively a no-op (same data). The query always UPDATEs on conflict
+	// to keep the logic simple; the service layer determines "skipped" vs "updated".
+	UpsertGatewayForBulkImport(ctx context.Context, arg UpsertGatewayForBulkImportParams) (UpsertGatewayForBulkImportRow, error)
 	// Plan 15 wizard finish + Phase 5 settings page edit.
 	UpsertInstallIdentity(ctx context.Context, arg UpsertInstallIdentityParams) (InstallIdentity, error)
 	// INSERT or UPDATE — device_id is PK (a device pins to one plan at a time).

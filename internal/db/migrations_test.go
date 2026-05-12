@@ -118,11 +118,13 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// Bumped 53 → 54 in plan 07-11a (0054_audit_vocab_report_template — adds
 	// report_template.created / report_template.updated / report_template.deleted
 	// to audit_log CHECK constraint + report_template entity type).
+	// Bumped 54 → 55 in plan 07-13 (0055_audit_vocab_gateway_bulk — adds
+	// gateway.bulk_imported to audit_log CHECK constraint).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 54, version, "expected schema_migrations.version = 54 (latest after plan 07-11a)")
+	require.Equal(t, 55, version, "expected schema_migrations.version = 55 (latest after plan 07-13)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.

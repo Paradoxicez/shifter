@@ -73,13 +73,15 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 	// Plan 07-11a adds 0054_audit_vocab_report_template bringing us to 54
 	// (report_template.created / report_template.updated / report_template.deleted +
 	//  report_template entity type).
+	// Plan 07-13 adds 0055_audit_vocab_gateway_bulk bringing us to 55
+	// (gateway.bulk_imported audit action literal).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(54), v)
+	require.Equal(t, uint(55), v)
 
 	// Verify seeds re-inserted after the round-trip (3 from 0010 + 1 from 0050).
 	var n int
