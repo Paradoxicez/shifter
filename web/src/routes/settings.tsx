@@ -14,6 +14,8 @@ import {
   type TestConnResult,
 } from '@/lib/settings'
 import { DataRetentionCard } from '@/components/settings/DataRetentionCard'
+import { BackupStatusCard } from '@/components/settings/BackupStatusCard'
+import { RestoreGuidanceCard } from '@/components/settings/RestoreGuidanceCard'
 import { EditConnectionDialog } from './settings/edit-connection-dialog'
 import { TestConnectionPanel } from './settings/test-connection'
 
@@ -133,8 +135,14 @@ export default function SettingsPage() {
         </Card>
       ) : null}
 
-      {/* Data Retention card — D-09 / DATA-13 / Plan 05-11 */}
+      {/* Data Retention card — D-09 / DATA-13 / Plan 05-11 + Phase 6 extensions (06-10) */}
       <DataRetentionCard />
+
+      {/* Backup status card — SETT-05 / Plan 06-10 */}
+      <BackupStatusCard />
+
+      {/* Restore guidance — D-47 / Plan 06-10 */}
+      <RestoreGuidanceCard />
 
       {csQ.data ? (
         <EditConnectionDialog

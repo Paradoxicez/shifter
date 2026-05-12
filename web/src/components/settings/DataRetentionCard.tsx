@@ -7,13 +7,14 @@ import { useCurrentUser } from '@/lib/use-current-user'
 import { EditRetentionDialog } from './EditRetentionDialog'
 
 /**
- * Data Retention settings card (D-09 / DATA-13 / Plan 05-11).
+ * Data Retention settings card (D-09 / DATA-13 / Plan 05-11 + Plan 06-10).
  *
- * Displays 5 retention levels (raw, hourly, daily, monthly, yearly).
- * Admin users see an "Edit" ghost button per editable row.
+ * Displays 7 retention levels (raw, hourly, daily, monthly, yearly,
+ * alerts, audit_log). Admin users see an "Edit" ghost button per editable row.
  * Viewers see read-only values (AUTH-06 frontend hide; server enforces 403).
  *
  * Yearly aggregate is always read-only in this card — null means "Never expires".
+ * Alerts and audit_log rows are editable by admin (Plan 06-10).
  *
  * UI-SPEC §Settings — Data Retention Card.
  */
@@ -24,14 +25,18 @@ export interface RetentionConfig {
   daily_days: number
   monthly_days: number
   yearly_days: number | null
+  // Phase 6 additions (Plan 06-10 / migration 0040):
+  alerts_days: number
+  audit_log_days: number
   updated_at: string
 }
 
-export type EditableLevelKey = 'raw_days' | 'hourly_days' | 'daily_days' | 'monthly_days'
+export type EditableLevelKey = 'raw_days' | 'hourly_days' | 'daily_days' | 'monthly_days' | 'alerts_days' | 'audit_log_days'
 
 export interface RetentionLevel {
   key: EditableLevelKey
   label: string
+  tooltip?: string
   unit: 'days' | 'years'
   min: number
   max: number
@@ -42,6 +47,23 @@ export const RETENTION_LEVELS: RetentionLevel[] = [
   { key: 'hourly_days',  label: 'Hourly aggregate',  unit: 'days',  min: 180,  max: 1825 },
   { key: 'daily_days',   label: 'Daily aggregate',   unit: 'days',  min: 365,  max: 7300 },
   { key: 'monthly_days', label: 'Monthly aggregate', unit: 'years', min: 1825, max: 18250 },
+  // Phase 6 additions:
+  {
+    key: 'alerts_days',
+    label: 'Alerts',
+    tooltip: 'Fired-alert records are deleted after this period. Rules and settings are kept forever.',
+    unit: 'days',
+    min: 30,
+    max: 3650,
+  },
+  {
+    key: 'audit_log_days',
+    label: 'Audit log',
+    tooltip: 'Operator activity audit entries are pruned after this period.',
+    unit: 'days',
+    min: 90,
+    max: 18250,
+  },
 ]
 
 export function formatRetentionValue(days: number, unit: 'days' | 'years'): string {
