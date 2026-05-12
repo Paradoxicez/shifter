@@ -356,6 +356,34 @@ var serveCmd = &cobra.Command{
 			Log:     log.With("component", "audit_prune"),
 		})
 
+		// Phase 6 — Plan 06-02 (ALERT-01/02/03): threshold + offline evaluators.
+		// EvaluateContext is the shared dependency bundle each worker holds;
+		// constructed once and reused. RuleStore + AlertStore + WorkerStateStore
+		// are also process-wide singletons (concurrent-safe by design).
+		alertEng := alert.EvaluateContext{
+			Pool:      pool,
+			Queries:   q,
+			Hub:       eventsHub,
+			InstallTZ: time.UTC, // overwritten per-cycle if/when anomaly worker uses install_tz (Plan 06-03)
+			Log:       log.With("component", "alert_engine"),
+		}
+		alertRules := alert.NewRuleStore(pool)
+		alertStore := alert.NewAlertStore(pool)
+		alertWorkerStat := alert.NewWorkerStateStore(pool)
+
+		river.AddWorker(riverWorkers, &alert.ThresholdInstantaneousWorker{
+			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
+		})
+		river.AddWorker(riverWorkers, &alert.ThresholdHourlyWorker{
+			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
+		})
+		river.AddWorker(riverWorkers, &alert.ThresholdDailyWorker{
+			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
+		})
+		river.AddWorker(riverWorkers, &alert.OfflineWorker{
+			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
+		})
+
 		// Build cron schedule for the audit prune. Install timezone is
 		// pulled from install_identity (singleton id=1) so the operator-
 		// chosen tz at install time drives the schedule. Falls back to
@@ -386,9 +414,45 @@ var serveCmd = &cobra.Command{
 				},
 				&river.PeriodicJobOpts{RunOnStart: false},
 			),
+			// Phase 6 Plan 06-02 (ALERT-01) — threshold subtype cadences from
+			// 06-RESEARCH §Decision C. Each is independent so they can run
+			// concurrently in the default queue (MaxWorkers bumped to 8 below).
+			river.NewPeriodicJob(
+				river.PeriodicInterval(1*time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.ThresholdInstantaneousArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			river.NewPeriodicJob(
+				river.PeriodicInterval(15*time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.ThresholdHourlyArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			river.NewPeriodicJob(
+				river.PeriodicInterval(1*time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.ThresholdDailyArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			// Phase 6 Plan 06-02 (ALERT-02/03) — offline evaluator cadence.
+			river.NewPeriodicJob(
+				river.PeriodicInterval(2*time.Minute),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.OfflineArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
 		}
 		riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
-			Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}},
+			// MaxWorkers bumped from 4 → 8 in Plan 06-02 to absorb the new
+			// per-minute / per-2-minute / per-15-minute / per-hour alert
+			// periodic flux without queueing pressure on the existing PDF
+			// + cleanup + audit_prune workers.
+			Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 8}},
 			Workers:      riverWorkers,
 			PeriodicJobs: riverPeriodicJobs,
 		})
