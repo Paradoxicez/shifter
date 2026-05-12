@@ -332,7 +332,7 @@ func TestExport_RespectsFilters(t *testing.T) {
 	require.NoError(t, db.RunMigrations(ctx, pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
 
 	insertExportRow(t, ctx, pool, "auth.login_success", "user", "user row")
-	insertExportRow(t, ctx, pool, "alert.ack", "alert", "alert row")
+	insertExportRow(t, ctx, pool, "alert.acknowledged", "alert", "alert row")
 
 	filter := audit.Filter{EntityTypes: []string{"user"}}
 	var buf bytes.Buffer

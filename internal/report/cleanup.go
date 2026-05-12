@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"log/slog"
 
+	"github.com/shifter-io/shifter/internal/audit"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 )
 
@@ -22,12 +24,17 @@ func (CleanupExpiredReportsArgs) Kind() string { return "report_cleanup" }
 // CleanupExpiredReportsWorker implements the hourly cleanup PeriodicJob (D-07).
 // It scans report rows where expires_at < now() AND pdf_status <> 'expired',
 // removes the artifact directory from disk, and marks pdf_status='expired'.
+//
+// It also calls audit.PruneExpiredCSVExports to prune stale audit-export.csv
+// files that were written by AuditExportWorker (Plan 06-07 D-35). Those files
+// have no DB row; cleanup is mtime-based with the same 24h TTL.
 type CleanupExpiredReportsWorker struct {
 	river.WorkerDefaults[CleanupExpiredReportsArgs]
 
-	Pool    *pgxpool.Pool
-	Queries *sqlc.Queries
-	Log     *slog.Logger
+	Pool       *pgxpool.Pool
+	Queries    *sqlc.Queries
+	Log        *slog.Logger
+	ReportsDir string // optional; when set, prunes audit-export.csv files too
 }
 
 // Work runs the cleanup cycle.
@@ -63,5 +70,13 @@ func (w *CleanupExpiredReportsWorker) Work(ctx context.Context, job *river.Job[C
 	}
 
 	w.Log.Info("report.cleanup.cycle", "expired_count", len(expired))
+
+	// Prune stale audit CSV exports (Plan 06-07 D-35). These have no DB row;
+	// cleanup is mtime-based. Same 24h TTL as PDF artifacts.
+	if w.ReportsDir != "" {
+		if err := audit.PruneExpiredCSVExports(w.ReportsDir, 24*time.Hour); err != nil {
+			w.Log.Warn("report.cleanup: prune csv exports failed", "err", err)
+		}
+	}
 	return nil
 }

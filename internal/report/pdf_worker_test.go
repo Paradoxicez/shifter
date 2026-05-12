@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/riverqueue/river"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
@@ -192,6 +193,62 @@ func TestEnqueuePDF_AtomicWithReport(t *testing.T) {
 	// Here we verify the Kind() and struct shape are correct.
 	args := PDFReportArgs{ReportID: uuid.New()}
 	require.Equal(t, "pdf_report", args.Kind())
+}
+
+// TestCleanupExpiredReportsWorker_PrunesCSV verifies that the cleanup worker
+// calls audit.PruneExpiredCSVExports and removes audit-export.csv files whose
+// mtime exceeds the 24h TTL (Plan 06-07 D-35 integration with Phase 5 D-07).
+func TestCleanupExpiredReportsWorker_PrunesCSV(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+
+	ctx := context.Background()
+	pool := testsupport.StartPostgres(t)
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	require.NoError(t, db.RunMigrations(ctx, pool, log))
+
+	// Seed install_identity + retention_config (required by migrations).
+	_, err := pool.Exec(ctx, `
+		INSERT INTO install_identity (id, display_name, logo_path, address, timezone, units, capabilities)
+		VALUES (1, 'Test Install', '', '', 'UTC', 'metric', 'both')
+		ON CONFLICT (id) DO NOTHING
+	`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `
+		INSERT INTO retention_config (id, raw_days, hourly_days, daily_days, monthly_days, yearly_days)
+		VALUES (1, 90, 365, 1825, 7300, NULL)
+		ON CONFLICT (id) DO NOTHING
+	`)
+	require.NoError(t, err)
+
+	q := sqlc.New(pool)
+	reportsDir := t.TempDir()
+
+	// Create an aged audit-export.csv file (25h old — beyond 24h TTL).
+	jobID := "test-job-" + t.Name()
+	csvDir := reportsDir + "/" + jobID
+	require.NoError(t, os.MkdirAll(csvDir, 0o755))
+	csvPath := csvDir + "/audit-export.csv"
+	require.NoError(t, os.WriteFile(csvPath, []byte("\xEF\xBB\xBFtest"), 0o644))
+	oldTime := time.Now().Add(-25 * time.Hour)
+	require.NoError(t, os.Chtimes(csvPath, oldTime, oldTime))
+
+	worker := &CleanupExpiredReportsWorker{
+		Pool:       pool,
+		Queries:    q,
+		Log:        log,
+		ReportsDir: reportsDir,
+	}
+
+	job := &river.Job[CleanupExpiredReportsArgs]{Args: CleanupExpiredReportsArgs{}}
+	err = worker.Work(ctx, job)
+	require.NoError(t, err)
+
+	// Assert the aged CSV directory was removed.
+	_, statErr := os.Stat(csvDir)
+	assert.True(t, os.IsNotExist(statErr),
+		"CleanupExpiredReportsWorker must remove aged audit-export.csv dirs (D-35)")
 }
 
 // --- helpers ---

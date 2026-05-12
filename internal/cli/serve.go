@@ -40,6 +40,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/shifter-io/shifter/internal/alert"
+	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
@@ -341,9 +342,10 @@ var serveCmd = &cobra.Command{
 			Log:      log.With("component", "pdf_worker"),
 		})
 		river.AddWorker(riverWorkers, &report.CleanupExpiredReportsWorker{
-			Pool:    pool,
-			Queries: q,
-			Log:     log.With("component", "report_cleanup"),
+			Pool:       pool,
+			Queries:    q,
+			Log:        log.With("component", "report_cleanup"),
+			ReportsDir: cfg.ReportsRoot, // also prunes audit-export.csv files (Plan 06-07 D-35)
 		})
 
 		// Phase 6 — Plan 06-01 (D-38 + D-51): daily audit-log retention prune.
@@ -400,6 +402,19 @@ var serveCmd = &cobra.Command{
 			Pool:  pool,
 			Store: alertStore,
 			Log:   log.With("component", "alert_test_fire_clear"),
+		})
+
+		// Phase 6 — Plan 06-07 (D-35): async audit CSV export worker.
+		// On-demand River job triggered by POST /api/audit/export-async when
+		// row count > 50k. Writes {cfg.ReportsRoot}/{jobID}/audit-export.csv.
+		// 24h TTL pruned by PruneExpiredCSVExports (audit package) called
+		// from the hourly report cleanup cycle.
+		auditStore := audit.NewStore(pool)
+		river.AddWorker(riverWorkers, &audit.AuditExportWorker{
+			Pool:       pool,
+			Store:      auditStore,
+			ReportsDir: cfg.ReportsRoot,
+			Log:        log.With("component", "audit_export_worker"),
 		})
 
 		// Build cron schedule for the audit prune. Install timezone is
@@ -576,6 +591,12 @@ var serveCmd = &cobra.Command{
 				Rules:      alertRules,
 				Alerts:     alertStore,
 				Log:        log.With("component", "alert.handler"),
+			},
+			AuditDeps: &audit.Deps{
+				Pool:  pool,
+				Store: auditStore,
+				Log:   log.With("component", "audit"),
+				RiverClient: riverClient,
 			},
 			AlertTestFireDeps: &alert.TestFireDeps{
 				HTTPDeps: alert.HTTPDeps{

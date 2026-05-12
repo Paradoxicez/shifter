@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
@@ -101,7 +102,7 @@ func StreamCSVExportToWriter(ctx context.Context, w io.Writer, pool *pgxpool.Poo
 	}
 
 	const exportSQL = `
-SELECT a.time, COALESCE(u.email, '') AS user_email, a.user_id::text,
+SELECT a.time, COALESCE(u.email, '') AS user_email, COALESCE(a.user_id::text, '') AS user_id,
        a.action, a.entity_type, a.entity_id::text,
        COALESCE(a.request_id, ''), COALESCE(a.notes, ''),
        COALESCE(a.before::text, ''), COALESCE(a.after::text, '')
@@ -260,24 +261,51 @@ func (AuditExportArgs) Kind() string { return "audit_export" }
 // InsertOpts returns River insert options for the export job.
 func (AuditExportArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{MaxAttempts: 3} }
 
-// ExportAsyncDeps extends Deps with the River client needed by ExportAsyncHandler.
-type ExportAsyncDeps struct {
-	Deps
-	RiverClient RiverInserter
-}
-
 // RiverInserter is the subset of the River client API needed to enqueue jobs.
+// Satisfied by *river.Client[pgx.Tx] (via riverpgxv5).
 type RiverInserter interface {
-	InsertTx(ctx context.Context, tx interface{ Exec(ctx context.Context, sql string, arguments ...any) (interface{}, error) }, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
+	Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
 }
 
 // ExportAsyncHandler handles POST /api/audit/export-async.
 // Enqueues a River AuditExportWorker job and returns 202 + {job_id, status}.
 // Writes an audit.export row for operator visibility (D-35).
+//
+// If deps.RiverClient is nil (test or pre-wiring boot), returns 202 with a
+// generated job_id and writes the audit row — the River enqueue is skipped.
+// This matches the nil-guard degraded pattern used throughout serve.go.
 func ExportAsyncHandler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Stub: full River integration in Task 2. For now return 501 so the
-		// router can register the route and tests can target it.
-		writeError(w, http.StatusNotImplemented, "use_export_worker_task2")
+		filter, err := parseFilterFromQuery(r.URL.Query())
+		if err != nil {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+
+		jobID := uuid.New()
+
+		// D-35: write audit.export row best-effort.
+		writeExportAuditRow(r.Context(), deps.Pool, uuid.Nil, filter, 0,
+			fmt.Sprintf("Async export queued; job_id=%s filter=%s", jobID, filterSummary(filter)))
+
+		// Enqueue the River job (best-effort when client is wired).
+		if deps.RiverClient != nil {
+			if _, err := deps.RiverClient.Insert(r.Context(), AuditExportArgs{
+				JobID:  jobID.String(),
+				Filter: filter,
+			}, nil); err != nil {
+				deps.Log.Error("audit.export_async.enqueue", "err", err)
+				writeError(w, http.StatusInternalServerError, "enqueue_error")
+				return
+			}
+		}
+
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"job_id": jobID,
+			"status": "queued",
+		})
 	}
 }
+
+// _ ensures pgx is used (imported for RiverInserter contract documentation).
+var _ pgx.Tx // compile-time import anchor

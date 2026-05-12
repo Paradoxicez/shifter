@@ -17,9 +17,10 @@ import (
 // The audit package does NOT import auth (cycle: auth→audit). Route-level
 // RequireAction guards are applied by the caller (internal/http/router.go).
 type Deps struct {
-	Pool  *pgxpool.Pool
-	Store *Store
-	Log   *slog.Logger
+	Pool        *pgxpool.Pool
+	Store       *Store
+	Log         *slog.Logger
+	RiverClient RiverInserter // optional; nil = ExportAsyncHandler skips River enqueue
 }
 
 // ListHandler handles GET /api/audit with cursor pagination and filters.
