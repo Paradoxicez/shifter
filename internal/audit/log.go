@@ -94,6 +94,17 @@ const (
 	EntityTypePlacement = "placement"
 )
 
+// Phase 5 — Plan 05-11: retention settings audit constants. These strings MUST
+// exactly mirror the CHECK literals in migration 0036_audit_vocab_retention.up.sql.
+const (
+	ActionRetentionChange = "settings.retention_change"
+)
+
+// Phase 5 retention_config entity type (mirrors 0036 CHECK literals).
+const (
+	EntityTypeRetention = "retention_config"
+)
+
 // Entry is the value-shape callers fill in when calling WriteEntry. It maps
 // 1:1 onto the audit_log columns minus the DB-defaulted id + time. The 8
 // caller-provided columns (D-22) plus the txn handle make audit calls

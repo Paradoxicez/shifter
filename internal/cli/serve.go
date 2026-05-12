@@ -55,6 +55,7 @@ import (
 	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/report"
 	"github.com/shifter-io/shifter/internal/resolver"
+	"github.com/shifter-io/shifter/internal/settings"
 	"github.com/shifter-io/shifter/internal/swap"
 )
 
@@ -407,7 +408,11 @@ var serveCmd = &cobra.Command{
 				Logger: log.With("component", "dashboard"),
 			},
 			ReportDeps: reportDeps,
-			SPA:        httpapi.SPAHandler(),
+			SettingsDeps: &settings.Deps{
+				Pool:    pool,
+				Queries: q,
+			},
+			SPA: httpapi.SPAHandler(),
 		})
 
 		// 9. HTTP server.

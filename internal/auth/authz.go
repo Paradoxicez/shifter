@@ -116,6 +116,13 @@ const (
 	ActionAuditRead Action = "audit.read"
 )
 
+// Phase 5 — Plan 05-11: settings update (data retention). Admin-only.
+// T-05-11-01 mitigation: viewer PATCH → 403 enforced by Can() fail-closed default.
+const (
+	// ActionSettingsUpdate gates PATCH /api/settings/retention (admin only).
+	ActionSettingsUpdate Action = "settings.update"
+)
+
 // Phase 3 — Plan 03-02: gateway CRUD + bulk-import + secret reveal.
 // All mutating actions admin-only; viewer denied via fail-closed default.
 // ActionGatewayRead is the single exception viewers retain (mirrors
@@ -198,6 +205,11 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionGatewayRead:         true,
 		ActionDeviceBulkImport:    true,
 		ActionDeviceRevealSecrets: true,
+
+		// Phase 5 — Plan 05-11: settings update (data retention). Admin only.
+		// T-05-11-01: viewers cannot PATCH retention; Can() returns false for
+		// RoleViewer (ActionSettingsUpdate intentionally absent from viewer bundle).
+		ActionSettingsUpdate: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.

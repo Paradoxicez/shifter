@@ -38,6 +38,7 @@ import (
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/report"
+	"github.com/shifter-io/shifter/internal/settings"
 	"github.com/shifter-io/shifter/internal/site"
 	"github.com/shifter-io/shifter/internal/swap"
 )
@@ -116,6 +117,12 @@ type Deps struct {
 	//   GET  /api/reports/{id}/file/{kind}  — stream artifact (csv|xlsx|pdf)
 	// nil in early-boot / router unit tests that don't need report routes.
 	ReportDeps *report.Deps
+
+	// SettingsDeps wires Plan 05-11's data retention endpoints:
+	//   GET   /api/settings/retention  — admin + viewer (read)
+	//   PATCH /api/settings/retention  — admin only (T-05-11-01)
+	// nil in early-boot / router unit tests that don't need retention routes.
+	SettingsDeps *settings.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -298,6 +305,13 @@ func NewRouter(deps Deps) http.Handler {
 		// Auth is enforced inside each handler (viewers see own reports,
 		// admins see all). Mounted before the SPA fallback (PITFALL #4).
 		report.RegisterRoutes(r, *deps.ReportDeps)
+	}
+	if deps.SettingsDeps != nil {
+		// SettingsDeps mounts Plan 05-11's data retention endpoints:
+		//   GET   /api/settings/retention — admin + viewer
+		//   PATCH /api/settings/retention — admin only (T-05-11-01)
+		// Mounted before the SPA fallback (PITFALL #4).
+		settings.RegisterRoutes(r, *deps.SettingsDeps, deps.SessionMgr)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
