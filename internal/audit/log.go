@@ -153,6 +153,14 @@ const (
 	ActionAuditExport    = "audit.export"
 )
 
+// Phase 6 — Plan 06-11: alerts retention prune (D-13 hard-cap on alert age).
+// Distinct from alert.cleared (condition resolved) — 'alert.pruned' indicates
+// the alert was removed by the retention worker, not cleared by an evaluator
+// or operator. Mirrors the audit.prune meta-row pattern from Plan 06-01 D-51.
+const (
+	ActionAlertPruned = "alert.pruned"
+)
+
 // Phase 6 — Plan 06-01: new entity types (mirrors 0037 CHECK literals).
 // EntityTypeAuditLog is reserved for the D-51 audit.prune meta-row whose
 // entity_id self-references the meta-row's own UUID.

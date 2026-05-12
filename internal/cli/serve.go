@@ -359,6 +359,15 @@ var serveCmd = &cobra.Command{
 			Log:     log.With("component", "audit_prune"),
 		})
 
+		// Phase 6 — Plan 06-11 (D-13): daily alerts retention prune.
+		// Plain DELETE (no SECURITY DEFINER needed — alert table has no
+		// INSERT-ONLY trigger). Scheduled at 03:30 install_tz, 30 min after
+		// the audit prune, to avoid contention on retention_config.
+		river.AddWorker(riverWorkers, &alert.AlertsPruneWorker{
+			Pool: pool,
+			Log:  log.With("component", "alerts_prune"),
+		})
+
 		// Phase 6 — Plan 06-02 (ALERT-01/02/03): threshold + offline evaluators.
 		// EvaluateContext is the shared dependency bundle each worker holds;
 		// constructed once and reused. RuleStore + AlertStore + WorkerStateStore
@@ -418,10 +427,10 @@ var serveCmd = &cobra.Command{
 			Log:        log.With("component", "audit_export_worker"),
 		})
 
-		// Build cron schedule for the audit prune. Install timezone is
-		// pulled from install_identity (singleton id=1) so the operator-
-		// chosen tz at install time drives the schedule. Falls back to
-		// UTC if the row hasn't been seeded yet (pre-FinishSetup boots).
+		// Build cron schedule for the audit prune and alerts prune.
+		// Install timezone is pulled from install_identity (singleton id=1)
+		// so the operator-chosen tz at install time drives the schedule.
+		// Falls back to UTC if the row hasn't been seeded yet (pre-FinishSetup boots).
 		installTZName := "UTC"
 		_ = pool.QueryRow(ctx, `SELECT timezone FROM install_identity WHERE id = 1`).Scan(&installTZName)
 		// CRON_TZ prefix is the documented robfig/cron way to bind a
@@ -430,6 +439,14 @@ var serveCmd = &cobra.Command{
 		auditPruneSchedule, err := cron.ParseStandard(auditPruneSpec)
 		if err != nil {
 			return fmt.Errorf("cron.ParseStandard(%q): %w", auditPruneSpec, err)
+		}
+
+		// Alerts prune at 03:30 install_tz — 30 minutes after audit prune to
+		// avoid contention on retention_config.
+		alertsPruneSpec := "CRON_TZ=" + installTZName + " 30 3 * * *"
+		alertsPruneSchedule, err := cron.ParseStandard(alertsPruneSpec)
+		if err != nil {
+			return fmt.Errorf("cron.ParseStandard(%q): %w", alertsPruneSpec, err)
 		}
 
 		riverPeriodicJobs := []*river.PeriodicJob{
@@ -445,6 +462,14 @@ var serveCmd = &cobra.Command{
 				auditPruneSchedule,
 				func() (river.JobArgs, *river.InsertOpts) {
 					return alert.AuditPruneArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			// Alerts retention prune — daily at 03:30 install_tz (D-13 hard cap).
+			river.NewPeriodicJob(
+				alertsPruneSchedule,
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.AlertsPruneArgs{}, nil
 				},
 				&river.PeriodicJobOpts{RunOnStart: false},
 			),

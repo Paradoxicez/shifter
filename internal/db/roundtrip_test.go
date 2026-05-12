@@ -68,7 +68,7 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(47), v)
+	require.Equal(t, uint(48), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int
