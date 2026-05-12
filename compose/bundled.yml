@@ -148,6 +148,7 @@ services:
       SHIFTER_SESSION_KEY_FILE: /run/secrets/session_signing_key
       SHIFTER_TLS_MODE: internal
       SHIFTER_LOGO_STORAGE_DIR: /var/lib/shifter/logos
+      SHIFTER_FLOOR_PLANS_DIR: /var/lib/shifter/floor-plans
     ports:
       # Exposed for the bundled smoke test (`just compose-smoke-bundled`
       # polls /health on the host). In production deploys behind Caddy
@@ -155,6 +156,7 @@ services:
       - "8080:8080"
     volumes:
       - shifter_logos:/var/lib/shifter/logos
+      - floor_plans:/var/lib/shifter/floor-plans
     logging: *json-logging
     networks: [shifter]
 
@@ -183,6 +185,7 @@ volumes:
   redis_data:
   chirpstack_config:
   shifter_logos:
+  floor_plans:
   caddy_data:
   caddy_config:
 

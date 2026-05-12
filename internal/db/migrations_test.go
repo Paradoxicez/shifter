@@ -80,11 +80,12 @@ func TestRunMigrations_Clean(t *testing.T) {
 	// task 2 (0029_retention_config — singleton retention configuration table).
 	// Bumped 29 → 31 in plan 05-03 (0030_report + 0031_audit_vocab_phase5).
 	// Bumped 31 → 33 in plan 05-05 (0032_floor_plan + 0033_device_floor_plan_placement).
+	// Bumped 33 → 34 in plan 05-05 task 2 (0034_audit_vocab_floor_plan).
 	var version int
 	var dirty bool
 	err = pool.QueryRow(ctx, `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty)
 	require.NoError(t, err)
-	require.Equal(t, 33, version, "expected schema_migrations.version = 33 (latest after plan 05-05)")
+	require.Equal(t, 34, version, "expected schema_migrations.version = 34 (latest after plan 05-05)")
 	require.False(t, dirty, "expected schema_migrations.dirty = false")
 
 	// 0025–0028: verify all four CAGGs exist.
@@ -180,7 +181,7 @@ func TestRunMigrations_Idempotent(t *testing.T) {
 	var version int
 	err := pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 33, version)
+	require.Equal(t, 34, version)
 }
 
 // TestRunMigrations_DirtyState — When schema_migrations has dirty=true,
@@ -665,8 +666,8 @@ func TestPhase3Migrations_0018_Gateway_Apply(t *testing.T) {
 
 // TestPhase3Migrations_0018_Down — applies all migrations then rolls back
 // to before 0018 so the gateway table must disappear.
-// Plan 05-05 bumped the chain to 33, so the rollback distance is 14 steps:
-// 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
+// Plan 05-05 bumped the chain to 34, so the rollback distance is 15 steps:
+// 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019 → 0018.
 func TestPhase3Migrations_0018_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -676,8 +677,8 @@ func TestPhase3Migrations_0018_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back fourteen steps: 0033 → 0032 → 0031 → 0030 → 0029 → ... → 0019 → 0018.
-	require.NoError(t, runMigrateSteps(t, pool, -14))
+	// Roll back fifteen steps: 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → ... → 0019 → 0018.
+	require.NoError(t, runMigrateSteps(t, pool, -15))
 
 	var exists bool
 	require.NoError(t, pool.QueryRow(ctx,
@@ -793,8 +794,8 @@ func TestPhase3Migrations_0019_ImportJob_Apply(t *testing.T) {
 
 // TestPhase3Migrations_0019_Down — roll back to before 0019; import_job and
 // import_job_row + both enums must be dropped.
-// Plan 05-05 bumped the chain to 33, so the rollback distance is 13 steps:
-// 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019. 0018 stays applied.
+// Plan 05-05 bumped the chain to 34, so the rollback distance is 14 steps:
+// 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020 → 0019. 0018 stays applied.
 func TestPhase3Migrations_0019_Down(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping: -short")
@@ -804,8 +805,8 @@ func TestPhase3Migrations_0019_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back thirteen steps: 0033 → 0032 → ... → 0019. 0018 (gateway) stays.
-	require.NoError(t, runMigrateSteps(t, pool, -13))
+	// Roll back fourteen steps: 0034 → 0033 → 0032 → ... → 0019. 0018 (gateway) stays.
+	require.NoError(t, runMigrateSteps(t, pool, -14))
 
 	for _, table := range []string{"import_job", "import_job_row"} {
 		var exists bool
@@ -941,10 +942,10 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
-	// Roll back to before 0020. Plan 05-05 bumped the chain to 33, so the
-	// rollback distance is 14 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020.
+	// Roll back to before 0020. Plan 05-05 bumped the chain to 34, so the
+	// rollback distance is 15 steps: 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024 → 0023 → 0022 → 0021 → 0020.
 	// 0019/0018 stay applied.
-	require.NoError(t, runMigrateSteps(t, pool, -14))
+	require.NoError(t, runMigrateSteps(t, pool, -15))
 
 	var userID string
 	require.NoError(t, pool.QueryRow(ctx,
@@ -980,8 +981,8 @@ func TestPhase3Migrations_0020_Down(t *testing.T) {
 }
 
 // TestRunMigrations_RiverDownUpClean — 0024_river_tables round-trip test.
-// Applies all migrations (up to 33), rolls back 10 steps (0033→0032→0031→0030→0029→0028→0027→0026→0025→0024),
-// asserts river_job does NOT exist, then re-applies 10 steps, asserts it does.
+// Applies all migrations (up to 34), rolls back 11 steps (0034→0033→0032→0031→0030→0029→0028→0027→0026→0025→0024),
+// asserts river_job does NOT exist, then re-applies 11 steps, asserts it does.
 // This pins the Pitfall #8 mitigation: River schema is managed by golang-migrate
 // so the install script does NOT need a separate `river migrate-up` step.
 func TestRunMigrations_RiverDownUpClean(t *testing.T) {
@@ -992,7 +993,7 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx := context.Background()
 
-	// Apply all migrations up to 33.
+	// Apply all migrations up to 34.
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
 	// Verify river_job exists before rollback.
@@ -1003,9 +1004,9 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, existsBefore, "river_job must exist after 0024 up")
 
-	// Roll back 10 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024.
-	// This takes us from v33 (device_floor_plan_placement) back before River (v23).
-	require.NoError(t, runMigrateSteps(t, pool, -10))
+	// Roll back 11 steps: 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025 → 0024.
+	// This takes us from v34 (audit_vocab_floor_plan) back before River (v23).
+	require.NoError(t, runMigrateSteps(t, pool, -11))
 
 	// river_job must NOT exist after 0024 down.
 	var existsAfterDown bool
@@ -1015,8 +1016,8 @@ func TestRunMigrations_RiverDownUpClean(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, existsAfterDown, "river_job must not exist after 0024 down")
 
-	// Re-apply 10 steps (0024 + 0025–0033).
-	require.NoError(t, runMigrateSteps(t, pool, 10))
+	// Re-apply 11 steps (0024 + 0025–0034).
+	require.NoError(t, runMigrateSteps(t, pool, 11))
 
 	// river_job must exist again after re-applying 0024.
 	var existsAfterUp bool
@@ -1048,7 +1049,7 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx := context.Background()
 
-	// Apply all migrations up to 33.
+	// Apply all migrations up to 34.
 	require.NoError(t, RunMigrations(ctx, pool, log))
 
 	// Verify 4 CAGGs exist before rollback.
@@ -1057,10 +1058,10 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 		`SELECT count(*) FROM timescaledb_information.continuous_aggregates`,
 	).Scan(&countBefore)
 	require.NoError(t, err)
-	require.Equal(t, 4, countBefore, "4 CAGGs must exist after migrations up to 33")
+	require.Equal(t, 4, countBefore, "4 CAGGs must exist after migrations up to 34")
 
-	// Roll back 9 steps: 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025.
-	require.NoError(t, runMigrateSteps(t, pool, -9))
+	// Roll back 10 steps: 0034 → 0033 → 0032 → 0031 → 0030 → 0029 → 0028 → 0027 → 0026 → 0025.
+	require.NoError(t, runMigrateSteps(t, pool, -10))
 
 	// All 4 CAGGs must be gone after rolling back 0025–0029.
 	var countAfterDown int
@@ -1078,8 +1079,8 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, retentionGone, "retention_config must be dropped after 0029 down")
 
-	// Re-apply 0025–0033 (9 steps up).
-	require.NoError(t, runMigrateSteps(t, pool, 9))
+	// Re-apply 0025–0034 (10 steps up).
+	require.NoError(t, runMigrateSteps(t, pool, 10))
 
 	// All 4 CAGGs must reappear.
 	var countAfterUp int
@@ -1097,11 +1098,11 @@ func TestRunMigrations_CAGGsDropClean(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, retentionBack, "retention_config must be recreated after 0029 re-applied")
 
-	// Schema version must be 33 after re-apply.
+	// Schema version must be 34 after re-apply.
 	var version int
 	err = pool.QueryRow(ctx, `SELECT version FROM schema_migrations`).Scan(&version)
 	require.NoError(t, err)
-	require.Equal(t, 33, version, "schema_migrations.version must be 33 after re-apply")
+	require.Equal(t, 34, version, "schema_migrations.version must be 34 after re-apply")
 }
 
 // TestRunMigrations_FloorPlanCascadeFromSite — 0032+0033 cascade path.

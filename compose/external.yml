@@ -102,6 +102,7 @@ services:
       SHIFTER_TLS_MODE: ${SHIFTER_TLS_MODE:-internal}
       SHIFTER_TLS_DOMAIN: ${SHIFTER_DOMAIN:-localhost}
       SHIFTER_LOGO_STORAGE_DIR: /var/lib/shifter/logos
+      SHIFTER_FLOOR_PLANS_DIR: /var/lib/shifter/floor-plans
     ports:
       # Exposed for the external smoke test (`just compose-smoke-external`
       # polls /health on the host). In production deploys behind Caddy
@@ -109,6 +110,7 @@ services:
       - "8080:8080"
     volumes:
       - shifter_logos:/var/lib/shifter/logos
+      - floor_plans:/var/lib/shifter/floor-plans
     logging: *json-logging
     networks: [shifter]
 
@@ -134,6 +136,7 @@ services:
 volumes:
   postgres_data:
   shifter_logos:
+  floor_plans:
   caddy_data:
   caddy_config:
 

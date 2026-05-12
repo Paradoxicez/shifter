@@ -67,6 +67,20 @@ const (
 	EntityTypeReport = "report"
 )
 
+// Phase 5 — Plan 05-05: floor-plan CRUD audit constants. These strings MUST
+// exactly mirror the CHECK literals in migration 0034_audit_vocab_floor_plan.up.sql.
+const (
+	ActionFloorPlanUpload  = "floor_plan.upload"
+	ActionFloorPlanReplace = "floor_plan.replace_image"
+	ActionFloorPlanRename  = "floor_plan.rename"
+	ActionFloorPlanDelete  = "floor_plan.delete"
+)
+
+// Phase 5 floor-plan entity type (mirrors 0034 CHECK literals).
+const (
+	EntityTypeFloorPlan = "floor_plan"
+)
+
 // Entry is the value-shape callers fill in when calling WriteEntry. It maps
 // 1:1 onto the audit_log columns minus the DB-defaulted id + time. The 8
 // caller-provided columns (D-22) plus the txn handle make audit calls
