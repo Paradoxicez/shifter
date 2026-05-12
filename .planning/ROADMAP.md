@@ -223,7 +223,7 @@ Plans:
 - [x] 06-05-user-management-PLAN.md — Wave 1: internal/auth/users.go extensions + internal/user package (store + handlers + guards + random password generator) + IterateAndRevoke export + 8 React dialogs (Add/Edit/Reset/Disable/Re-enable/LogoutEverywhere/RoleChange) + Settings → Users tab + Playwright (D-23..D-29, USER-01/02/03/04)
 - [x] 06-06-auth-event-audit-retrofit-PLAN.md — Wave 2: retrofit LoginHandler/LogoutHandler/ChangePasswordHandler with audit-in-tx + last_login_at update (operator-visible events only; silent refreshes NOT audited) (D-30)
 - [x] 06-07-audit-browse-export-PLAN.md — Wave 2: cursor-paginated /api/audit (row-comparison) + /api/audit/distincts + /api/audit/count + CSV export inline ≤50k + River AuditExportWorker for >50k + JsonTree highlightKeys extension + /audit React route with URL chips + Playwright (D-31..D-37, AUDIT-02/03)
-- [ ] 06-08-backup-cli-cron-PLAN.md — Wave 2: migration 0044 (backup_run) + internal/backup package (Runner + Manifest + Store) + `shifter backup` Cobra + /api/backup/* HTTP + Dockerfile bundles postgresql16-client + compose/bundled.yml ofelia v0.3.22 sidecar (0 2 * * *) + backups volume in both compose flavors (D-39..D-43, OPS-02/03, SETT-05 backend)
+- [x] 06-08-backup-cli-cron-PLAN.md — Wave 2: migration 0044 (backup_run) + internal/backup package (Runner + Manifest + Store) + `shifter backup` Cobra + /api/backup/* HTTP + Dockerfile bundles postgresql16-client + compose/bundled.yml ofelia v0.3.22 sidecar (0 2 * * *) + backups volume in both compose flavors (D-39..D-43, OPS-02/03, SETT-05 backend)
 - [ ] 06-09-restore-cli-ci-roundtrip-PLAN.md — Wave 3: internal/backup/restore.go (PG advisory lock + sha256 verify + timescaledb_pre_restore/post_restore + no -j) + `shifter restore --from` Cobra + .github/workflows/backup-restore-roundtrip.yml CI gate + operator runbook Backup & Restore section (D-44, D-45, OPS-04)
 - [ ] 06-10-settings-extensions-PLAN.md — Wave 2: retention.go extension (alerts_days + audit_log_days fields) + migration 0045 (backup_warn/crit_threshold_hours) + Backup status card backend + DataRetentionCard frontend (7 rows) + BackupStatusCard + BackupHistoryList + RestoreGuidanceCard + InstallIdentityCard note + Playwright (D-13, D-38, D-46, D-47, SETT-02/05; preserves SETT-01/03/04)
 - [ ] 06-11-ops-hardening-doctor-runbook-PLAN.md — Wave 3: AlertsPruneWorker (03:30 cron) + audit vocab migration 0046 (alert.pruned) + /health/detailed extension (alert_workers[] + last_backup) + `shifter doctor` CLI + redaction package + compose conventions audit + automated lint test + operator-runbook sections (Compose conventions + Upgrading Shifter) (D-21, D-22, D-48..D-50, OPS-05/06/07/08, AUDIT-02 reinforcement)
@@ -283,7 +283,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
-| 6. Alerts, Users, Audit & Operational Hardening | 7/11 | In Progress|  |
+| 6. Alerts, Users, Audit & Operational Hardening | 8/11 | In Progress|  |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
 ## Coverage Summary

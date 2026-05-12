@@ -131,7 +131,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **SETT-02**: Admin can update install identity at any time and changes propagate to report branding
 - [x] **SETT-03**: Admin can update ChirpStack gRPC + MQTT credentials at any time without redeploying
 - [x] **SETT-04**: Admin can configure data retention windows for raw measurements and each aggregate level
-- [ ] **SETT-05**: Settings page surfaces the most recent backup timestamp and a warning if backup is older than the configured threshold
+- [x] **SETT-05**: Settings page surfaces the most recent backup timestamp and a warning if backup is older than the configured threshold
 
 ### User Management
 
@@ -149,7 +149,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Operational Hardening
 
 - [x] **OPS-01**: Project ships two Docker Compose files — `bundled` (Postgres+TimescaleDB+Mosquitto+ChirpStack+Shifter) and `external` (Postgres+TimescaleDB+Shifter, ChirpStack URLs from env) — using the same backend image
-- [ ] **OPS-02**: Project ships a TimescaleDB-aware logical backup script that backs up the database and rsyncs the floor-plan image volume
+- [x] **OPS-02**: Project ships a TimescaleDB-aware logical backup script that backs up the database and rsyncs the floor-plan image volume
 - [x] **OPS-03**: Backup destination is configurable (local filesystem path or S3-compatible URL)
 - [ ] **OPS-04**: Restore procedure is tested in CI (round-trip backup → fresh DB → restore → smoke test)
 - [ ] **OPS-05**: Container logs use the `json-file` driver with size and file-count caps configured by default
@@ -305,7 +305,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | SETT-02 | Phase 6 | Pending |
 | SETT-03 | Phase 6 | Complete |
 | SETT-04 | Phase 5 | Complete |
-| SETT-05 | Phase 6 | Pending |
+| SETT-05 | Phase 6 | Complete |
 | USER-01 | Phase 6 | Complete |
 | USER-02 | Phase 6 | Complete |
 | USER-03 | Phase 6 | Complete |
@@ -314,7 +314,7 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | AUDIT-02 | Phase 6 | Complete |
 | AUDIT-03 | Phase 6 | Complete |
 | OPS-01 | Phase 1 | Complete |
-| OPS-02 | Phase 6 | Pending |
+| OPS-02 | Phase 6 | Complete |
 | OPS-03 | Phase 6 | Complete |
 | OPS-04 | Phase 6 | Pending |
 | OPS-05 | Phase 6 | Pending |
