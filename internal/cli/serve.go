@@ -35,6 +35,9 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/chirpstack"
 	"github.com/shifter-io/shifter/internal/config"
@@ -50,6 +53,7 @@ import (
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/logging"
 	"github.com/shifter-io/shifter/internal/profile"
+	"github.com/shifter-io/shifter/internal/report"
 	"github.com/shifter-io/shifter/internal/resolver"
 	"github.com/shifter-io/shifter/internal/swap"
 )
@@ -315,6 +319,69 @@ var serveCmd = &cobra.Command{
 			}
 		}
 
+		// 9a. River background-job client (Phase 5 REPT-06 + report cleanup).
+		// Workers: PDFReportWorker (async PDF generation) +
+		//          CleanupExpiredReportsWorker (hourly artifact purge D-07).
+		// The EnqueuePDF closure is injected into reportDeps so GenerateHandler
+		// can call riverClient.InsertTx inside the same pgx.Tx as the report
+		// INSERT + audit row (D-06 + D-23 atomicity requirement).
+		q := sqlc.New(pool)
+		riverWorkers := river.NewWorkers()
+		identityProvider := &sqlcIdentityProvider{pool: pool}
+		river.AddWorker(riverWorkers, &report.PDFReportWorker{
+			Pool:     pool,
+			Queries:  q,
+			Identity: identityProvider,
+			Log:      log.With("component", "pdf_worker"),
+		})
+		river.AddWorker(riverWorkers, &report.CleanupExpiredReportsWorker{
+			Pool:    pool,
+			Queries: q,
+			Log:     log.With("component", "report_cleanup"),
+		})
+		riverPeriodicJobs := []*river.PeriodicJob{
+			river.NewPeriodicJob(
+				river.PeriodicInterval(1*time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return report.CleanupExpiredReportsArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+		}
+		riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+			Queues:       map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}},
+			Workers:      riverWorkers,
+			PeriodicJobs: riverPeriodicJobs,
+		})
+		if err != nil {
+			return fmt.Errorf("river NewClient: %w", err)
+		}
+		go func() {
+			if riverErr := riverClient.Start(ctx); riverErr != nil {
+				log.Error("river start failed", "err", riverErr)
+			}
+		}()
+		defer func() {
+			shutdownCtx, shutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutCancel()
+			_ = riverClient.Stop(shutdownCtx)
+		}()
+
+		// Report handler deps — EnqueuePDF calls riverClient.InsertTx inside
+		// the same tx as the report INSERT so both are atomic (D-23).
+		reportsRoot := cfg.ReportsRoot
+		reportDeps := &report.Deps{
+			Pool:          pool,
+			Queries:       q,
+			SessionMgr:    sm,
+			Identity:      report.InstallIdentity{Timezone: time.UTC}, // overwritten by identityProvider at worker time
+			ArtifactsRoot: reportsRoot,
+			EnqueuePDF: func(ctx context.Context, tx pgx.Tx, reportID uuid.UUID, artifactDir string) error {
+				_, err := riverClient.InsertTx(ctx, tx, report.PDFReportArgs{ReportID: reportID}, nil)
+				return err
+			},
+		}
+
 		// 9. Router with full Phase 2 + Phase 3 + Phase 4 wiring.
 		router := httpapi.NewRouter(httpapi.Deps{
 			Pool:         pool,
@@ -339,7 +406,8 @@ var serveCmd = &cobra.Command{
 				Pool:   pool,
 				Logger: log.With("component", "dashboard"),
 			},
-			SPA: httpapi.SPAHandler(),
+			ReportDeps: reportDeps,
+			SPA:        httpapi.SPAHandler(),
 		})
 
 		// 9. HTTP server.
@@ -494,6 +562,31 @@ type bootstrapperFunc func(ctx context.Context) (tenantID, appID string, err err
 
 func (f bootstrapperFunc) EnsureTenantAndApplication(ctx context.Context) (string, string, error) {
 	return f(ctx)
+}
+
+// sqlcIdentityProvider satisfies report.InstallIdentityProvider by loading
+// the install_identity row from Postgres at worker runtime. This ensures the
+// PDF worker always uses the current identity (display_name, address, timezone)
+// even if it was updated via the install wizard after the binary started.
+type sqlcIdentityProvider struct{ pool *pgxpool.Pool }
+
+func (p *sqlcIdentityProvider) Load(ctx context.Context) (report.InstallIdentity, error) {
+	var displayName, address, tzName string
+	err := p.pool.QueryRow(ctx,
+		`SELECT display_name, COALESCE(address, ''), timezone FROM install_identity WHERE id = 1`,
+	).Scan(&displayName, &address, &tzName)
+	if err != nil {
+		return report.InstallIdentity{}, fmt.Errorf("load identity: %w", err)
+	}
+	tz, tzErr := time.LoadLocation(tzName)
+	if tzErr != nil {
+		tz = time.UTC
+	}
+	return report.InstallIdentity{
+		DisplayName: displayName,
+		Address:     address,
+		Timezone:    tz,
+	}, nil
 }
 
 // installStateRegionReader satisfies gateway.InstallStateReader by querying

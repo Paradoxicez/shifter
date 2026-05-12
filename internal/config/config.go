@@ -26,6 +26,7 @@ type Config struct {
 	HTTPPort       string `mapstructure:"http_port"`
 	LogLevel       string `mapstructure:"log_level"`
 	LogoStorageDir string `mapstructure:"logo_storage_dir"`
+	ReportsRoot    string `mapstructure:"reports_root"`
 
 	DB         DBConfig      `mapstructure:"db"`
 	ChirpStack CSConfig      `mapstructure:"chirpstack"`
@@ -117,6 +118,7 @@ func Load() (*Config, error) {
 	v.SetDefault("http_port", "8080")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("logo_storage_dir", "/var/lib/shifter/logos")
+	v.SetDefault("reports_root", "/var/lib/shifter/reports")
 	v.SetDefault("db.host", "postgres")
 	v.SetDefault("db.port", 5432)
 	v.SetDefault("db.database", "shifter")

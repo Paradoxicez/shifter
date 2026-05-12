@@ -111,6 +111,7 @@ services:
     volumes:
       - shifter_logos:/var/lib/shifter/logos
       - floor_plans:/var/lib/shifter/floor-plans
+      - reports_cache:/var/lib/shifter/reports
     logging: *json-logging
     networks: [shifter]
 
@@ -137,6 +138,7 @@ volumes:
   postgres_data:
   shifter_logos:
   floor_plans:
+  reports_cache:
   caddy_data:
   caddy_config:
 

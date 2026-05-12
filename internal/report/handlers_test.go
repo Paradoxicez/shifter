@@ -15,6 +15,7 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
@@ -22,8 +23,187 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGenerateHandler_EnqueuesPDFJob(t *testing.T) {
+	deps, sm, userID := setupHandlerTest(t)
+
+	// Track EnqueuePDF calls.
+	var enqueuedReportID uuid.UUID
+	deps.EnqueuePDF = func(ctx context.Context, tx pgx.Tx, reportID uuid.UUID, _ string) error {
+		enqueuedReportID = reportID
+		return nil
+	}
+
+	body, _ := json.Marshal(GenerateRequest{
+		Scope: "all",
+		Range: "daily",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/reports/generate", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(injectUser(req.Context(), sm, userID))
+	rr := httptest.NewRecorder()
+
+	GenerateHandler(deps)(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code, "body: %s", rr.Body.String())
+	var resp GenerateResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Equal(t, resp.ReportID, enqueuedReportID, "EnqueuePDF must be called with the new report's UUID")
+}
+
 func TestStatusHandler_PendingReadyFailed(t *testing.T) {
-	t.Skip("Plan 05-06 Task 2: GET /api/reports/:id returns pdf_status JSON for poll")
+	deps, sm, userID := setupHandlerTest(t)
+	ctx := context.Background()
+
+	// Seed three report rows with different pdf_status values.
+	r1ID := uuid.New()
+	r2ID := uuid.New()
+	r3ID := uuid.New()
+	pdfPath := "/tmp/abc/report.pdf"
+	userUUID := mustParseUUID(userID)
+
+	for _, tc := range []struct {
+		id        uuid.UUID
+		status    string
+		pdfPath   *string
+	}{
+		{r1ID, "pending", nil},
+		{r2ID, "ready", &pdfPath},
+		{r3ID, "failed", nil},
+	} {
+		_, err := deps.Pool.Exec(ctx, `
+			INSERT INTO report (id, user_id, scope, range_kind, range_start, range_end, artifact_dir, pdf_status, pdf_path, expires_at)
+			VALUES ($1, $2, 'all', 'daily', now() - interval '7 days', now(), '/tmp', $3, $4, now() + interval '24 hours')
+		`, tc.id, userUUID, tc.status, tc.pdfPath)
+		require.NoError(t, err)
+	}
+
+	r := chi.NewRouter()
+	RegisterRoutes(r, deps)
+
+	makeStatusReq := func(id uuid.UUID) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/reports/"+id.String(), nil)
+		req = req.WithContext(injectUser(req.Context(), sm, userID))
+		rr := httptest.NewRecorder()
+		r.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// pending: pdf_path absent (omitempty).
+	rr1 := makeStatusReq(r1ID)
+	require.Equal(t, http.StatusOK, rr1.Code)
+	var resp1 StatusResponse
+	require.NoError(t, json.Unmarshal(rr1.Body.Bytes(), &resp1))
+	require.Equal(t, "pending", resp1.PdfStatus)
+	require.Nil(t, resp1.PdfPath, "pdf_path must be absent (omitempty) when pending")
+	require.Equal(t, "all", resp1.Scope)
+	require.Equal(t, "daily", resp1.Range)
+	require.False(t, resp1.CreatedAt.IsZero())
+
+	// ready: pdf_path present.
+	rr2 := makeStatusReq(r2ID)
+	require.Equal(t, http.StatusOK, rr2.Code)
+	var resp2 StatusResponse
+	require.NoError(t, json.Unmarshal(rr2.Body.Bytes(), &resp2))
+	require.Equal(t, "ready", resp2.PdfStatus)
+	require.NotNil(t, resp2.PdfPath, "pdf_path must be present when ready")
+	require.Equal(t, pdfPath, *resp2.PdfPath)
+
+	// failed: pdf_path absent.
+	rr3 := makeStatusReq(r3ID)
+	require.Equal(t, http.StatusOK, rr3.Code)
+	var resp3 StatusResponse
+	require.NoError(t, json.Unmarshal(rr3.Body.Bytes(), &resp3))
+	require.Equal(t, "failed", resp3.PdfStatus)
+	require.Nil(t, resp3.PdfPath, "pdf_path must be absent when failed")
+}
+
+func TestStatusHandler_NotFound(t *testing.T) {
+	deps, sm, userID := setupHandlerTest(t)
+
+	r := chi.NewRouter()
+	RegisterRoutes(r, deps)
+
+	randomID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/reports/"+randomID.String(), nil)
+	req = req.WithContext(injectUser(req.Context(), sm, userID))
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Equal(t, "report_not_found", resp["error"])
+}
+
+func TestStatusHandler_BadUUID(t *testing.T) {
+	deps, sm, userID := setupHandlerTest(t)
+
+	r := chi.NewRouter()
+	RegisterRoutes(r, deps)
+
+	// "not-a-uuid" must be rejected with 400 BEFORE any DB lookup.
+	req := httptest.NewRequest(http.MethodGet, "/api/reports/not-a-uuid", nil)
+	req = req.WithContext(injectUser(req.Context(), sm, userID))
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.Equal(t, "invalid_report_id", resp["error"])
+}
+
+func TestStatusHandler_Unauthenticated(t *testing.T) {
+	deps, _, _ := setupHandlerTest(t)
+
+	r := chi.NewRouter()
+	RegisterRoutes(r, deps)
+
+	// No session cookie — must return 401.
+	req := httptest.NewRequest(http.MethodGet, "/api/reports/"+uuid.New().String(), nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestStatusHandler_ViewerCannotSeeOthers(t *testing.T) {
+	deps, sm, adminUserID := setupHandlerTest(t)
+	ctx := context.Background()
+
+	// Seed a second viewer user.
+	viewer2ID := uuid.New()
+	_, err := deps.Pool.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ($1, 'viewer2@test.com', 'hashed', 'viewer')
+	`, viewer2ID)
+	require.NoError(t, err)
+
+	// Seed a report owned by admin.
+	adminUUID := mustParseUUID(adminUserID)
+	reportID := uuid.New()
+	_, err = deps.Pool.Exec(ctx, `
+		INSERT INTO report (id, user_id, scope, range_kind, range_start, range_end, artifact_dir, pdf_status, expires_at)
+		VALUES ($1, $2, 'all', 'daily', now() - interval '7 days', now(), '/tmp', 'pending', now() + interval '24 hours')
+	`, reportID, adminUUID)
+	require.NoError(t, err)
+
+	r := chi.NewRouter()
+	RegisterRoutes(r, deps)
+
+	// viewer2 requesting admin's report → 404 (existence concealed).
+	reqViewer := httptest.NewRequest(http.MethodGet, "/api/reports/"+reportID.String(), nil)
+	reqViewer = reqViewer.WithContext(injectViewer(reqViewer.Context(), sm, viewer2ID.String()))
+	rrViewer := httptest.NewRecorder()
+	r.ServeHTTP(rrViewer, reqViewer)
+	require.Equal(t, http.StatusNotFound, rrViewer.Code, "viewer must get 404 for another user's report")
+
+	// admin requesting same report → 200.
+	reqAdmin := httptest.NewRequest(http.MethodGet, "/api/reports/"+reportID.String(), nil)
+	reqAdmin = reqAdmin.WithContext(injectUser(reqAdmin.Context(), sm, adminUserID))
+	rrAdmin := httptest.NewRecorder()
+	r.ServeHTTP(rrAdmin, reqAdmin)
+	require.Equal(t, http.StatusOK, rrAdmin.Code, "admin must get 200")
 }
 
 // setupHandlerTest starts Postgres, runs migrations, seeds an admin user, and
@@ -264,11 +444,19 @@ func TestGenerateHandler_CSVAndExcelLandOnDisk(t *testing.T) {
 	require.NoError(t, err, "report.xlsx must exist on disk")
 }
 
-// injectUser puts the auth.User into the SCS session context so the handler's
-// auth.GetUser call succeeds (without needing a real HTTP session round-trip).
+// injectUser puts an admin auth.User into the SCS session context so the
+// handler's auth.GetUser call succeeds (without needing a real HTTP session
+// round-trip).
 func injectUser(ctx context.Context, sm *scs.SessionManager, userID string) context.Context {
 	sm.Put(ctx, "user_id", userID)
 	sm.Put(ctx, "role", "admin")
+	return ctx
+}
+
+// injectViewer puts a viewer auth.User into the SCS session context.
+func injectViewer(ctx context.Context, sm *scs.SessionManager, userID string) context.Context {
+	sm.Put(ctx, "user_id", userID)
+	sm.Put(ctx, "role", "viewer")
 	return ctx
 }
 

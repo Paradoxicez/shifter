@@ -282,11 +282,82 @@ func GenerateHandler(deps Deps) http.HandlerFunc {
 	}
 }
 
-// RegisterRoutes mounts the report API routes on the given router.
-// GET /api/reports/{id}/file/{kind} is wired in plan 05-06 (download path)
-// because it depends on the PDF artifact lifecycle from the River worker.
+// StatusResponse mirrors plan 05-09's frontend ReportStatus shape verbatim.
+// The frontend polls this endpoint via useReportPDFStatus until pdf_status
+// flips to 'ready' or 'failed'.
+type StatusResponse struct {
+	ID        uuid.UUID  `json:"id"`
+	PdfStatus string     `json:"pdf_status"`         // pending | running | ready | failed | expired
+	PdfPath   *string    `json:"pdf_path,omitempty"` // present only when status == ready
+	CreatedAt time.Time  `json:"created_at"`
+	Scope     string     `json:"scope"`              // all | site | meter
+	Range     string     `json:"range"`              // daily | monthly | yearly | custom
+}
+
+// StatusHandler serves GET /api/reports/{id}.
+//
+// Returns the report's current pdf_status + metadata so plan 05-09's
+// useReportPDFStatus poll can stop firing once status is ready/failed/expired.
+//
+// Auth: viewers see their own reports only; admins see all.
+// UUID is validated BEFORE any DB lookup (defense in depth — rejects bad UUIDs
+// at the edge so the 404 path is reserved for "row truly absent").
+// Non-admin requesting a report owned by someone else receives 404 (not 403)
+// to avoid disclosing existence (T-05-06-04 mitigation).
+func StatusHandler(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.GetUser(r.Context(), deps.SessionMgr)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_report_id")
+			return
+		}
+
+		pgID := pgtype.UUID{Bytes: id, Valid: true}
+		plan, err := deps.Queries.GetReport(r.Context(), pgID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "report_not_found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "lookup_failed")
+			return
+		}
+
+		// Auth scope: viewers see their own reports only; admins see all.
+		// 404 (not 403) to conceal existence from other-user viewers.
+		userIDPg := pgtype.UUID{Bytes: mustParseUUID(user.ID), Valid: true}
+		if user.Role != "admin" && plan.UserID != userIDPg {
+			writeError(w, http.StatusNotFound, "report_not_found")
+			return
+		}
+
+		resp := StatusResponse{
+			ID:        uuid.UUID(plan.ID.Bytes),
+			PdfStatus: plan.PdfStatus,
+			CreatedAt: plan.CreatedAt.Time,
+			Scope:     plan.Scope,
+			Range:     plan.RangeKind,
+		}
+		if plan.PdfStatus == "ready" && plan.PdfPath != nil {
+			resp.PdfPath = plan.PdfPath
+		}
+		writeJSON(w, http.StatusOK, resp)
+	}
+}
+
+// RegisterRoutes mounts all three report API routes on the given router.
+// This plan wires the status + download endpoints that were deferred from 05-03.
 func RegisterRoutes(r chi.Router, deps Deps) {
 	r.Post("/api/reports/generate", GenerateHandler(deps))
+	r.Get("/api/reports/{id}", StatusHandler(deps))                    // plan 05-09 useReportPDFStatus poll target
+	r.Get("/api/reports/{id}/file/{kind}", DownloadHandler(deps))
 }
 
 // mustParseUUID parses a UUID string; returns uuid.Nil on error (treated as

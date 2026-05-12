@@ -37,6 +37,7 @@ import (
 	"github.com/shifter-io/shifter/internal/install"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
+	"github.com/shifter-io/shifter/internal/report"
 	"github.com/shifter-io/shifter/internal/site"
 	"github.com/shifter-io/shifter/internal/swap"
 )
@@ -108,6 +109,13 @@ type Deps struct {
 	// nil when pool is not yet available (router unit tests stay free of
 	// pool deps). Mounted under authenticated group (D-23 any role).
 	DashboardDeps *dashboard.Deps
+
+	// ReportDeps wires Plan 05-06's report endpoints:
+	//   POST /api/reports/generate          — enqueue PDF job + write CSV/Excel
+	//   GET  /api/reports/{id}              — pdf_status poll (plan 05-09)
+	//   GET  /api/reports/{id}/file/{kind}  — stream artifact (csv|xlsx|pdf)
+	// nil in early-boot / router unit tests that don't need report routes.
+	ReportDeps *report.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -284,6 +292,12 @@ func NewRouter(deps Deps) http.Handler {
 		// Both admin and viewer roles have full read access (D-23).
 		// Mounted before the SPA fallback (PITFALL #4 preserved).
 		dashboard.RegisterRoutes(r, *deps.DashboardDeps)
+	}
+	if deps.ReportDeps != nil {
+		// ReportDeps mounts Plan 05-06's three report endpoints.
+		// Auth is enforced inside each handler (viewers see own reports,
+		// admins see all). Mounted before the SPA fallback (PITFALL #4).
+		report.RegisterRoutes(r, *deps.ReportDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
