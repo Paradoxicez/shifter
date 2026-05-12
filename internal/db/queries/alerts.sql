@@ -139,3 +139,123 @@ WHERE id = $1;
 SELECT display_name
 FROM install_identity
 WHERE id = 1;
+
+-- ============================================================================
+-- Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
+-- statistical rules). Queries below feed AnomalyWorker + the warmup-roster
+-- surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
+-- Alerts warmup section).
+-- ============================================================================
+
+-- name: IsMPEligibleForAnomaly :one
+-- D-16: True iff the metering point has at least one measurement ≥ 21 days
+-- old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
+-- retention_config column.
+SELECT EXISTS(
+    SELECT 1 FROM measurement
+    WHERE metering_point_id = $1
+      AND time < now() - INTERVAL '21 days'
+) AS eligible;
+
+-- name: ListAnomalyWarmupRoster :many
+-- D-16: returns days_until_eligible per active (non-archived) MP. 0 means
+-- eligible; >0 means still warming up. Schema note: metering_point uses
+-- archived_at for soft-delete (not disabled_at). site label column is `name`.
+SELECT
+    mp.id                                                  AS metering_point_id,
+    mp.name                                                AS metering_point_label,
+    COALESCE(s.name, '')                                   AS site_label,
+    CASE
+        WHEN MIN(m.time) IS NULL THEN 21
+        ELSE GREATEST(0, 21 - EXTRACT(DAY FROM (now() - MIN(m.time)))::INT)
+    END                                                    AS days_until_eligible
+FROM metering_point mp
+LEFT JOIN measurement m ON mp.id = m.metering_point_id
+LEFT JOIN site s        ON mp.site_id = s.id
+WHERE mp.archived_at IS NULL
+GROUP BY mp.id, mp.name, s.name
+ORDER BY days_until_eligible ASC, mp.name ASC;
+
+-- name: GetMPAnomalyRules :many
+-- Returns the three anomaly rules (p95, iqr, quiet_hour) that target this MP
+-- (scope_kind='metering_point' AND scope_id=$1) or are global (scope_kind='global').
+-- Used by the MP detail Anomaly Detection card (Plan 06-04) to render per-rule
+-- toggles.
+SELECT id,
+       rule_kind,
+       severity,
+       (disabled_at IS NULL)               AS enabled,
+       quiet_window_start,
+       quiet_window_end,
+       flow_threshold,
+       days_of_week
+FROM alert_rule
+WHERE rule_kind IN ('anomaly_p95','anomaly_iqr','anomaly_quiet_hour')
+  AND (
+      (scope_kind = 'metering_point' AND scope_id = $1)
+      OR scope_kind = 'global'
+  );
+
+-- name: P95BaselineForMPAndHour :one
+-- D-17 Rule 1: trailing-30-day P95 of instant_value for this MP at this
+-- hour-of-day. instant_value is NUMERIC in the schema; cast to DOUBLE
+-- PRECISION so the percentile aggregate's result lands as float64 in Go.
+-- percentile_cont returns NULL when no rows match; sqlc emits *float64.
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION)::DOUBLE PRECISION AS p95
+FROM measurement
+WHERE metering_point_id = sqlc.arg(metering_point_id)::UUID
+  AND time >= now() - INTERVAL '30 days'
+  AND time < now()
+  AND EXTRACT(HOUR FROM time)::INT = sqlc.arg(hour_of_day)::INT;
+
+-- name: IQRBaselineForMP :one
+-- D-17 Rule 2: Q1, Q3 over trailing 30 days. Worker computes
+--   iqr = q3 - q1; lower = q1 - 1.5*iqr; upper = q3 + 1.5*iqr.
+-- and fires when latest instant_value > upper OR < lower.
+SELECT
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION) AS q1,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION) AS q3
+FROM measurement
+WHERE metering_point_id = $1
+  AND time >= now() - INTERVAL '30 days'
+  AND time < now();
+
+-- name: LatestInstantValueForMPAnomaly :one
+-- Anomaly evaluators need just the latest instant_value (numeric → float in
+-- Go via numericToFloat). Distinct from GetLatestMeasurementForMP because the
+-- column projection is narrower.
+SELECT instant_value, time
+FROM measurement
+WHERE metering_point_id = $1
+ORDER BY time DESC
+LIMIT 1;
+
+-- name: NonZeroFlowDuringQuietWindow :one
+-- D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
+-- Parameters (named via sqlc.arg so the generated Params struct fields read
+-- semantically rather than as Column2/Column3/...):
+--   metering_point_id  — the MP whose window is checked
+--   flow_threshold     — instant_value > flow_threshold counts as "non-zero"
+--   quiet_window_start — TIME of day the quiet window begins (install-local)
+--   quiet_window_end   — TIME of day the quiet window ends   (install-local)
+--   install_tz         — IANA name of the install timezone (e.g. 'Asia/Bangkok')
+-- The (time AT TIME ZONE install_tz)::TIME cast reads the timestamp in
+-- install-local time so "22:00–06:00" is operator-local, not UTC.
+SELECT instant_value, time
+FROM measurement
+WHERE metering_point_id = sqlc.arg(metering_point_id)::UUID
+  AND time >= now() - INTERVAL '24 hours'
+  AND instant_value::DOUBLE PRECISION > sqlc.arg(flow_threshold)::DOUBLE PRECISION
+  AND (
+      -- Same-day window (start < end, e.g. 08:00→18:00)
+      (sqlc.arg(quiet_window_start)::TIME < sqlc.arg(quiet_window_end)::TIME
+       AND (time AT TIME ZONE sqlc.arg(install_tz)::TEXT)::TIME
+           BETWEEN sqlc.arg(quiet_window_start)::TIME AND sqlc.arg(quiet_window_end)::TIME)
+      OR
+      -- Cross-midnight window (start >= end, e.g. 22:00→06:00)
+      (sqlc.arg(quiet_window_start)::TIME >= sqlc.arg(quiet_window_end)::TIME
+       AND ((time AT TIME ZONE sqlc.arg(install_tz)::TEXT)::TIME >= sqlc.arg(quiet_window_start)::TIME
+            OR (time AT TIME ZONE sqlc.arg(install_tz)::TEXT)::TIME <= sqlc.arg(quiet_window_end)::TIME))
+  )
+ORDER BY time DESC
+LIMIT 1;

@@ -131,6 +131,67 @@ func (q *Queries) GetLatestMeasurementForMP(ctx context.Context, meteringPointID
 	return i, err
 }
 
+const getMPAnomalyRules = `-- name: GetMPAnomalyRules :many
+SELECT id,
+       rule_kind,
+       severity,
+       (disabled_at IS NULL)               AS enabled,
+       quiet_window_start,
+       quiet_window_end,
+       flow_threshold,
+       days_of_week
+FROM alert_rule
+WHERE rule_kind IN ('anomaly_p95','anomaly_iqr','anomaly_quiet_hour')
+  AND (
+      (scope_kind = 'metering_point' AND scope_id = $1)
+      OR scope_kind = 'global'
+  )
+`
+
+type GetMPAnomalyRulesRow struct {
+	ID               pgtype.UUID
+	RuleKind         string
+	Severity         string
+	Enabled          interface{}
+	QuietWindowStart pgtype.Time
+	QuietWindowEnd   pgtype.Time
+	FlowThreshold    *float64
+	DaysOfWeek       *int32
+}
+
+// Returns the three anomaly rules (p95, iqr, quiet_hour) that target this MP
+// (scope_kind='metering_point' AND scope_id=$1) or are global (scope_kind='global').
+// Used by the MP detail Anomaly Detection card (Plan 06-04) to render per-rule
+// toggles.
+func (q *Queries) GetMPAnomalyRules(ctx context.Context, scopeID pgtype.UUID) ([]GetMPAnomalyRulesRow, error) {
+	rows, err := q.db.Query(ctx, getMPAnomalyRules, scopeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMPAnomalyRulesRow
+	for rows.Next() {
+		var i GetMPAnomalyRulesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RuleKind,
+			&i.Severity,
+			&i.Enabled,
+			&i.QuietWindowStart,
+			&i.QuietWindowEnd,
+			&i.FlowThreshold,
+			&i.DaysOfWeek,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMeteringPointLabel = `-- name: GetMeteringPointLabel :one
 SELECT
     id,
@@ -150,6 +211,81 @@ func (q *Queries) GetMeteringPointLabel(ctx context.Context, id pgtype.UUID) (Ge
 	row := q.db.QueryRow(ctx, getMeteringPointLabel, id)
 	var i GetMeteringPointLabelRow
 	err := row.Scan(&i.ID, &i.Label)
+	return i, err
+}
+
+const iQRBaselineForMP = `-- name: IQRBaselineForMP :one
+SELECT
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION) AS q1,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION) AS q3
+FROM measurement
+WHERE metering_point_id = $1
+  AND time >= now() - INTERVAL '30 days'
+  AND time < now()
+`
+
+type IQRBaselineForMPRow struct {
+	Q1 float64
+	Q3 float64
+}
+
+// D-17 Rule 2: Q1, Q3 over trailing 30 days. Worker computes
+//
+//	iqr = q3 - q1; lower = q1 - 1.5*iqr; upper = q3 + 1.5*iqr.
+//
+// and fires when latest instant_value > upper OR < lower.
+func (q *Queries) IQRBaselineForMP(ctx context.Context, meteringPointID pgtype.UUID) (IQRBaselineForMPRow, error) {
+	row := q.db.QueryRow(ctx, iQRBaselineForMP, meteringPointID)
+	var i IQRBaselineForMPRow
+	err := row.Scan(&i.Q1, &i.Q3)
+	return i, err
+}
+
+const isMPEligibleForAnomaly = `-- name: IsMPEligibleForAnomaly :one
+
+SELECT EXISTS(
+    SELECT 1 FROM measurement
+    WHERE metering_point_id = $1
+      AND time < now() - INTERVAL '21 days'
+) AS eligible
+`
+
+// ============================================================================
+// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
+// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
+// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
+// Alerts warmup section).
+// ============================================================================
+// D-16: True iff the metering point has at least one measurement ≥ 21 days
+// old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
+// retention_config column.
+func (q *Queries) IsMPEligibleForAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isMPEligibleForAnomaly, meteringPointID)
+	var eligible bool
+	err := row.Scan(&eligible)
+	return eligible, err
+}
+
+const latestInstantValueForMPAnomaly = `-- name: LatestInstantValueForMPAnomaly :one
+SELECT instant_value, time
+FROM measurement
+WHERE metering_point_id = $1
+ORDER BY time DESC
+LIMIT 1
+`
+
+type LatestInstantValueForMPAnomalyRow struct {
+	InstantValue pgtype.Numeric
+	Time         pgtype.Timestamptz
+}
+
+// Anomaly evaluators need just the latest instant_value (numeric → float in
+// Go via numericToFloat). Distinct from GetLatestMeasurementForMP because the
+// column projection is narrower.
+func (q *Queries) LatestInstantValueForMPAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (LatestInstantValueForMPAnomalyRow, error) {
+	row := q.db.QueryRow(ctx, latestInstantValueForMPAnomaly, meteringPointID)
+	var i LatestInstantValueForMPAnomalyRow
+	err := row.Scan(&i.InstantValue, &i.Time)
 	return i, err
 }
 
@@ -178,6 +314,58 @@ func (q *Queries) ListAllActiveMeteringPoints(ctx context.Context) ([]ListAllAct
 	for rows.Next() {
 		var i ListAllActiveMeteringPointsRow
 		if err := rows.Scan(&i.ID, &i.Label); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAnomalyWarmupRoster = `-- name: ListAnomalyWarmupRoster :many
+SELECT
+    mp.id                                                  AS metering_point_id,
+    mp.name                                                AS metering_point_label,
+    COALESCE(s.name, '')                                   AS site_label,
+    CASE
+        WHEN MIN(m.time) IS NULL THEN 21
+        ELSE GREATEST(0, 21 - EXTRACT(DAY FROM (now() - MIN(m.time)))::INT)
+    END                                                    AS days_until_eligible
+FROM metering_point mp
+LEFT JOIN measurement m ON mp.id = m.metering_point_id
+LEFT JOIN site s        ON mp.site_id = s.id
+WHERE mp.archived_at IS NULL
+GROUP BY mp.id, mp.name, s.name
+ORDER BY days_until_eligible ASC, mp.name ASC
+`
+
+type ListAnomalyWarmupRosterRow struct {
+	MeteringPointID    pgtype.UUID
+	MeteringPointLabel string
+	SiteLabel          string
+	DaysUntilEligible  interface{}
+}
+
+// D-16: returns days_until_eligible per active (non-archived) MP. 0 means
+// eligible; >0 means still warming up. Schema note: metering_point uses
+// archived_at for soft-delete (not disabled_at). site label column is `name`.
+func (q *Queries) ListAnomalyWarmupRoster(ctx context.Context) ([]ListAnomalyWarmupRosterRow, error) {
+	rows, err := q.db.Query(ctx, listAnomalyWarmupRoster)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAnomalyWarmupRosterRow
+	for rows.Next() {
+		var i ListAnomalyWarmupRosterRow
+		if err := rows.Scan(
+			&i.MeteringPointID,
+			&i.MeteringPointLabel,
+			&i.SiteLabel,
+			&i.DaysUntilEligible,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -352,4 +540,88 @@ func (q *Queries) ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]Li
 		return nil, err
 	}
 	return items, nil
+}
+
+const nonZeroFlowDuringQuietWindow = `-- name: NonZeroFlowDuringQuietWindow :one
+SELECT instant_value, time
+FROM measurement
+WHERE metering_point_id = $1::UUID
+  AND time >= now() - INTERVAL '24 hours'
+  AND instant_value::DOUBLE PRECISION > $2::DOUBLE PRECISION
+  AND (
+      -- Same-day window (start < end, e.g. 08:00→18:00)
+      ($3::TIME < $4::TIME
+       AND (time AT TIME ZONE $5::TEXT)::TIME
+           BETWEEN $3::TIME AND $4::TIME)
+      OR
+      -- Cross-midnight window (start >= end, e.g. 22:00→06:00)
+      ($3::TIME >= $4::TIME
+       AND ((time AT TIME ZONE $5::TEXT)::TIME >= $3::TIME
+            OR (time AT TIME ZONE $5::TEXT)::TIME <= $4::TIME))
+  )
+ORDER BY time DESC
+LIMIT 1
+`
+
+type NonZeroFlowDuringQuietWindowParams struct {
+	MeteringPointID  pgtype.UUID
+	FlowThreshold    float64
+	QuietWindowStart pgtype.Time
+	QuietWindowEnd   pgtype.Time
+	InstallTz        string
+}
+
+type NonZeroFlowDuringQuietWindowRow struct {
+	InstantValue pgtype.Numeric
+	Time         pgtype.Timestamptz
+}
+
+// D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
+// Parameters (named via sqlc.arg so the generated Params struct fields read
+// semantically rather than as Column2/Column3/...):
+//
+//	metering_point_id  — the MP whose window is checked
+//	flow_threshold     — instant_value > flow_threshold counts as "non-zero"
+//	quiet_window_start — TIME of day the quiet window begins (install-local)
+//	quiet_window_end   — TIME of day the quiet window ends   (install-local)
+//	install_tz         — IANA name of the install timezone (e.g. 'Asia/Bangkok')
+//
+// The (time AT TIME ZONE install_tz)::TIME cast reads the timestamp in
+// install-local time so "22:00–06:00" is operator-local, not UTC.
+func (q *Queries) NonZeroFlowDuringQuietWindow(ctx context.Context, arg NonZeroFlowDuringQuietWindowParams) (NonZeroFlowDuringQuietWindowRow, error) {
+	row := q.db.QueryRow(ctx, nonZeroFlowDuringQuietWindow,
+		arg.MeteringPointID,
+		arg.FlowThreshold,
+		arg.QuietWindowStart,
+		arg.QuietWindowEnd,
+		arg.InstallTz,
+	)
+	var i NonZeroFlowDuringQuietWindowRow
+	err := row.Scan(&i.InstantValue, &i.Time)
+	return i, err
+}
+
+const p95BaselineForMPAndHour = `-- name: P95BaselineForMPAndHour :one
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY instant_value::DOUBLE PRECISION)::DOUBLE PRECISION AS p95
+FROM measurement
+WHERE metering_point_id = $1::UUID
+  AND time >= now() - INTERVAL '30 days'
+  AND time < now()
+  AND EXTRACT(HOUR FROM time)::INT = $2::INT
+`
+
+type P95BaselineForMPAndHourParams struct {
+	MeteringPointID pgtype.UUID
+	HourOfDay       int32
+}
+
+// D-17 Rule 1: trailing-30-day P95 of instant_value for this MP at this
+// hour-of-day. instant_value is NUMERIC in the schema; cast to DOUBLE
+// PRECISION so the percentile aggregate's result lands as float64 in Go.
+// percentile_cont returns NULL when no rows match; sqlc emits *float64.
+func (q *Queries) P95BaselineForMPAndHour(ctx context.Context, arg P95BaselineForMPAndHourParams) (float64, error) {
+	row := q.db.QueryRow(ctx, p95BaselineForMPAndHour, arg.MeteringPointID, arg.HourOfDay)
+	var p95 float64
+	err := row.Scan(&p95)
+	return p95, err
 }

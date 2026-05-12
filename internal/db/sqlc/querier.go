@@ -314,6 +314,11 @@ type Querier interface {
 	// index scan + LIMIT 1.
 	GetLatestMeasurementForMP(ctx context.Context, meteringPointID pgtype.UUID) (GetLatestMeasurementForMPRow, error)
 	GetMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
+	// Returns the three anomaly rules (p95, iqr, quiet_hour) that target this MP
+	// (scope_kind='metering_point' AND scope_id=$1) or are global (scope_kind='global').
+	// Used by the MP detail Anomaly Detection card (Plan 06-04) to render per-rule
+	// toggles.
+	GetMPAnomalyRules(ctx context.Context, scopeID pgtype.UUID) ([]GetMPAnomalyRulesRow, error)
 	// MP detail page (Plan 02-08): shows "currently bound device + reading offset".
 	// LEFT JOINs return NULL for binding/device/profile columns when no active
 	// binding exists (a fresh MP that hasn't been wired up yet, or a swap-in-
@@ -363,6 +368,10 @@ type Querier interface {
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.
 	GetUserByEmail(ctx context.Context, email string) (User, error)
+	// D-17 Rule 2: Q1, Q3 over trailing 30 days. Worker computes
+	//   iqr = q3 - q1; lower = q1 - 1.5*iqr; upper = q3 + 1.5*iqr.
+	// and fires when latest instant_value > upper OR < lower.
+	IQRBaselineForMP(ctx context.Context, meteringPointID pgtype.UUID) (IQRBaselineForMPRow, error)
 	// Plan 15 install wizard finish — creates the bootstrap admin atomically with
 	// the rest of the wizard commit.
 	InsertAdminUser(ctx context.Context, arg InsertAdminUserParams) (InsertAdminUserRow, error)
@@ -370,6 +379,20 @@ type Querier interface {
 	// Commit pass later UPDATEs the row to created|failed via
 	// UpdateImportJobRowOutcome.
 	InsertImportJobRow(ctx context.Context, arg InsertImportJobRowParams) (ImportJobRow, error)
+	// ============================================================================
+	// Phase 6 Plan 06-03 — anomaly evaluators (D-16 cold-start gate + D-17
+	// statistical rules). Queries below feed AnomalyWorker + the warmup-roster
+	// surface used by Plan 06-04 (MP detail card) and Plan 06-10 (Settings →
+	// Alerts warmup section).
+	// ============================================================================
+	// D-16: True iff the metering point has at least one measurement ≥ 21 days
+	// old. The 21-day constant is hardcoded in v1; Phase 7 may promote it to a
+	// retention_config column.
+	IsMPEligibleForAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (bool, error)
+	// Anomaly evaluators need just the latest instant_value (numeric → float in
+	// Go via numericToFloat). Distinct from GetLatestMeasurementForMP because the
+	// column projection is narrower.
+	LatestInstantValueForMPAnomaly(ctx context.Context, meteringPointID pgtype.UUID) (LatestInstantValueForMPAnomalyRow, error)
 	// Profile list page + device-create dialog dropdown. Sorted vendor-then-name
 	// so users see Acrel/Axioma grouped.
 	ListActiveDeviceProfiles(ctx context.Context) ([]DeviceProfile, error)
@@ -384,6 +407,10 @@ type Querier interface {
 	ListActiveSites(ctx context.Context) ([]Site, error)
 	// expandScope() helper for global-scoped rules.
 	ListAllActiveMeteringPoints(ctx context.Context) ([]ListAllActiveMeteringPointsRow, error)
+	// D-16: returns days_until_eligible per active (non-archived) MP. 0 means
+	// eligible; >0 means still warming up. Schema note: metering_point uses
+	// archived_at for soft-delete (not disabled_at). site label column is `name`.
+	ListAnomalyWarmupRoster(ctx context.Context) ([]ListAnomalyWarmupRosterRow, error)
 	ListArchivedMPs(ctx context.Context) ([]MeteringPoint, error)
 	// Archive view (D-20) — sorted most-recently-archived first so admins see
 	// their last action at the top.
@@ -551,6 +578,17 @@ type Querier interface {
 	// For per-MP detail page (Plan 05/09 consume).
 	// sqlc.arg(metering_point_id), sqlc.arg(start_time), sqlc.arg(end_time), sqlc.arg(bucket_interval)
 	MeteringPointTimeseries(ctx context.Context, arg MeteringPointTimeseriesParams) ([]MeteringPointTimeseriesRow, error)
+	// D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
+	// Parameters (named via sqlc.arg so the generated Params struct fields read
+	// semantically rather than as Column2/Column3/...):
+	//   metering_point_id  — the MP whose window is checked
+	//   flow_threshold     — instant_value > flow_threshold counts as "non-zero"
+	//   quiet_window_start — TIME of day the quiet window begins (install-local)
+	//   quiet_window_end   — TIME of day the quiet window ends   (install-local)
+	//   install_tz         — IANA name of the install timezone (e.g. 'Asia/Bangkok')
+	// The (time AT TIME ZONE install_tz)::TIME cast reads the timestamp in
+	// install-local time so "22:00–06:00" is operator-local, not UTC.
+	NonZeroFlowDuringQuietWindow(ctx context.Context, arg NonZeroFlowDuringQuietWindowParams) (NonZeroFlowDuringQuietWindowRow, error)
 	// D-21: progressive empty-state counts used by GET /api/dashboard/scope.
 	// Cheap aggregates across three small tables; never touches the measurement hypertable.
 	OnboardingCounts(ctx context.Context) (OnboardingCountsRow, error)
@@ -565,6 +603,11 @@ type Querier interface {
 	// binding_no_overlap_per_device) make this race-safe — concurrent commits
 	// on the same MP or same device get 23P01 (exclusion_violation).
 	OpenBinding(ctx context.Context, arg OpenBindingParams) (Binding, error)
+	// D-17 Rule 1: trailing-30-day P95 of instant_value for this MP at this
+	// hour-of-day. instant_value is NUMERIC in the schema; cast to DOUBLE
+	// PRECISION so the percentile aggregate's result lands as float64 in Go.
+	// percentile_cont returns NULL when no rows match; sqlc emits *float64.
+	P95BaselineForMPAndHour(ctx context.Context, arg P95BaselineForMPAndHourParams) (float64, error)
 	// D-08: today [00:00→now] vs yesterday [00:00→same-time-yesterday].
 	// Returns both windows so the handler can compute abs + pct change.
 	// If yesterday window has no data the handler returns period_delta_abs = null.
