@@ -33,7 +33,17 @@ func TestTemplateStore_SaveListGetUpdateDelete(t *testing.T) {
 	require.NoError(t, db.RunMigrations(ctx, pool, log))
 
 	store := NewTemplateStore(pool)
-	actorID := uuid.New()
+
+	// Seed a real user so the audit_log.user_id FK constraint is satisfied.
+	// audit_log.user_id is REFERENCES "user"(id) ON DELETE SET NULL —
+	// a random UUID not in the user table causes a FK violation at WriteEntry.
+	var actorIDStr string
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO "user" (email, name, password_hash, role)
+		 VALUES ('store-test@ex.com', 'Test', 'x', 'admin') RETURNING id::text`,
+	).Scan(&actorIDStr))
+	actorID, err := uuid.Parse(actorIDStr)
+	require.NoError(t, err)
 
 	// --- Save ---
 	state := json.RawMessage(`{"scope":"all","range":"monthly"}`)
