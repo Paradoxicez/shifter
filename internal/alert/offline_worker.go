@@ -247,13 +247,17 @@ func (w *OfflineWorker) fireDeviceOffline(ctx context.Context, rule RuleRecord,
 	last := c.LastUplinkAt.Time
 	seconds := int32(time.Since(last).Seconds())
 	interval := c.ExpectedIntervalS
+	// Phase 7 D-41/D-43: use per-profile offline_threshold_multiplier instead
+	// of the old hardcoded 3×. Itron+KINMY (interval=86400s, multiplier=1.8)
+	// fires at 43.2h rather than the wrong 3h.
+	thresholdSecs := float64(interval) * c.OfflineThresholdMultiplier
 	payload, err := BuildPayload(BuildPayloadInput{
 		RuleID:            rule.ID,
 		RuleKind:          "offline_device",
 		Severity:          rule.Severity,
 		Target:            PayloadTarget{EntityType: "device", EntityID: deviceID, Label: c.DeviceLabel},
 		Value:             float64(seconds),
-		Threshold:         float64(3 * interval),
+		Threshold:         thresholdSecs,
 		Comparison:        "gt",
 		Unit:              "seconds_since_last_uplink",
 		FiredAt:           time.Now().UTC(),

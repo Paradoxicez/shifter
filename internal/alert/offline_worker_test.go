@@ -374,3 +374,118 @@ func (e *offlineTestEnv) lookupRuleID(t *testing.T, kind string) uuid.UUID {
 	require.NoError(t, err)
 	return id
 }
+
+// seedDeviceWithProfile inserts a device row using a specific device_profile_id
+// (for profile-aware tests).
+func (e *offlineTestEnv) seedDeviceWithProfile(t *testing.T, suffix string, lastSeen time.Time, profileID uuid.UUID) uuid.UUID {
+	t.Helper()
+	eui := hexEUI("dev-profile-" + suffix)
+	var idStr string
+	require.NoError(t, e.pool.QueryRow(context.Background(),
+		`INSERT INTO device (dev_eui, name, device_profile_id, last_seen_at)
+		 VALUES ($1, $2, $3, $4) RETURNING id`,
+		eui, "dev-"+suffix, profileID, lastSeen,
+	).Scan(&idStr))
+	id, err := uuid.Parse(idStr)
+	require.NoError(t, err)
+	return id
+}
+
+// lookupOrCreateProfile returns the profile ID for the given slug, or
+// inserts a custom profile if a slug with the given interval + multiplier
+// doesn't exist.
+func (e *offlineTestEnv) lookupOrCreateProfile(t *testing.T, slug string, intervalS int, multiplier float64) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	// Check if the profile exists first.
+	var idStr string
+	err := e.pool.QueryRow(ctx,
+		`SELECT id FROM device_profile WHERE slug = $1 LIMIT 1`, slug).Scan(&idStr)
+	if err == nil {
+		id, err := uuid.Parse(idStr)
+		require.NoError(t, err)
+		return id
+	}
+	// Create it.
+	require.NoError(t, e.pool.QueryRow(ctx,
+		`INSERT INTO device_profile (slug, name, vendor, family, capabilities, codec_js,
+		    expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility,
+		    battery_curve)
+		 VALUES ($1, $2, $3, 'test-family', ARRAY['cumulative'], '// test', $4, $5, 'full', 'linear_pct')
+		 RETURNING id`,
+		slug, "Test Profile "+slug, "TestVendor",
+		intervalS, multiplier,
+	).Scan(&idStr))
+	id, err := uuid.Parse(idStr)
+	require.NoError(t, err)
+	return id
+}
+
+// TestOfflineWorker_ProfileAwareThreshold_Itron — device on an Itron+KINMY-style
+// profile (interval=86400s, multiplier=1.8): threshold = 86400*1.8 = 155520s (43.2h).
+// At 30h (108000s) post-last-uplink → must NOT fire.
+// At 44h (158400s) post-last-uplink → must fire.
+func TestOfflineWorker_ProfileAwareThreshold_Itron(t *testing.T) {
+	env := newOfflineTestEnv(t)
+	ctx := context.Background()
+
+	// Seed an Itron-like profile (interval=86400s, multiplier=1.8).
+	profileID := env.lookupOrCreateProfile(t, "test_itron_offline", 86400, 1.8)
+	// threshold = 86400 * 1.8 = 155520 seconds = 43.2 hours.
+
+	env.seedOfflineRule(t, "offline_device", "warning", 0)
+
+	// 30h = 108000s < 155520s → should NOT fire.
+	devNoFire := env.seedDeviceWithProfile(t, "itron-30h", time.Now().UTC().Add(-30*time.Hour), profileID)
+	// 44h = 158400s > 155520s → should fire.
+	devFire := env.seedDeviceWithProfile(t, "itron-44h", time.Now().UTC().Add(-44*time.Hour), profileID)
+
+	env.runWorker(t)
+
+	var count int
+	require.NoError(t, env.pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert WHERE rule_kind = 'offline_device' AND state = 'firing'`,
+	).Scan(&count))
+	require.Equal(t, 1, count, "only the 44h device should fire (threshold=43.2h)")
+
+	var targetIDStr string
+	require.NoError(t, env.pool.QueryRow(ctx,
+		`SELECT target_entity_id FROM alert WHERE rule_kind = 'offline_device' AND state = 'firing'`,
+	).Scan(&targetIDStr))
+	require.Equal(t, devFire.String(), targetIDStr, "the 44h device must fire")
+	_ = devNoFire
+}
+
+// TestOfflineWorker_ProfileAwareThreshold_Axioma — device on Axioma profile
+// (interval=3600s, multiplier=3.0): threshold = 10800s (3h).
+// At 2h → must NOT fire. At 3h15m → must fire. (Regression guard.)
+func TestOfflineWorker_ProfileAwareThreshold_Axioma(t *testing.T) {
+	env := newOfflineTestEnv(t)
+	ctx := context.Background()
+
+	// The seed migration created axioma_w1 with expected_uplink_interval_seconds=3600, multiplier=3.0.
+	// But the seeded env uses axioma_w1 by default in newOfflineTestEnv.
+	// threshold = 3600 * 3.0 = 10800s = 3h.
+
+	env.seedOfflineRule(t, "offline_device", "warning", 0)
+
+	// 2h = 7200s < 10800s → must NOT fire.
+	devNoFire := env.seedDevice(t, "axioma-2h", time.Now().UTC().Add(-2*time.Hour), nil)
+	// 3h15m = 11700s > 10800s → must fire.
+	devFire := env.seedDevice(t, "axioma-3h15m", time.Now().UTC().Add(-(3*time.Hour+15*time.Minute)), nil)
+
+	env.runWorker(t)
+
+	var count int
+	require.NoError(t, env.pool.QueryRow(ctx,
+		`SELECT count(*) FROM alert WHERE rule_kind = 'offline_device' AND state = 'firing'`,
+	).Scan(&count))
+	require.Equal(t, 1, count, "only the 3h15m device should fire (threshold=3h)")
+
+	var targetIDStr string
+	require.NoError(t, env.pool.QueryRow(ctx,
+		`SELECT target_entity_id FROM alert WHERE rule_kind = 'offline_device' AND state = 'firing'`,
+	).Scan(&targetIDStr))
+	require.Equal(t, devFire.String(), targetIDStr, "the 3h15m device must fire")
+	_ = devNoFire
+}

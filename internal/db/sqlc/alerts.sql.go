@@ -417,7 +417,7 @@ JOIN device_profile dp  ON d.device_profile_id = dp.id
 WHERE a.state = 'firing'
   AND a.rule_kind = 'offline_device'
   AND d.last_seen_at IS NOT NULL
-  AND now() - d.last_seen_at < make_interval(secs => 2 * dp.expected_interval_s)
+  AND now() - d.last_seen_at < make_interval(secs => dp.expected_uplink_interval_seconds::float8)
 `
 
 type ListHysteresisClearOfflineRow struct {
@@ -427,11 +427,13 @@ type ListHysteresisClearOfflineRow struct {
 }
 
 // D-15 hysteresis: devices currently 'firing' an offline alert whose
-// last_uplink is back inside 2× expected_interval — those clear.
+// last_uplink is back inside 1× expected_uplink_interval_seconds — those clear.
 //
-// Compared to D-15's STRICTER fire threshold (3×), the clear threshold is
-// LOOSER (<2×) so a device that just barely recovered does not immediately
-// re-fire on the next cycle if its uplinks bounce back into the 2×–3× band.
+// Clear threshold = 1× interval (device uplinked within its normal cadence).
+// Fire threshold = profile.offline_threshold_multiplier × interval (≥ 1.8×).
+// This guarantees the clear threshold is ALWAYS strictly less than the fire
+// threshold regardless of the per-profile multiplier, preventing both
+// immediate auto-clear (the Phase 7 Itron bug) and hysteresis flapping.
 func (q *Queries) ListHysteresisClearOffline(ctx context.Context) ([]ListHysteresisClearOfflineRow, error) {
 	rows, err := q.db.Query(ctx, listHysteresisClearOffline)
 	if err != nil {
@@ -495,32 +497,34 @@ SELECT
     d.id                                              AS device_id,
     d.name                                            AS device_label,
     d.last_seen_at                                    AS last_uplink_at,
-    dp.expected_interval_s                            AS expected_interval_s,
+    dp.expected_uplink_interval_seconds               AS expected_interval_s,
+    dp.offline_threshold_multiplier                   AS offline_threshold_multiplier,
     g.id                                              AS gateway_id,
     g.name                                            AS gateway_label,
     g.last_seen_at                                    AS gateway_last_seen_at,
     (
         g.id IS NOT NULL
         AND g.last_seen_at IS NOT NULL
-        AND now() - g.last_seen_at > make_interval(secs => 3 * dp.expected_interval_s)
+        AND now() - g.last_seen_at > make_interval(secs => dp.expected_uplink_interval_seconds::float8 * dp.offline_threshold_multiplier)
     )                                                 AS gateway_offline
 FROM device d
 JOIN device_profile dp ON d.device_profile_id = dp.id
 LEFT JOIN gateway g    ON d.gateway_id = g.id
 WHERE d.decommissioned_at IS NULL
   AND d.last_seen_at IS NOT NULL
-  AND now() - d.last_seen_at > make_interval(secs => 3 * dp.expected_interval_s)
+  AND now() - d.last_seen_at > make_interval(secs => dp.expected_uplink_interval_seconds::float8 * dp.offline_threshold_multiplier)
 `
 
 type ListOfflineDevicesWithGatewayStatusRow struct {
-	DeviceID          pgtype.UUID
-	DeviceLabel       string
-	LastUplinkAt      pgtype.Timestamptz
-	ExpectedIntervalS int32
-	GatewayID         pgtype.UUID
-	GatewayLabel      *string
-	GatewayLastSeenAt pgtype.Timestamptz
-	GatewayOffline    *bool
+	DeviceID                   pgtype.UUID
+	DeviceLabel                string
+	LastUplinkAt               pgtype.Timestamptz
+	ExpectedIntervalS          int32
+	OfflineThresholdMultiplier float64
+	GatewayID                  pgtype.UUID
+	GatewayLabel               *string
+	GatewayLastSeenAt          pgtype.Timestamptz
+	GatewayOffline             *bool
 }
 
 // Alerts — Phase 6 Plan 06-02 threshold + offline evaluator queries.
@@ -540,9 +544,8 @@ type ListOfflineDevicesWithGatewayStatusRow struct {
 //
 // The single LEFT JOIN keeps this an O(active-devices) query — without it
 // the worker would N+1-fetch gateway last_seen_at per row. The boolean
-// expression for gateway_offline mirrors D-15's 3× threshold (i.e. a
-// gateway is "offline" when it has been silent for 3 × the device's
-// expected interval — same yardstick the device uses).
+// expression for gateway_offline mirrors the per-profile offline threshold
+// (D-41/D-43 Phase 7: expected_uplink_interval_seconds × offline_threshold_multiplier).
 func (q *Queries) ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]ListOfflineDevicesWithGatewayStatusRow, error) {
 	rows, err := q.db.Query(ctx, listOfflineDevicesWithGatewayStatus)
 	if err != nil {
@@ -557,6 +560,7 @@ func (q *Queries) ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]Li
 			&i.DeviceLabel,
 			&i.LastUplinkAt,
 			&i.ExpectedIntervalS,
+			&i.OfflineThresholdMultiplier,
 			&i.GatewayID,
 			&i.GatewayLabel,
 			&i.GatewayLastSeenAt,
