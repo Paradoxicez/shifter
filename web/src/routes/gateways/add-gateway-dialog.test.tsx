@@ -4,6 +4,32 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AddGatewayDialog } from './add-gateway-dialog'
 
+// Leaflet mocks — required because AddGatewayDialog now imports MapPicker
+// which pulls in react-leaflet + leaflet (Plan 05-08 GW-04).
+vi.mock('react-leaflet', async () => ({
+  MapContainer: ({ children }: React.PropsWithChildren<unknown>) => (
+    <div data-testid="map-container">{children}</div>
+  ),
+  TileLayer: () => <div />,
+  Marker: ({ children }: React.PropsWithChildren<unknown>) => <div>{children}</div>,
+  Popup: ({ children }: React.PropsWithChildren<unknown>) => <div>{children}</div>,
+  useMap: vi.fn(() => ({ setView: vi.fn(), fitBounds: vi.fn() })),
+  useMapEvents: vi.fn(),
+}))
+
+vi.mock('react-leaflet-cluster', () => ({
+  default: ({ children }: React.PropsWithChildren<unknown>) => <div>{children}</div>,
+}))
+
+vi.mock('leaflet', () => ({
+  default: {
+    divIcon: vi.fn(() => ({ html: '', className: '' })),
+    latLngBounds: vi.fn(() => ({ pad: vi.fn().mockReturnThis() })),
+  },
+  divIcon: vi.fn(() => ({ html: '', className: '' })),
+  latLngBounds: vi.fn(() => ({ pad: vi.fn().mockReturnThis() })),
+}))
+
 vi.mock('@/lib/api', async (orig) => {
   const real = await orig<typeof import('@/lib/api')>()
   return {
@@ -66,12 +92,13 @@ describe('AddGatewayDialog (Plan 03-08 Task 2)', () => {
     vi.clearAllMocks()
   })
 
-  it('TestAddGatewayDialog_PickOnMapDisabled — button rendered disabled with v5 tooltip', () => {
+  it('TestAddGatewayDialog_PickOnMapEnabled — button is enabled (GW-04 shipped in Plan 05-08)', () => {
+    // Phase 3 had this disabled with title="Available in v5." as a forward-compat slot.
+    // Plan 05-08 (GW-04) ships the MapPicker — button is now enabled.
     renderDialog()
 
     const btn = screen.getByRole('button', { name: /Pick on map/i })
-    expect(btn).toBeDisabled()
-    expect(btn).toHaveAttribute('title', 'Available in v5.')
+    expect(btn).not.toBeDisabled()
   })
 
   it('TestAddGatewayDialog_GatewayIDValidation — paste normalizes to lowercase no-separator', async () => {

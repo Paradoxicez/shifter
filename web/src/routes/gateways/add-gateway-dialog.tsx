@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Map as MapIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { MapPicker } from '@/components/map/MapPicker'
 import { ResponsiveDialog } from '@/components/responsive-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -106,6 +107,7 @@ export function AddGatewayDialog({
   const [lng, setLng] = useState(gateway?.lng != null ? String(gateway.lng) : '')
   const [tagsRaw, setTagsRaw] = useState(formatTags(gateway?.tags))
   const [errors, setErrors] = useState<FormErrors>({})
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   // Install state powers the region default (D-03). The install endpoint
   // returns 410 once the install is complete (null state); in that case the
@@ -403,19 +405,27 @@ export function AddGatewayDialog({
             Paste from Google Maps — example:{' '}
             <span className="font-mono">13.7563, 100.5018</span>.
           </p>
-          {/* D-01 forward-compat slot — Phase 5 ships the map picker. Tooltip in
-              title attr for jsdom + a11y. */}
+          {/* GW-04 (Plan 05-08): Pick on map button — opens MapPicker modal */}
           <Button
             type="button"
             variant="outline"
-            disabled
-            title="Available in v5."
+            onClick={() => setPickerOpen(true)}
             aria-label="Pick on map"
           >
             <MapIcon className="h-4 w-4 mr-2" aria-hidden="true" />
             Pick on map
           </Button>
         </div>
+        <MapPicker
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onPick={(pickedLat, pickedLng) => {
+            setLat(String(pickedLat))
+            setLng(String(pickedLng))
+          }}
+          initialLat={lat ? Number(lat) : undefined}
+          initialLng={lng ? Number(lng) : undefined}
+        />
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="gateway-tags">Tags</Label>
