@@ -36,6 +36,19 @@ func TestFinishSetup_SeedsRetentionConfig(t *testing.T) {
 	require.Equal(t, 1825, dailyDays, "daily_days must be 1825 (D-09: 5 years)")
 	require.Equal(t, 7300, monthlyDays, "monthly_days must be 7300 (D-09: 20 years)")
 	require.Nil(t, yearlyDays, "yearly_days must be NULL (D-09: never drops)")
+
+	// Phase 6 — D-13 + D-38 defaults must also be seeded (alerts_days=365,
+	// audit_log_days=1825). 0040 sets NOT NULL DEFAULTs that bring these in
+	// even on the bare INSERT path, but FinishSetup explicitly UPDATEs them
+	// inside the same Serializable tx (belt-and-suspenders against future
+	// column drift).
+	var alertsDays, auditLogDays int
+	err = deps.Pool.QueryRow(ctx,
+		`SELECT alerts_days, audit_log_days FROM retention_config WHERE id = 1`,
+	).Scan(&alertsDays, &auditLogDays)
+	require.NoError(t, err, "Phase 6 columns must exist after FinishSetup")
+	require.Equal(t, 365, alertsDays, "alerts_days must be 365 (D-13)")
+	require.Equal(t, 1825, auditLogDays, "audit_log_days must be 1825 (D-38)")
 }
 
 // TestFinishSetup_RetentionRollsBackOnFailure verifies that when FinishSetup

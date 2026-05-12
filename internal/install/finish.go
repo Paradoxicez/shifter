@@ -188,10 +188,18 @@ func FinishSetup(ctx context.Context, deps Deps) error {
 	// = forever per D-09. ON CONFLICT DO NOTHING preserves operator changes made
 	// before a re-run (which is itself blocked above by ErrAlreadyCompleted, but
 	// belt-and-suspenders).
+	//
+	// Phase 6 (Plan 06-01) — D-13 + D-38: also explicitly UPDATE alerts_days =
+	// 365 and audit_log_days = 1825 in the same Serializable tx. Migration 0040
+	// gives these columns NOT NULL DEFAULTs already; the explicit UPDATE is
+	// belt-and-suspenders against future schema drift and makes the seed
+	// values visible in code review next to the Phase 5 values.
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO retention_config (id, raw_days, hourly_days, daily_days, monthly_days, yearly_days)
-		VALUES (1, 90, 365, 1825, 7300, NULL)
-		ON CONFLICT (id) DO NOTHING
+		INSERT INTO retention_config (id, raw_days, hourly_days, daily_days, monthly_days, yearly_days, alerts_days, audit_log_days)
+		VALUES (1, 90, 365, 1825, 7300, NULL, 365, 1825)
+		ON CONFLICT (id) DO UPDATE SET
+		    alerts_days    = EXCLUDED.alerts_days,
+		    audit_log_days = EXCLUDED.audit_log_days
 	`); err != nil {
 		return fmt.Errorf("seed retention_config: %w", err)
 	}
