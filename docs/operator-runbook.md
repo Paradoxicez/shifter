@@ -71,6 +71,95 @@ View structured logs:
 docker compose -f compose/bundled.yml logs -f shifter
 ```
 
-## Backups (Phase 6)
+## Backup & Restore
 
-Phase 1 does not ship backup automation. Documented in [Phase 6 plan](../.planning/ROADMAP.md). For now, use `pg_dump` on the postgres container.
+### Backup (manual)
+
+Bundled mode:
+
+```sh
+docker compose -f compose/bundled.yml exec shifter \
+  shifter backup --to /var/lib/shifter/backups
+```
+
+External mode:
+
+```sh
+docker compose -f compose/external.yml exec shifter \
+  shifter backup --to /var/lib/shifter/backups
+```
+
+Output: `/var/lib/shifter/backups/shifter-backup-<slug>-<YYYYMMDD-HHMM>-<schema>.tar.gz`
+plus a `backup_run` row in the Shifter DB and two audit rows (`backup.start` + `backup.complete`).
+
+### Backup (scheduled, bundled mode)
+
+The bundled compose ships a `backup-cron` sidecar (mcuadros/ofelia:v0.3.22) that runs
+`shifter backup` daily at 02:00 install timezone. To change the schedule, edit
+`compose/bundled.yml` and update the `ofelia.job-exec.shifter-backup.schedule` label,
+then run `docker compose up -d backup-cron`.
+
+### Backup (scheduled, external mode)
+
+External mode does **not** include the cron sidecar. Set up your preferred scheduler
+(system cron, k8s CronJob, etc.) to run:
+
+```sh
+docker compose -f compose/external.yml exec -T shifter \
+  shifter backup --to /var/lib/shifter/backups --trigger=cron
+```
+
+### Restore (manual — Shifter must be stopped first)
+
+**Shifter must be stopped before running restore.** The restore command acquires a
+Postgres advisory lock and refuses to proceed if Shifter is still serving.
+
+```sh
+# 1. Stop Shifter.
+docker compose -f compose/bundled.yml stop shifter
+
+# 2. Restore from tarball.
+docker compose -f compose/bundled.yml run --rm shifter \
+  shifter restore --from /var/lib/shifter/backups/<file>.tar.gz
+
+# 3. Start Shifter (will apply any pending migrations on boot).
+docker compose -f compose/bundled.yml start shifter
+```
+
+For external-mode installs, substitute `compose/external.yml`.
+
+**Restore safety properties:**
+
+- Refuses to run if the Shifter HTTP server is still up (PG advisory lock check).
+- Verifies per-file sha256 sums against `manifest.json` before pg_restore runs.
+- Wraps `pg_restore` in `SELECT timescaledb_pre_restore()` and
+  `SELECT timescaledb_post_restore()` — required for TimescaleDB CAGG state.
+- Never passes `-j`/`--jobs` to `pg_restore` (breaks TimescaleDB catalog ordering).
+- Restores the Shifter DB first; in bundled mode, ChirpStack DB second.
+- Rsyncs the floor-plans volume from the tarball.
+- Writes a `backup.restore` audit row on success.
+
+**Optional chain-of-custody verification:**
+
+The `shifter backup` command prints the outer tarball sha256 at completion. Pass it
+to `--expected-sha256` to verify the tarball has not been tampered with:
+
+```sh
+docker compose -f compose/bundled.yml run --rm shifter \
+  shifter restore \
+    --from /var/lib/shifter/backups/<file>.tar.gz \
+    --expected-sha256 <sha256-from-backup-output>
+```
+
+**Cross-version restore** (e.g., a v0.5.0 backup restored into a v0.6.0 install) is
+**not supported in v1**. The manifest's `db_schema_version` field is the forward-compat
+hook for v1.1. After any version upgrade, always take a fresh backup before deploying
+the new version; then if rollback is needed, restore that latest backup into the
+previous version.
+
+### CI gate
+
+`.github/workflows/backup-restore-roundtrip.yml` runs the full round-trip
+(seed → backup → drop schema → restore → smoke) on every PR touching
+`internal/backup/**` or `internal/db/migrations/**`, and on every push to main.
+The workflow fails CI if backup or restore produces invalid output.

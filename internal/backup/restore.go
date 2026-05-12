@@ -259,6 +259,173 @@ func (r *Restorer) Restore(ctx context.Context, srcPath string, expectedOuterSHA
 	return nil
 }
 
+// RestoreInPlace is like Restore but skips the DROP DATABASE / CREATE DATABASE
+// step. It is used by the integration round-trip test (TestBackupRestoreRoundtrip)
+// where the test harness already performed DROP SCHEMA CASCADE + CREATE SCHEMA
+// to simulate a fresh database within the same testcontainers-managed DB
+// instance (testcontainers cannot expose a separate maintenance connection to
+// the "postgres" DB that the standard DROP DATABASE flow requires).
+//
+// Production callers (shifter restore CLI) always use Restore(), never
+// RestoreInPlace(). RestoreInPlace is intentionally un-exported from the
+// package-level docs perspective — it carries the "InPlace" suffix as an
+// explicit call-site signal.
+func (r *Restorer) RestoreInPlace(ctx context.Context, srcPath string, expectedOuterSHA256 string) error {
+	// Advisory lock + sha256 + extract + manifest parse + per-file check
+	// are identical to Restore().
+	if expectedOuterSHA256 != "" {
+		actual, err := ComputeFileSHA256(srcPath)
+		if err != nil {
+			return fmt.Errorf("compute outer sha256: %w", err)
+		}
+		if actual != expectedOuterSHA256 {
+			return fmt.Errorf("%w: expected %s got %s",
+				ErrTarballChecksumMismatch, expectedOuterSHA256, actual)
+		}
+	}
+
+	var acquired bool
+	if err := r.Pool.QueryRow(ctx,
+		`SELECT pg_try_advisory_lock($1)`, ShifterAdvisoryLockID,
+	).Scan(&acquired); err != nil {
+		return fmt.Errorf("acquire advisory lock: %w", err)
+	}
+	if !acquired {
+		return ErrShifterStillServing
+	}
+	defer func() {
+		_, _ = r.Pool.Exec(context.Background(),
+			`SELECT pg_advisory_unlock($1)`, ShifterAdvisoryLockID)
+	}()
+
+	tmpDir, err := os.MkdirTemp("", "shifter-restore-inplace-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	if err := extractTarGz(srcPath, tmpDir); err != nil {
+		return fmt.Errorf("extract tarball: %w", err)
+	}
+
+	manifestBytes, err := os.ReadFile(filepath.Join(tmpDir, "manifest.json"))
+	if err != nil {
+		return ErrManifestMissing
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	for relPath, expectedSum := range manifest.SHA256Sums {
+		if relPath == "manifest.json" {
+			continue
+		}
+		fullPath := filepath.Join(tmpDir, filepath.FromSlash(relPath))
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			return fmt.Errorf("manifest references missing file %q: %w", relPath, err)
+		}
+		if info.IsDir() {
+			continue
+		}
+		actual, err := ComputeFileSHA256(fullPath)
+		if err != nil {
+			return fmt.Errorf("compute sha256 for %q: %w", relPath, err)
+		}
+		if actual != expectedSum {
+			return fmt.Errorf("%w: file=%s expected=%s actual=%s",
+				ErrFileChecksumMismatch, relPath, expectedSum, actual)
+		}
+	}
+
+	// Restore Shifter DB in-place (skip DROP/CREATE — schema already fresh).
+	shifterDump := filepath.Join(tmpDir, "db", "shifter.dump")
+	if err := r.restoreDBInPlace(ctx, shifterDump, r.Cfg.DBUser, r.Cfg.DBName); err != nil {
+		return fmt.Errorf("restore Shifter DB in-place: %w", err)
+	}
+
+	// Rsync floor plans.
+	srcFloorPlansDir := filepath.Join(tmpDir, "floor-plans")
+	if _, statErr := os.Stat(srcFloorPlansDir); statErr == nil {
+		destDir := r.Cfg.FloorPlansDir
+		if destDir == "" {
+			destDir = "/var/lib/shifter/floor-plans"
+		}
+		if err := copyDir(srcFloorPlansDir, destDir); err != nil {
+			return fmt.Errorf("rsync floor-plans: %w", err)
+		}
+	}
+
+	// Write audit row.
+	entityID, _ := parseInstallUUID(manifest.InstallID)
+	tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin audit tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if auditErr := audit.WriteEntry(ctx, tx, audit.Entry{
+		Action:     audit.ActionBackupRestore,
+		EntityType: audit.EntityTypeBackupRun,
+		EntityID:   entityID,
+		Notes: fmt.Sprintf(
+			"restored in-place from %s (schema=%s, install=%s)",
+			filepath.Base(srcPath), manifest.DBSchemaVersion, manifest.InstallSlug,
+		),
+	}); auditErr != nil {
+		return fmt.Errorf("write restore audit row: %w", auditErr)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit audit tx: %w", err)
+	}
+	return nil
+}
+
+// restoreDBInPlace runs pre_restore → pg_restore → post_restore without
+// the DROP/CREATE step. Used by the integration round-trip test only.
+func (r *Restorer) restoreDBInPlace(ctx context.Context, dumpPath, dbUser, dbName string) error {
+	port := r.Cfg.DBPort
+	if port == 0 {
+		port = 5432
+	}
+
+	// Pre-restore hook (Pitfall 2).
+	if err := r.execPsql(ctx, dbName, `SELECT timescaledb_pre_restore();`); err != nil {
+		return fmt.Errorf("timescaledb_pre_restore: %w", err)
+	}
+
+	// pg_restore — NO -j / --jobs (Pitfall 1).
+	args := []string{
+		"--host", r.Cfg.DBHost,
+		"--port", fmt.Sprintf("%d", port),
+		"--username", dbUser,
+		"--dbname", dbName,
+		"--no-owner",
+		"--no-acl",
+		dumpPath,
+	}
+	for _, a := range args {
+		if a == "-j" || a == "--jobs" || strings.HasPrefix(a, "--jobs=") {
+			return fmt.Errorf("restore: -j/--jobs forbidden (Pitfall 1)")
+		}
+	}
+	cmd := exec.CommandContext(ctx, "pg_restore", args...)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+r.Cfg.DBPassword)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		outStr := strings.TrimSpace(string(out))
+		if outStr != "" {
+			r.Log.Warn("pg_restore output (in-place)", "db", dbName, "output", outStr)
+		}
+		return fmt.Errorf("pg_restore %q in-place: %w: %s", dbName, err, outStr)
+	}
+
+	// Post-restore hook (Pitfall 2).
+	if err := r.execPsql(ctx, dbName, `SELECT timescaledb_post_restore();`); err != nil {
+		return fmt.Errorf("timescaledb_post_restore: %w", err)
+	}
+	return nil
+}
+
 // restoreDB runs the TimescaleDB-aware restore sequence for a single database.
 //
 // For the Shifter DB (isShifterDB=true):

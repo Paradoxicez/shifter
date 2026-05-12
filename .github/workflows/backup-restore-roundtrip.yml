@@ -1,0 +1,51 @@
+name: backup-restore-roundtrip
+
+# Gate: fails CI on any change that breaks the backup/restore round-trip
+# semantics (OPS-04, D-45).  Runs on every PR touching backup code, the CLI
+# subcommands, DB migrations, or the Dockerfile; and on every push to main.
+#
+# Cross-version restore (v0.x backup → v0.(x+1) install) is explicitly
+# deferred to v1.1. This workflow only tests same-version round-trips.
+
+on:
+  pull_request:
+    paths:
+      - 'internal/backup/**'
+      - 'internal/cli/backup.go'
+      - 'internal/cli/restore.go'
+      - 'internal/db/migrations/**'
+      - 'Dockerfile'
+      - '.github/workflows/backup-restore-roundtrip.yml'
+  push:
+    branches: [main]
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install PostgreSQL 16 client tools (pg_dump / pg_restore / psql)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Run backup-restore round-trip integration test
+        run: |
+          go test ./internal/backup/... \
+            -run TestBackupRestoreRoundtrip \
+            -tags=integration \
+            -count=1 \
+            -v \
+            -timeout=10m
+        env:
+          # testcontainers handles the TimescaleDB container lifecycle.
+          # Ryuk (the container reaper) is enabled in CI for clean teardown.
+          TESTCONTAINERS_RYUK_DISABLED: "false"
