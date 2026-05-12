@@ -198,6 +198,14 @@ type Deps struct {
 	// endpoint (V2-VEND-02 backend half). Admin-only + 30/min rate limit.
 	// nil in early-boot / router unit tests that don't need the codec runner.
 	CodecTestDeps *apipkg.CodecTestDeps
+
+	// CatalogDeps wires Plan 07-04's vendor catalog HTTP endpoints (V2-VEND-01):
+	//   GET  /api/catalog                    — ActionCatalogRead (admin + viewer)
+	//   GET  /api/catalog/{slug}             — ActionCatalogRead (admin + viewer)
+	//   POST /api/catalog/import             — ActionCatalogImport (admin only)
+	//   POST /api/catalog/{profile_id}/update — ActionCatalogUpdate (admin only)
+	// nil in early-boot / router unit tests that don't need catalog routes.
+	CatalogDeps *apipkg.CatalogDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -520,6 +528,16 @@ func NewRouter(deps Deps) http.Handler {
 		// POST /api/device-profiles/{id}/test-codec — ActionCodecTestRun
 		// Mounted before SPA fallback (PITFALL #4).
 		apipkg.RegisterCodecTestRoute(r, *deps.CodecTestDeps)
+	}
+
+	if deps.CatalogDeps != nil {
+		// Plan 07-04: vendor catalog REST surface (V2-VEND-01).
+		//   GET  /api/catalog                     — ActionCatalogRead (admin + viewer)
+		//   GET  /api/catalog/{slug}              — ActionCatalogRead (admin + viewer)
+		//   POST /api/catalog/import              — ActionCatalogImport (admin only)
+		//   POST /api/catalog/{profile_id}/update — ActionCatalogUpdate (admin only)
+		// Mounted before SPA fallback (PITFALL #4).
+		apipkg.RegisterCatalogRoutes(r, *deps.CatalogDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
