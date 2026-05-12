@@ -37,7 +37,9 @@ import {
 } from '@/components/ui/table'
 import { Toggle } from '@/components/ui/toggle'
 import { listGateways, restoreGateway, type Gateway } from '@/lib/gateways'
+import { useCurrentUser } from '@/lib/use-current-user'
 import { AddGatewayDialog } from './add-gateway-dialog'
+import { BulkImportDialog } from './BulkImportDialog'
 import { DecommissionGatewayDialog } from './decommission-gateway-dialog'
 
 /**
@@ -137,8 +139,11 @@ export default function GatewaysPage() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [editGateway, setEditGateway] = useState<Gateway | null>(null)
   const [decommissionGateway, setDecommissionGateway] = useState<Gateway | null>(null)
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser?.role === 'admin'
 
   const gatewaysQuery = useQuery({
     queryKey: ['gateways', { includeArchived }],
@@ -313,9 +318,16 @@ export default function GatewaysPage() {
     <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold leading-8">Gateways</h1>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Add gateway
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin ? (
+            <Button variant="outline" onClick={() => setBulkOpen(true)}>
+              Import gateways
+            </Button>
+          ) : null}
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add gateway
+          </Button>
+        </div>
       </header>
 
       <div className="flex items-center gap-4">
@@ -392,6 +404,7 @@ export default function GatewaysPage() {
         </div>
       )}
 
+      <BulkImportDialog open={bulkOpen} onOpenChange={setBulkOpen} />
       <AddGatewayDialog open={createOpen} onOpenChange={setCreateOpen} />
       {editGateway ? (
         <AddGatewayDialog

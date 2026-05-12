@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GatewaysPage from './index'
 
@@ -68,13 +68,26 @@ const archivedGateway = {
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // useCurrentUser calls useRouteLoaderData('root') which requires a data router.
+  // We provide a minimal root route with loader returning a viewer user so the
+  // hook never throws, while admin-gated UI (Import gateways button) stays hidden.
+  const router = createMemoryRouter(
+    [
+      {
+        id: 'root',
+        path: '/',
+        loader: () => ({ user: { id: 'u1', email: 'test@test.com', role: 'viewer', must_change_password: false } }),
+        children: [{ path: 'gateways', element: <GatewaysPage /> }],
+      },
+    ],
+    { initialEntries: ['/gateways'] },
+  )
   return {
     qc,
+    router,
     ...render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/gateways']}>
-          <GatewaysPage />
-        </MemoryRouter>
+        <RouterProvider router={router} />
       </QueryClientProvider>,
     ),
   }
