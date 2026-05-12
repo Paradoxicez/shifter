@@ -18,6 +18,14 @@ import (
 // RunSeedSync iterates ListUnsyncedProfiles (codec_js empty OR
 // codec_js_synced_at NULL) and pushes each //go:embed-ed codec to ChirpStack.
 //
+// Boot order (Plan 07-03): codec.RunCatalogDriftCheck RUNS FIRST so that any
+// migration placeholder codec_js values (e.g. the Itron+KINMY seed row written
+// by migration 0050 with marker "// placeholder — replaced at boot by
+// RunCatalogSeedSync") are overwritten with the real embedded source before
+// this routine tries to push them to ChirpStack. Without that ordering,
+// RunSeedSync would push the placeholder string to ChirpStack instead of the
+// real codec.
+//
 // Idempotent: re-running is a no-op for already-synced profiles. After a
 // successful CS push, MarkProfileSyncedToChirpStack records cs_profile_id +
 // codec_js_synced_at = now() so the next call's ListUnsyncedProfiles excludes

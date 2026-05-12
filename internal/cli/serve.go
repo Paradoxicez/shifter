@@ -44,6 +44,7 @@ import (
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/backup"
 	"github.com/shifter-io/shifter/internal/chirpstack"
+	"github.com/shifter-io/shifter/internal/codec"
 	"github.com/shifter-io/shifter/internal/config"
 	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/db"
@@ -213,7 +214,15 @@ var serveCmd = &cobra.Command{
 			mqttSub.SetUplinkHandler(ingest.UplinkHandler(ingestDeps))
 		}
 
-		// 6e. profile.RunSeedSync — first-boot codec push to ChirpStack per
+		// 6e. Plan 07-03 D-31 drift detection — reconcile catalog-sourced
+		//     device_profile rows with embedded codec sources BEFORE any
+		//     seed-sync activity. Best-effort: errors are logged but never
+		//     block boot. Idempotent: running twice is a no-op.
+		if err := codec.RunCatalogDriftCheck(ctx, pool); err != nil {
+			slog.Error("catalog drift check failed at boot", "err", err)
+		}
+
+		// 6f. profile.RunSeedSync — first-boot codec push to ChirpStack per
 		//     D-09. Best-effort; never returns error; never blocks boot. Only
 		//     runs when CS gRPC client is non-nil; RunSeedSync does its own
 		//     re-check on the tenant id (defensive).
