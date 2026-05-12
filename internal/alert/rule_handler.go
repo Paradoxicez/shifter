@@ -152,6 +152,29 @@ func CreateRuleHandler(deps HTTPDeps) http.HandlerFunc {
 		if req.Severity == "" {
 			req.Severity = "critical"
 		}
+
+		// Phase 7 I-2: server-side anomaly compat guard (D-42).
+		// Reject anomaly rules that are incompatible with the bound profile before
+		// opening a transaction — cheap read-only check, defense-in-depth on top of UI.
+		if isAnomalyKind(req.RuleKind) && req.ScopeKind == "metering_point" && req.ScopeID != nil {
+			q := sqlcdb.New(deps.Pool)
+			compat, compatErr := q.GetMPAnomalyCompatibility(r.Context(), pgUUID(*req.ScopeID))
+			if compatErr == nil {
+				blocked := compat.AnomalyCompatibility == "unsupported" ||
+					(compat.AnomalyCompatibility == "limited" && req.RuleKind == "anomaly_quiet_hour")
+				if blocked {
+					writeJSON(w, http.StatusBadRequest, map[string]string{
+						"code":   "profile_anomaly_incompatible",
+						"detail": fmt.Sprintf("profile does not support %s rules (anomaly_compatibility=%s)",
+							req.RuleKind, compat.AnomalyCompatibility),
+					})
+					return
+				}
+			}
+			// If compatErr != nil (no active binding, MP not found) we fall through and
+			// let the DB enforce constraints — the rule may still be a global-scope rule.
+		}
+
 		actingUUID, err := uuid.Parse(acting.ID)
 		if err != nil {
 			internalError(deps.Log, w, "parse acting id", err)
@@ -761,4 +784,10 @@ func int32PtrEq(a, b *int32) bool {
 		return false
 	}
 	return *a == *b
+}
+
+// isAnomalyKind reports whether the rule kind is one of the three anomaly
+// evaluator kinds. Used by the server-side anomaly compat guard (Phase 7 I-2).
+func isAnomalyKind(k string) bool {
+	return k == "anomaly_p95" || k == "anomaly_iqr" || k == "anomaly_quiet_hour"
 }

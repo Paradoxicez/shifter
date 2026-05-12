@@ -573,6 +573,120 @@ func TestTestFire_DoesNotTouchLastFiredAt(t *testing.T) {
 	require.Nil(t, afterLast, "test-fire must NOT set last_fired_at (Pitfall 8)")
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 7 Plan 09b Task 3: server-side anomaly compat guard on CreateRuleHandler
+// ─────────────────────────────────────────────────────────────────────────────
+
+// seedMPWithCompatProfile seeds a device_profile with the given anomaly_compatibility,
+// a device, and an active binding to a fresh metering point. Returns the MP id.
+func (f *handlerFixture) seedMPWithCompatProfile(t *testing.T, label string, anomalyCompat string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	slug := "compat-" + label
+	var profileIDStr, devIDStr, mpIDStr string
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`INSERT INTO device_profile (slug, name, vendor, family, capabilities, codec_js,
+		    expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility,
+		    battery_curve)
+		 VALUES ($1, $2, 'TestVendor', 'test-family', ARRAY['cumulative'], '// test', 3600, 3.0, $3, 'linear_pct')
+		 RETURNING id`,
+		slug, "Compat "+label, anomalyCompat,
+	).Scan(&profileIDStr))
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`INSERT INTO device (dev_eui, name, device_profile_id) VALUES ($1, $2, $3) RETURNING id`,
+		fmt.Sprintf("%016x", fnvHash("compat-"+label)), "dev-compat-"+label, profileIDStr,
+	).Scan(&devIDStr))
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`INSERT INTO metering_point (site_id, name, utility_class) VALUES ($1, $2, 'water') RETURNING id`,
+		f.siteID, "mp-compat-"+label,
+	).Scan(&mpIDStr))
+	require.NoError(t, f.pool.QueryRow(ctx,
+		`INSERT INTO binding (device_id, metering_point_id, valid_from) VALUES ($1, $2, now()) RETURNING id`,
+		devIDStr, mpIDStr,
+	).Scan(new(string)))
+	mpID, err := uuid.Parse(mpIDStr)
+	require.NoError(t, err)
+	return mpID
+}
+
+// TestCreateAlertRule_RejectsAnomalyOnLimitedProfile: POST anomaly_quiet_hour rule
+// targeting an MP on a 'limited' profile → HTTP 400 + code=profile_anomaly_incompatible.
+func TestCreateAlertRule_RejectsAnomalyOnLimitedProfile(t *testing.T) {
+	f := setupHandlerFixture(t)
+	f.seed(t, "admin")
+
+	mpID := f.seedMPWithCompatProfile(t, "limited-qh", "limited")
+	status, body := f.doJSON(t, "POST", "/api/alerts/rules", map[string]any{
+		"rule_kind":  "anomaly_quiet_hour",
+		"scope_kind": "metering_point",
+		"scope_id":   mpID.String(),
+		"severity":   "warning",
+	})
+	require.Equal(t, http.StatusBadRequest, status, string(body))
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(body, &resp))
+	require.Equal(t, "profile_anomaly_incompatible", resp["code"], string(body))
+}
+
+// TestCreateAlertRule_RejectsAnomalyOnUnsupportedProfile: POST anomaly_p95 rule
+// targeting an MP on an 'unsupported' profile → HTTP 400 + code=profile_anomaly_incompatible.
+func TestCreateAlertRule_RejectsAnomalyOnUnsupportedProfile(t *testing.T) {
+	f := setupHandlerFixture(t)
+	f.seed(t, "admin")
+
+	mpID := f.seedMPWithCompatProfile(t, "unsupported-p95", "unsupported")
+	for _, kind := range []string{"anomaly_p95", "anomaly_iqr", "anomaly_quiet_hour"} {
+		status, body := f.doJSON(t, "POST", "/api/alerts/rules", map[string]any{
+			"rule_kind":  kind,
+			"scope_kind": "metering_point",
+			"scope_id":   mpID.String(),
+			"severity":   "warning",
+		})
+		require.Equal(t, http.StatusBadRequest, status, "kind=%s body=%s", kind, string(body))
+		var resp map[string]string
+		require.NoError(t, json.Unmarshal(body, &resp))
+		require.Equal(t, "profile_anomaly_incompatible", resp["code"], "kind=%s", kind)
+	}
+}
+
+// TestCreateAlertRule_AllowsP95OnLimitedProfile: POST anomaly_p95 rule targeting
+// an MP on a 'limited' profile → HTTP 201 (only quiet_hour is blocked on limited).
+func TestCreateAlertRule_AllowsP95OnLimitedProfile(t *testing.T) {
+	f := setupHandlerFixture(t)
+	f.seed(t, "admin")
+
+	mpID := f.seedMPWithCompatProfile(t, "limited-p95", "limited")
+	for _, kind := range []string{"anomaly_p95", "anomaly_iqr"} {
+		status, body := f.doJSON(t, "POST", "/api/alerts/rules", map[string]any{
+			"rule_kind":  kind,
+			"scope_kind": "metering_point",
+			"scope_id":   mpID.String(),
+			"severity":   "warning",
+		})
+		require.Equal(t, http.StatusCreated, status, "kind=%s body=%s", kind, string(body))
+	}
+}
+
+// TestCreateAlertRule_AllowsThresholdOnUnsupportedProfile: POST threshold_hourly
+// rule targeting an MP on 'unsupported' profile → HTTP 201 (only anomaly_* are gated).
+func TestCreateAlertRule_AllowsThresholdOnUnsupportedProfile(t *testing.T) {
+	f := setupHandlerFixture(t)
+	f.seed(t, "admin")
+
+	mpID := f.seedMPWithCompatProfile(t, "unsupported-thr", "unsupported")
+	high := 100.0
+	cmp := "gt"
+	status, body := f.doJSON(t, "POST", "/api/alerts/rules", map[string]any{
+		"rule_kind":  "threshold_hourly",
+		"scope_kind": "metering_point",
+		"scope_id":   mpID.String(),
+		"severity":   "warning",
+		"high_bound": high,
+		"comparison": cmp,
+	})
+	require.Equal(t, http.StatusCreated, status, string(body))
+}
+
 // TestAlertViewer_ReadOnlyEnforced — viewer can list/get but ack/snooze 403.
 func TestAlertViewer_ReadOnlyEnforced(t *testing.T) {
 	f := setupHandlerFixture(t)
