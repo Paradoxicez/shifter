@@ -372,6 +372,12 @@ type Querier interface {
 	// sort/filter via URL params but currently maps them all to this query;
 	// richer ordering arrives with the Phase 4 gateway dashboard.
 	ListGatewaysActive(ctx context.Context, arg ListGatewaysActiveParams) ([]Gateway, error)
+	// Gateways with lat/lng populated, excluding archived.
+	// Online = stats_refreshed_at within the last 5 minutes.
+	// (Gateway has no last_seen_at column; stats_refreshed_at is updated by the
+	// cache_refresher goroutine which polls ChirpStack every ~60 s — a staleness
+	// of >5 min reliably signals the gateway has gone dark.)
+	ListGatewaysForMap(ctx context.Context) ([]ListGatewaysForMapRow, error)
 	// D-32 "Show archived" toggle. archived rows sorted by archived_at DESC
 	// first, then active rows by created_at DESC.
 	ListGatewaysIncludingArchived(ctx context.Context, arg ListGatewaysIncludingArchivedParams) ([]Gateway, error)
@@ -396,6 +402,20 @@ type Querier interface {
 	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
 	// can't accidentally page through years of telemetry.
 	ListRecentMeasurements(ctx context.Context, arg ListRecentMeasurementsParams) ([]Measurement, error)
+	// Map view queries (Phase 5 MAP-01..04, plan 05-04).
+	//
+	// These queries power GET /api/map/data in internal/map/handler.go.
+	//
+	// D-12 (Phase 5): sites + gateways only on the map.
+	// D-07 (Phase 4) online/offline rule:
+	//   device.last_seen_at > now() - (2 * dp.expected_interval_s * INTERVAL '1 second')
+	// MAP-04 invariant: no tile URL or API key in any column returned here.
+	// Column names use the actual schema: site.lat/lng, gateway.lat/lng.
+	// Sites with both lat AND lng populated; archived sites excluded.
+	// Returns per-site rollups: MP count, online vs offline device count (per
+	// Phase 4 D-07 rule using device_profile.expected_interval_s).
+	// Device → MP join goes through binding (device has no metering_point_id column).
+	ListSitesForMap(ctx context.Context) ([]ListSitesForMapRow, error)
 	// Plan 02-08 boot-time seed routine reads this list to decide which profiles
 	// need a CS push. A profile is "unsynced" if it has no cs_profile_id (never
 	// pushed) OR the codec_js was modified after the last push (codec_js_synced_at
@@ -510,6 +530,11 @@ type Querier interface {
 	// D-05: today's consumption in install_identity.timezone.
 	// sqlc.arg(timezone) / sqlc.arg(utility_class)
 	TodayConsumptionByUtility(ctx context.Context, arg TodayConsumptionByUtilityParams) (pgtype.Numeric, error)
+	// Per-site today (install_tz 00:00 → now) consumption split by utility_class.
+	// Sources measurement_hourly (CAGG) — sums bucketed deltas for MPs belonging
+	// to each site, partitioned by utility_class.
+	// $1 = install_tz midnight today (computed in handler via time.LoadLocation)
+	TodaySiteConsumption(ctx context.Context, midnightToday interface{}) ([]TodaySiteConsumptionRow, error)
 	// Called by Plan 02-09 ingest after every successful uplink persist.
 	// Stored on binding (NOT device or measurement) so the rollover detector
 	// can SELECT one row to fetch the per-binding previous raw counter without

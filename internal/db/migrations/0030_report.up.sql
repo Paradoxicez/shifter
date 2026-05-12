@@ -5,7 +5,7 @@
 
 CREATE TABLE report (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES users(id),
+  user_id           UUID NOT NULL REFERENCES "user"(id),
   scope             TEXT NOT NULL CHECK (scope IN ('all','site','meter')),
   site_id           UUID REFERENCES site(id),
   metering_point_id UUID REFERENCES metering_point(id),
