@@ -28,6 +28,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	apipkg "github.com/shifter-io/shifter/internal/api"
 	"github.com/shifter-io/shifter/internal/alert"
 	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
@@ -192,6 +193,11 @@ type Deps struct {
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
 	SPA http.Handler
+
+	// CodecTestDeps wires Plan 07-07's POST /api/device-profiles/{id}/test-codec
+	// endpoint (V2-VEND-02 backend half). Admin-only + 30/min rate limit.
+	// nil in early-boot / router unit tests that don't need the codec runner.
+	CodecTestDeps *apipkg.CodecTestDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -507,6 +513,13 @@ func NewRouter(deps Deps) http.Handler {
 			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditExport)).Get("/export", audit.ExportHandler(auditDeps))
 			rt.With(auth.RequireAction(deps.SessionMgr, auth.ActionAuditExport)).Post("/export-async", audit.ExportAsyncHandler(auditDeps))
 		})
+	}
+
+	if deps.CodecTestDeps != nil {
+		// Plan 07-07: codec sandbox test runner. Admin-only, 30/min rate limit.
+		// POST /api/device-profiles/{id}/test-codec — ActionCodecTestRun
+		// Mounted before SPA fallback (PITFALL #4).
+		apipkg.RegisterCodecTestRoute(r, *deps.CodecTestDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without

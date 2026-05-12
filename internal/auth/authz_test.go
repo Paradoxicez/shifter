@@ -159,6 +159,15 @@ func TestCan_Phase6_UserMgmt_ViewerOnlyReadSelf(t *testing.T) {
 	}
 }
 
+// TestAuthz_CodecTestRun_AdminOnly — Plan 07-07 T-07-07-08:
+// ActionCodecTestRun is admin-only; viewer must be denied (fail-closed).
+func TestAuthz_CodecTestRun_AdminOnly(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	viewer := &User{ID: "u2", Role: "viewer"}
+	require.True(t, Can(admin, ActionCodecTestRun, nil), "admin must be able to codec.test_run")
+	require.False(t, Can(viewer, ActionCodecTestRun, nil), "viewer must NOT be able to codec.test_run (T-07-07-08)")
+}
+
 // TestAuthz_AlertActionsAdminOnlyExceptRead — Plan 06-04 D-11:
 // RoleAdmin has every alert.* action; RoleViewer has ActionAlertRead only.
 // Mutating actions (ack/snooze/mute/rule_create/update/disable/enable/

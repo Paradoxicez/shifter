@@ -128,6 +128,16 @@ const (
 	ActionSettingsUpdate Action = "settings.update"
 )
 
+// Phase 7 — Plan 07-07: goja codec test runner.
+// ActionCodecTestRun gates POST /api/device-profiles/{id}/test-codec.
+// Admin-only (T-07-07-08 mitigation: viewer forging codec execution returns 403).
+// Per-user rate limit (30/min) is enforced at the handler level.
+const (
+	// ActionCodecTestRun gates the codec sandbox test endpoint. Admin-only —
+	// executing operator-supplied JS is privileged (T-07-07-08).
+	ActionCodecTestRun Action = "codec.test_run"
+)
+
 // Gap closure Plan 06-12 — SETT-02: identity update (admin only).
 // GET /api/settings/identity uses ActionConnectionTest (any authed user).
 // PATCH /api/settings/identity uses ActionSettingsIdentityUpdate (admin only).
@@ -314,6 +324,10 @@ var roleBundles = map[Role]map[Action]bool{
 		// PATCH /api/settings/identity is admin-only (T-06-12-02).
 		// GET /api/settings/identity uses ActionConnectionTest (granted above).
 		ActionSettingsIdentityUpdate: true,
+
+		// Phase 7 — Plan 07-07: codec sandbox test runner. Admin-only.
+		// T-07-07-08 mitigation: viewer CANNOT trigger codec execution.
+		ActionCodecTestRun: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.

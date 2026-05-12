@@ -365,6 +365,9 @@ type Querier interface {
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
 	GetPlacementByDevice(ctx context.Context, deviceID pgtype.UUID) (DeviceFloorPlanPlacement, error)
 	GetProfileCatalogMetadata(ctx context.Context, id pgtype.UUID) (GetProfileCatalogMetadataRow, error)
+	// Plan 07-07: codec test handler loads codec_js from the profile row.
+	// Returns only the columns needed so the handler avoids a full DeviceProfile scan.
+	GetProfileForCodecTest(ctx context.Context, id pgtype.UUID) (GetProfileForCodecTestRow, error)
 	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
 	// internal/db/queries/settings.sql
 	// Retention configuration queries (DATA-13 / D-09 / Plan 05-11).

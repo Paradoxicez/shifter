@@ -393,6 +393,26 @@ func (q *Queries) GetProfileCatalogMetadata(ctx context.Context, id pgtype.UUID)
 	return i, err
 }
 
+const getProfileForCodecTest = `-- name: GetProfileForCodecTest :one
+SELECT id, slug, codec_js
+FROM device_profile WHERE id = $1
+`
+
+type GetProfileForCodecTestRow struct {
+	ID      pgtype.UUID
+	Slug    string
+	CodecJs string
+}
+
+// Plan 07-07: codec test handler loads codec_js from the profile row.
+// Returns only the columns needed so the handler avoids a full DeviceProfile scan.
+func (q *Queries) GetProfileForCodecTest(ctx context.Context, id pgtype.UUID) (GetProfileForCodecTestRow, error) {
+	row := q.db.QueryRow(ctx, getProfileForCodecTest, id)
+	var i GetProfileForCodecTestRow
+	err := row.Scan(&i.ID, &i.Slug, &i.CodecJs)
+	return i, err
+}
+
 const listActiveDeviceProfiles = `-- name: ListActiveDeviceProfiles :many
 SELECT id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s, catalog_source, catalog_source_version, customer_edited, battery_curve, expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility FROM device_profile
 WHERE archived_at IS NULL

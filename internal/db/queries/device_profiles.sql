@@ -184,3 +184,9 @@ INSERT INTO device_profile (
     now()
 )
 RETURNING id, updated_at;
+
+-- name: GetProfileForCodecTest :one
+-- Plan 07-07: codec test handler loads codec_js from the profile row.
+-- Returns only the columns needed so the handler avoids a full DeviceProfile scan.
+SELECT id, slug, codec_js
+FROM device_profile WHERE id = $1;
