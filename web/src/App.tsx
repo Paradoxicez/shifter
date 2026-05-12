@@ -31,6 +31,7 @@ const ReportsPage = lazy(() => import('@/routes/reports'))
 const UsersPage = lazy(() => import('@/routes/settings/users'))
 const AlertsPage = lazy(() => import('@/routes/alerts'))
 const AlertRulesPage = lazy(() => import('@/routes/settings/alerts'))
+const AuditPage = lazy(() => import('@/routes/audit'))
 
 /**
  * Phase 1 router skeleton.
@@ -218,6 +219,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <AlertRulesPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'audit',
+        element: (
+          <Suspense fallback={null}>
+            <AuditPage />
           </Suspense>
         ),
       },

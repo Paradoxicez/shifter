@@ -22,11 +22,16 @@ const adminUser = { id: 'u1', email: 'admin@example.com', role: 'admin' as const
 const viewerUser = { id: 'u2', email: 'viewer@example.com', role: 'viewer' as const, must_change_password: false }
 
 // Mock useRouteLoaderData so useCurrentUser returns our test user.
+// NOTE: vi.mock factories are hoisted to the top of the file, so top-level
+// variables (adminUser, viewerUser) are not yet initialized when this runs.
+// Inline the default user object here; individual tests override via vi.mocked().
 vi.mock('react-router-dom', async (importOriginal) => {
   const real = await importOriginal<typeof import('react-router-dom')>()
   return {
     ...real,
-    useRouteLoaderData: vi.fn().mockReturnValue({ user: adminUser }),
+    useRouteLoaderData: vi.fn().mockReturnValue({
+      user: { id: 'u1', email: 'admin@example.com', role: 'admin', must_change_password: false },
+    }),
     Navigate: vi.fn(({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />),
   }
 })
