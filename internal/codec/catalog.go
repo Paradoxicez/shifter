@@ -5,10 +5,18 @@ package codec
 
 import (
 	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
 )
 
 //go:embed all:catalog
 var catalogFS embed.FS
+
+// ErrCatalogEntryNotFound is returned by Get when slug has no entry.
+var ErrCatalogEntryNotFound = errors.New("codec: catalog entry not found")
 
 // CatalogEntry mirrors the D-33 locked schema. See 07-CONTEXT.md §D-33.
 type CatalogEntry struct {
@@ -30,5 +38,48 @@ type CatalogEntry struct {
 	FPort                         *int     `json:"fPort,omitempty"`
 }
 
-// LoadAll returns every embedded catalog entry. Implementation in plan 07-03.
-func LoadAll() ([]CatalogEntry, error) { return nil, nil }
+// LoadAll returns all embedded catalog entries sorted by vendor then family.
+// The catalog/*.json files are bundled at build time via //go:embed.
+// D-22 build-time guarantee: TestCatalogValid validates every entry at test time.
+func LoadAll() ([]CatalogEntry, error) {
+	dirEntries, err := catalogFS.ReadDir("catalog")
+	if err != nil {
+		return nil, fmt.Errorf("read catalog dir: %w", err)
+	}
+	var out []CatalogEntry
+	for _, e := range dirEntries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		data, err := catalogFS.ReadFile("catalog/" + e.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		var entry CatalogEntry
+		if err := json.Unmarshal(data, &entry); err != nil {
+			return nil, fmt.Errorf("unmarshal %s: %w", e.Name(), err)
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Vendor != out[j].Vendor {
+			return out[i].Vendor < out[j].Vendor
+		}
+		return out[i].Family < out[j].Family
+	})
+	return out, nil
+}
+
+// Get returns the catalog entry for slug or ErrCatalogEntryNotFound.
+func Get(slug string) (CatalogEntry, error) {
+	all, err := LoadAll()
+	if err != nil {
+		return CatalogEntry{}, err
+	}
+	for _, e := range all {
+		if e.Slug == slug {
+			return e, nil
+		}
+	}
+	return CatalogEntry{}, ErrCatalogEntryNotFound
+}
