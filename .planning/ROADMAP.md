@@ -246,7 +246,24 @@ Plans:
   4. Statistical anomaly detection thresholds (P95/IQR/quiet-hour) are tuned against real-customer data from Phase 1–6 installs, and the cold-start gate behavior is documented and observable in the alert center.
   5. Install validation hardening: ChirpStack version probe on first connect (refuses v3 or unknown), Postgres + TimescaleDB extension probe, region/sub-plan probe against gateway profile — surfacing any drift from the install kit's expected baseline.
 
-**Plans**: TBD
+**Plans**: 14 plans
+
+Plans:
+- [x] 07-01-wave-0-scaffolding-PLAN.md — goja dep + 9 skeleton test files (Wave 0)
+- [ ] 07-02-migration-and-catalog-json-PLAN.md — migration 0050 (7 new device_profile columns) + 4 catalog JSON entries + 5 sqlc queries (D-01, D-21, D-29..D-31, D-33, D-41..D-44, D-48)
+- [ ] 07-03-catalog-loader-and-drift-detection-PLAN.md — LoadAll/Get + TestCatalogValid (D-22) + RunCatalogDriftCheck boot wiring (D-31, D-36)
+- [ ] 07-04-catalog-http-api-PLAN.md — 4 endpoints + audit vocab + RBAC (D-03, D-04, D-23, D-24, D-34, D-36)
+- [ ] 07-05-vendor-catalog-tab-ui-PLAN.md — Settings → Vendor Catalog DataTable + tab badge (Surface 1, D-02, D-23..D-25, D-40)
+- [ ] 07-06-import-and-update-dialogs-PLAN.md — Import + Update Diff modals (Surfaces 2-3, D-03, D-04, D-24, D-34)
+- [ ] 07-07-goja-codec-runner-PLAN.md — sandboxed goja runtime + POST /api/profiles/{id}/test-codec (D-26..D-28; security-critical)
+- [ ] 07-08-codec-test-runner-ui-PLAN.md — Test Codec panel in profile editor (Surface 4, D-05..D-08)
+- [ ] 07-09-profile-aware-alerts-battery-curve-reverse-flow-PLAN.md — ALERT-03/04 profile-aware refactor + battery curve registry + reverse_flow_increase rule (D-09, D-41..D-46)
+- [ ] 07-10-anomaly-backtest-PLAN.md — Test against last 30 days + count + sparkline + profile-aware rule kind filter (D-10, D-35, D-42)
+- [ ] 07-11-saved-report-templates-PLAN.md — report_template schema + CRUD + Templates dropdown + Save dialog (Surface 6, D-14, D-15, D-39)
+- [ ] 07-12-compare-view-PLAN.md — Side-by-side comparison view (Surface 5, D-16, D-37, D-38)
+- [ ] 07-13-bulk-gateway-import-PLAN.md — CSV bulk gateway import reusing Phase 3 pattern (Surface 7, D-17)
+- [ ] 07-14-doctor-probes-and-phase-closure-PLAN.md — probe-chirpstack/probe-timescale/probe-region + /health/detailed + Playwright + REQUIREMENTS/VALIDATION/RETROSPECTIVE reconciliation (D-12, D-13, D-40)
+
 **UI hint**: yes
 
 ## Phase Dependencies
@@ -285,7 +302,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
-| 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
+| 7. Multi-Vendor Breadth & v1.x Differentiators | 1/16 | In Progress|  |
 
 ## Coverage Summary
 
