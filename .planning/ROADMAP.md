@@ -302,7 +302,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
-| 7. Multi-Vendor Breadth & v1.x Differentiators | 4/16 | In Progress|  |
+| 7. Multi-Vendor Breadth & v1.x Differentiators | 5/16 | In Progress|  |
 
 ## Coverage Summary
 
