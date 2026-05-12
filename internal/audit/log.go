@@ -105,6 +105,66 @@ const (
 	EntityTypeRetention = "retention_config"
 )
 
+// Phase 6 — Plan 06-01: auth-event audit retrofit (D-30; operator-visible only).
+// These strings MUST exactly mirror the CHECK literals in
+// migration 0037_audit_vocab_phase6.up.sql — any drift = 23514 at write.
+const (
+	ActionAuthLoginSuccess         = "auth.login_success"
+	ActionAuthLoginFailed          = "auth.login_failed"
+	ActionAuthLogout               = "auth.logout"
+	ActionAuthPasswordChange       = "auth.password_change"
+	ActionAuthPasswordResetByAdmin = "auth.password_reset_by_admin"
+	ActionAuthSessionRevoked       = "auth.session_revoked"
+)
+
+// Phase 6 — Plan 06-01: user management (D-30).
+const (
+	ActionUserCreate     = "user.create"
+	ActionUserUpdate     = "user.update"
+	ActionUserDisable    = "user.disable"
+	ActionUserEnable     = "user.enable"
+	ActionUserRoleChange = "user.role_change"
+)
+
+// Phase 6 — Plan 06-01: alert rule + alert lifecycle audit vocabulary.
+// alert.acknowledged / alert.snoozed / alert.muted intentionally past-tense
+// for symmetry with alert.fired / alert.cleared.
+const (
+	ActionAlertRuleCreate  = "alert.rule_create"
+	ActionAlertRuleUpdate  = "alert.rule_update"
+	ActionAlertRuleDisable = "alert.rule_disable"
+	ActionAlertRuleEnable  = "alert.rule_enable"
+	ActionAlertFired       = "alert.fired"
+	ActionAlertCleared     = "alert.cleared"
+	ActionAlertAcked       = "alert.acknowledged"
+	ActionAlertSnoozed     = "alert.snoozed"
+	ActionAlertMuted       = "alert.muted"
+	ActionAlertTestFired   = "alert.test_fired"
+)
+
+// Phase 6 — Plan 06-01: backup verbs (Plan 06-08 / 06-09 consume) + audit
+// prune (D-51 — Plan 06-01 consumes) + audit export (D-35 — Plan 06-07).
+const (
+	ActionBackupStart    = "backup.start"
+	ActionBackupComplete = "backup.complete"
+	ActionBackupFailed   = "backup.failed"
+	ActionBackupRestore  = "backup.restore"
+	ActionAuditPrune     = "audit.prune"
+	ActionAuditExport    = "audit.export"
+)
+
+// Phase 6 — Plan 06-01: new entity types (mirrors 0037 CHECK literals).
+// EntityTypeAuditLog is reserved for the D-51 audit.prune meta-row whose
+// entity_id self-references the meta-row's own UUID.
+const (
+	EntityTypeUser      = "user"
+	EntityTypeSession   = "session"
+	EntityTypeAlertRule = "alert_rule"
+	EntityTypeAlert     = "alert"
+	EntityTypeBackupRun = "backup_run"
+	EntityTypeAuditLog  = "audit_log"
+)
+
 // Entry is the value-shape callers fill in when calling WriteEntry. It maps
 // 1:1 onto the audit_log columns minus the DB-defaulted id + time. The 8
 // caller-provided columns (D-22) plus the txn handle make audit calls

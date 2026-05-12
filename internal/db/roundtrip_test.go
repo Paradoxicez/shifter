@@ -52,15 +52,15 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 36 (Plan 05-11 bumped from 35:
-	// 0036 audit_vocab_retention — settings.retention_change vocab).
+	// Reapply. Should succeed back up to 37 (Plan 06-01 bumped from 36:
+	// 0037 audit_vocab_phase6 — Phase 6 alert/user/audit/backup vocab).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(36), v)
+	require.Equal(t, uint(37), v)
 
 	// Verify seeds re-inserted after the round-trip.
 	var n int
