@@ -351,6 +351,36 @@ func (s *Store) CountActiveAdminsExcluding(ctx context.Context, tx pgx.Tx, exclu
 	return n, nil
 }
 
+// GetUserByEmailTx loads a user by email inside the caller's transaction.
+// Same semantics as GetUserByEmail (returns ErrUserNotFound for disabled users)
+// but uses tx.QueryRow so the lookup is part of the caller's atomic envelope.
+// Added by Plan 06-06 for the audit-in-tx login retrofit (D-30).
+func (s *Store) GetUserByEmailTx(ctx context.Context, tx pgx.Tx, email string) (*UserRecord, error) {
+	row := tx.QueryRow(ctx,
+		`SELECT id::text, email, name, password_hash, role::text, must_change_password
+           FROM "user" WHERE email = $1 AND disabled_at IS NULL`, email)
+	var u UserRecord
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.Role, &u.MustChangePassword); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("get user by email tx: %w", err)
+	}
+	return &u, nil
+}
+
+// UpdateLastLoginAtTx sets user.last_login_at = now() inside the caller's tx.
+// Called by the LoginHandler immediately before commit so a successful login
+// is atomically reflected in the user's last_login_at + audit_log.
+// Added by Plan 06-06 (D-30 auth-event audit retrofit).
+func (s *Store) UpdateLastLoginAtTx(ctx context.Context, tx pgx.Tx, userID string) error {
+	_, err := tx.Exec(ctx, `UPDATE "user" SET last_login_at = now() WHERE id = $1::uuid`, userID)
+	if err != nil {
+		return fmt.Errorf("update last_login_at: %w", err)
+	}
+	return nil
+}
+
 // isUniqueViolation reports whether err is a Postgres 23505 unique violation.
 // Used by CreateTx to surface ErrDuplicateEmail instead of a generic wrap.
 func isUniqueViolation(err error) bool {

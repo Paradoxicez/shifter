@@ -236,7 +236,7 @@ func NewRouter(deps Deps) http.Handler {
 		Log:          deps.Log,
 	}
 	r.Post("/api/auth/login", auth.LoginHandler(loginDeps))
-	r.Post("/api/auth/logout", auth.LogoutHandler(deps.SessionMgr))
+	r.Post("/api/auth/logout", auth.LogoutHandlerWithAudit(deps.SessionMgr, deps.UserStore))
 
 	// Account — every authenticated user (admin + viewer) can read /me and
 	// rotate their own password.

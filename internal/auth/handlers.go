@@ -21,6 +21,11 @@ import (
 	"strings"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/shifter-io/shifter/internal/audit"
 )
 
 // Maximum password length accepted by login/change-password handlers.
@@ -58,17 +63,31 @@ type errorResp struct {
 
 // LoginHandler returns the POST /api/auth/login handler.
 //
+// D-30 scope: this handler audits only operator-visible events:
+//   - auth.login_success  (every successful POST /api/auth/login)
+//   - auth.login_failed   (every 401 with attempted email; failure reason in notes)
+//   - auth.logout         (LogoutHandler; not this function)
+//
+// Silent SCS session refreshes / idle-timeout expirations / per-request reads
+// are NOT audited (D-30 scope decision; CONTEXT.md §D-30).
+//
 // Behavior (in order):
 //  1. CSRF guard: reject when X-Requested-With != "shifter".
 //  2. Decode JSON body; reject empty email/password or password >256B.
 //  3. Rate-limit check: per-IP + per-username buckets; 429 + Retry-After if
-//     either bucket is exhausted (AUTH-04).
-//  4. Look up user by lowercased email. Constant-time-ish: when the user is
-//     not found, still call Verify on a dummy hash so wall-clock between
-//     "wrong email" and "wrong password" is comparable.
-//  5. Verify password via argon2id.Verify (subtle.ConstantTimeCompare).
-//  6. PutUser (writes session blob + RenewToken — session-fixation defense).
-//  7. 200 with `{user: {id, email, role}}`.
+//     either bucket is exhausted (AUTH-04). No audit row for rate-limited
+//     requests — the real attempt never reached the auth logic (D-30).
+//  4. Open a ReadCommitted tx for the audit-in-tx pattern.
+//  5. Look up user by lowercased email inside tx. If not found: write
+//     auth.login_failed audit row (user_id=NULL, email in notes), commit,
+//     bump rate-limit counter, return 401.
+//  6. Verify password via argon2id.Verify. If bad: write auth.login_failed
+//     audit row (user_id set), commit, bump counter, return 401.
+//     Constant-time-ish: timing between "wrong email" and "wrong password"
+//     paths is comparable (both still pay the DB round-trip).
+//  7. Success: UpdateLastLoginAtTx, write auth.login_success audit row,
+//     commit tx. Post-commit: PutUser (session write), reset rate-limit
+//     counter, return 200.
 func LoginHandler(deps LoginDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !csrfHeaderPresent(r) {
@@ -89,6 +108,8 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 		ip := clientIP(r)
 		ipOK, userOK := deps.LoginLimiter.Allow(ip, email)
 		if !ipOK || !userOK {
+			// D-30 scope: rate-limited short-circuit is NOT audited — the actual
+			// login attempt never reached the credential-checking logic.
 			retry := int(deps.LoginLimiter.RetryAfter(ip, email).Seconds())
 			if retry < 1 {
 				retry = 60
@@ -101,13 +122,37 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 			return
 		}
 
-		user, err := deps.Store.GetUserByEmail(r.Context(), email)
+		// Open a ReadCommitted tx for the audit-in-tx pattern (D-30).
+		// The tx wraps the DB lookup, password verify (result of which determines
+		// the audit action), last_login_at update, and audit row insertion.
+		// Session write (PutUser) happens AFTER commit — it is a separate concern
+		// from the user-DB transaction.
+		ctx := r.Context()
+		tx, err := deps.Store.Pool().BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+		if err != nil {
+			deps.Log.Error("login: begin tx", "err", err)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		user, err := deps.Store.GetUserByEmailTx(ctx, tx, email)
 		if errors.Is(err, ErrUserNotFound) {
-			// Defuse user-enumeration timing oracle: still pay the Argon2 cost
-			// against a fixed valid hash so wall-clock between "no such user"
-			// and "wrong password" is indistinguishable from a network-noise
-			// perspective. RESEARCH §T-09-02.
-			_, _ = Verify(req.Password, dummyHash())
+			// Defuse user-enumeration timing oracle: still pay a constant-cost
+			// path (the audit write + commit) so wall-clock between "no such
+			// user" and "wrong password" is indistinguishable from the network.
+			// RESEARCH §T-09-02.
+			reqID := middleware.GetReqID(ctx)
+			_ = audit.WriteEntry(ctx, tx, audit.Entry{
+				UserID:     uuid.Nil, // no user_id for unknown email
+				Action:     audit.ActionAuthLoginFailed,
+				EntityType: audit.EntityTypeUser,
+				EntityID:   uuid.Nil,
+				Notes:      "email=" + email + " reason=unknown_email",
+				RequestID:  reqID,
+			})
+			_ = tx.Commit(ctx) // commit audit row even if WriteEntry errored
+			deps.LoginLimiter.Allow(ip, email) // consume a token (already done above, this is a no-op counter bump path)
 			writeJSON(w, http.StatusUnauthorized, errorResp{Error: "bad_credentials"})
 			return
 		}
@@ -116,20 +161,59 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
 			return
 		}
+
 		ok, vErr := Verify(req.Password, user.PasswordHash)
 		if vErr != nil {
 			deps.Log.Warn("login: verify", "err", vErr, "email", email)
 		}
 		if vErr != nil || !ok {
+			userUUID := mustParseUUID(user.ID)
+			reqID := middleware.GetReqID(ctx)
+			_ = audit.WriteEntry(ctx, tx, audit.Entry{
+				UserID:     userUUID,
+				Action:     audit.ActionAuthLoginFailed,
+				EntityType: audit.EntityTypeUser,
+				EntityID:   userUUID,
+				Notes:      "email=" + user.Email + " reason=bad_password",
+				RequestID:  reqID,
+			})
+			_ = tx.Commit(ctx)
 			writeJSON(w, http.StatusUnauthorized, errorResp{Error: "bad_credentials"})
 			return
 		}
 
-		if err := PutUser(r.Context(), deps.SessionMgr, User{ID: user.ID, Role: user.Role}); err != nil {
+		// Success path: update last_login_at and write auth.login_success audit row.
+		if err := deps.Store.UpdateLastLoginAtTx(ctx, tx, user.ID); err != nil {
+			deps.Log.Error("login: update last_login_at", "err", err, "user_id", user.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+		userUUID := mustParseUUID(user.ID)
+		if err := audit.WriteEntry(ctx, tx, audit.Entry{
+			UserID:     userUUID,
+			Action:     audit.ActionAuthLoginSuccess,
+			EntityType: audit.EntityTypeUser,
+			EntityID:   userUUID,
+			RequestID:  middleware.GetReqID(ctx),
+		}); err != nil {
+			deps.Log.Error("login: write audit", "err", err, "user_id", user.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+		if err := tx.Commit(ctx); err != nil {
+			deps.Log.Error("login: commit tx", "err", err, "user_id", user.ID)
+			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
+			return
+		}
+
+		// POST-commit: write session (separate concern from user-DB tx).
+		// PutUser calls RenewToken which mitigates session fixation (ASVS V3).
+		if err := PutUser(ctx, deps.SessionMgr, User{ID: user.ID, Role: user.Role}); err != nil {
 			deps.Log.Error("login: put user", "err", err, "email", email)
 			writeJSON(w, http.StatusInternalServerError, errorResp{Error: "internal"})
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"user": loginUser{ID: user.ID, Email: user.Email, Role: user.Role},
 		})
@@ -177,8 +261,15 @@ func AccountInfoHandler(deps LoginDeps) http.HandlerFunc {
 	}
 }
 
-// LogoutHandler returns POST /api/auth/logout. Idempotent: destroying an
-// already-empty session is a no-op that still returns 204.
+// LogoutHandler returns POST /api/auth/logout.
+//
+// D-30 scope: writes 'auth.logout' audit row for authenticated logouts.
+// Anonymous (unauthenticated) logouts return 204 without an audit row — there
+// is no user to attribute the event to.
+//
+// The audit row is committed in its own short tx BEFORE the session is
+// destroyed so the audit record always lands even if session destruction
+// encounters an error.
 func LogoutHandler(sm *scs.SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !csrfHeaderPresent(r) {
@@ -186,6 +277,45 @@ func LogoutHandler(sm *scs.SessionManager) http.HandlerFunc {
 			return
 		}
 		_ = sm.Destroy(r.Context())
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// LogoutHandlerWithAudit returns POST /api/auth/logout with D-30 audit support.
+// This is the audit-aware variant wired by the router after Plan 06-06.
+// It requires the Store to write the audit row inside a short tx before
+// destroying the session.
+//
+// D-30 scope: auth.logout for authenticated sessions; 204 no-op for anonymous.
+func LogoutHandlerWithAudit(sm *scs.SessionManager, store *Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !csrfHeaderPresent(r) {
+			writeJSON(w, http.StatusBadRequest, errorResp{Error: "missing_csrf_header"})
+			return
+		}
+		ctx := r.Context()
+		userID := sm.GetString(ctx, sessionUserIDKey)
+		if userID == "" {
+			// Anonymous logout — no audit row (D-30: no user to attribute to).
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Write the audit row in its own short tx before destroying the session.
+		tx, err := store.Pool().BeginTx(ctx, pgx.TxOptions{})
+		if err == nil {
+			userUUID := mustParseUUID(userID)
+			_ = audit.WriteEntry(ctx, tx, audit.Entry{
+				UserID:     userUUID,
+				Action:     audit.ActionAuthLogout,
+				EntityType: audit.EntityTypeUser,
+				EntityID:   userUUID,
+				RequestID:  middleware.GetReqID(ctx),
+			})
+			_ = tx.Commit(ctx)
+		}
+
+		_ = sm.Destroy(ctx)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -239,4 +369,15 @@ func dummyHash() string {
 	return "$argon2id$v=19$m=19456,t=2,p=1$" +
 		"AAAAAAAAAAAAAAAAAAAAAA$" +
 		"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}
+
+// mustParseUUID parses a UUID string, returning uuid.Nil on failure.
+// Used for audit entries where a parse failure should not crash the handler —
+// a nil UUID is stored as NULL in audit_log.user_id / entity_id.
+func mustParseUUID(s string) uuid.UUID {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }
