@@ -7,14 +7,29 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getRetentionConfig = `-- name: GetRetentionConfig :one
 
-SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days, updated_at
+SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
+       alerts_days, audit_log_days, updated_at
 FROM retention_config
 WHERE id = 1
 `
+
+type GetRetentionConfigRow struct {
+	ID           int32
+	RawDays      int32
+	HourlyDays   int32
+	DailyDays    int32
+	MonthlyDays  int32
+	YearlyDays   *int32
+	AlertsDays   int32
+	AuditLogDays int32
+	UpdatedAt    pgtype.Timestamptz
+}
 
 // internal/db/queries/settings.sql
 // Retention configuration queries (DATA-13 / D-09 / Plan 05-11).
@@ -25,9 +40,16 @@ WHERE id = 1
 // Returns the singleton retention configuration row (id=1).
 // Called by both GET /api/settings/retention (read) and the PATCH handler
 // (to snapshot before-state for the audit diff).
-func (q *Queries) GetRetentionConfig(ctx context.Context) (RetentionConfig, error) {
+//
+// Phase 6 Plan 06-02 schema-bridge fix: explicitly enumerate every column
+// so that adding new columns (alerts_days / audit_log_days from 0040,
+// future v2 fields) keeps the sqlc-generated row type aligned with the
+// table type. sqlc emits the canonical `RetentionConfig` struct when the
+// SELECT column set matches the table 1:1; otherwise it generates a
+// per-query row alias that breaks downstream code expecting the table type.
+func (q *Queries) GetRetentionConfig(ctx context.Context) (GetRetentionConfigRow, error) {
 	row := q.db.QueryRow(ctx, getRetentionConfig)
-	var i RetentionConfig
+	var i GetRetentionConfigRow
 	err := row.Scan(
 		&i.ID,
 		&i.RawDays,
@@ -35,6 +57,8 @@ func (q *Queries) GetRetentionConfig(ctx context.Context) (RetentionConfig, erro
 		&i.DailyDays,
 		&i.MonthlyDays,
 		&i.YearlyDays,
+		&i.AlertsDays,
+		&i.AuditLogDays,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -49,7 +73,8 @@ SET raw_days     = COALESCE($1::integer, raw_days),
     yearly_days  = $5::integer,
     updated_at   = now()
 WHERE id = 1
-RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days, updated_at
+RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
+          alerts_days, audit_log_days, updated_at
 `
 
 type UpdateRetentionConfigParams struct {
@@ -60,6 +85,18 @@ type UpdateRetentionConfigParams struct {
 	YearlyDays  *int32
 }
 
+type UpdateRetentionConfigRow struct {
+	ID           int32
+	RawDays      int32
+	HourlyDays   int32
+	DailyDays    int32
+	MonthlyDays  int32
+	YearlyDays   *int32
+	AlertsDays   int32
+	AuditLogDays int32
+	UpdatedAt    pgtype.Timestamptz
+}
+
 // Partial update via COALESCE: only fields whose $N is non-NULL are changed.
 // yearly_days is NOT wrapped in COALESCE — the handler passes the resolved
 // value explicitly (including NULL to express "forever"), using a sentinel
@@ -68,7 +105,7 @@ type UpdateRetentionConfigParams struct {
 //
 // $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
 // the existing value. $5 yearly_days is always explicit (nil = forever).
-func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (RetentionConfig, error) {
+func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (UpdateRetentionConfigRow, error) {
 	row := q.db.QueryRow(ctx, updateRetentionConfig,
 		arg.RawDays,
 		arg.HourlyDays,
@@ -76,7 +113,7 @@ func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetention
 		arg.MonthlyDays,
 		arg.YearlyDays,
 	)
-	var i RetentionConfig
+	var i UpdateRetentionConfigRow
 	err := row.Scan(
 		&i.ID,
 		&i.RawDays,
@@ -84,6 +121,8 @@ func (q *Queries) UpdateRetentionConfig(ctx context.Context, arg UpdateRetention
 		&i.DailyDays,
 		&i.MonthlyDays,
 		&i.YearlyDays,
+		&i.AlertsDays,
+		&i.AuditLogDays,
 		&i.UpdatedAt,
 	)
 	return i, err

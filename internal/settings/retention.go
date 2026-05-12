@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shifter-io/shifter/internal/audit"
@@ -27,6 +28,39 @@ import (
 type Deps struct {
 	Pool    *pgxpool.Pool
 	Queries *sqlc.Queries
+}
+
+// retentionSnapshot is the local subset of retention_config columns the
+// handler + reconciler + audit-diff helpers need. sqlc v1.31 emits a
+// per-query Row type for GetRetentionConfig + UpdateRetentionConfig (the
+// SELECT list no longer matches the full table after migration 0040 added
+// alerts_days / audit_log_days, even though we now select those too —
+// the row alias is sticky for stability). Converting the sqlc rows into
+// this local snapshot in ONE place keeps every other caller stable.
+type retentionSnapshot struct {
+	ID          int32
+	RawDays     int32
+	HourlyDays  int32
+	DailyDays   int32
+	MonthlyDays int32
+	YearlyDays  *int32
+	UpdatedAt   pgtype.Timestamptz
+}
+
+func fromGetRow(r sqlc.GetRetentionConfigRow) retentionSnapshot {
+	return retentionSnapshot{
+		ID: r.ID, RawDays: r.RawDays, HourlyDays: r.HourlyDays,
+		DailyDays: r.DailyDays, MonthlyDays: r.MonthlyDays,
+		YearlyDays: r.YearlyDays, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func fromUpdateRow(r sqlc.UpdateRetentionConfigRow) retentionSnapshot {
+	return retentionSnapshot{
+		ID: r.ID, RawDays: r.RawDays, HourlyDays: r.HourlyDays,
+		DailyDays: r.DailyDays, MonthlyDays: r.MonthlyDays,
+		YearlyDays: r.YearlyDays, UpdatedAt: r.UpdatedAt,
+	}
 }
 
 // RetentionResponse is the wire shape for GET /api/settings/retention.
@@ -62,7 +96,7 @@ func GetHandler(deps Deps) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "load_failed")
 			return
 		}
-		writeJSON(w, http.StatusOK, toResponse(cfg))
+		writeJSON(w, http.StatusOK, toResponse(fromGetRow(cfg)))
 	}
 }
 
@@ -104,11 +138,12 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 		q := deps.Queries.WithTx(tx)
 
 		// Snapshot before-state for audit diff.
-		before, err := q.GetRetentionConfig(r.Context())
+		beforeRow, err := q.GetRetentionConfig(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "load_failed")
 			return
 		}
+		before := fromGetRow(beforeRow)
 
 		// Resolve yearly_days using the sentinel protocol (see doc.go):
 		//   yearly_forever=true  → NULL (forever)
@@ -116,7 +151,7 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 		//   neither present      → keep existing value
 		yearlyDays := resolveYearly(patch, before.YearlyDays)
 
-		updated, err := q.UpdateRetentionConfig(r.Context(), sqlc.UpdateRetentionConfigParams{
+		updatedRow, err := q.UpdateRetentionConfig(r.Context(), sqlc.UpdateRetentionConfigParams{
 			RawDays:     patch.RawDays,
 			HourlyDays:  patch.HourlyDays,
 			DailyDays:   patch.DailyDays,
@@ -127,6 +162,7 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "update_failed")
 			return
 		}
+		updated := fromUpdateRow(updatedRow)
 
 		// Same-tx policy reconciliation: remove + re-add TimescaleDB retention
 		// policies for every level that changed. If any policy call fails, the
@@ -171,7 +207,7 @@ func PatchHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
 // specifically the banned "github.com/lib/pq" pq.QuoteLiteral). The interval
 // value is bound via pgx parameter binding ($1) so the integer day count
 // cannot inject anything.
-func ReconcilePolicies(ctx context.Context, tx pgx.Tx, before, after sqlc.RetentionConfig) error {
+func ReconcilePolicies(ctx context.Context, tx pgx.Tx, before, after retentionSnapshot) error {
 	type level struct {
 		name   string
 		before *int32
@@ -267,7 +303,7 @@ func resolveYearly(patch RetentionPatch, current *int32) *int32 {
 
 // diffFields returns before/after maps containing only fields that changed.
 // Used for the audit entry (D-24 changed-fields diff).
-func diffFields(before, after sqlc.RetentionConfig) (beforeMap, afterMap map[string]any) {
+func diffFields(before, after retentionSnapshot) (beforeMap, afterMap map[string]any) {
 	beforeMap = make(map[string]any)
 	afterMap = make(map[string]any)
 
@@ -294,8 +330,8 @@ func diffFields(before, after sqlc.RetentionConfig) (beforeMap, afterMap map[str
 	return beforeMap, afterMap
 }
 
-// toResponse converts a sqlc.RetentionConfig to the wire response shape.
-func toResponse(cfg sqlc.RetentionConfig) RetentionResponse {
+// toResponse converts a retentionSnapshot to the wire response shape.
+func toResponse(cfg retentionSnapshot) RetentionResponse {
 	return RetentionResponse{
 		RawDays:     cfg.RawDays,
 		HourlyDays:  cfg.HourlyDays,

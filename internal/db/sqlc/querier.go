@@ -290,11 +290,29 @@ type Querier interface {
 	GetImportJobByID(ctx context.Context, id pgtype.UUID) (ImportJob, error)
 	// External-facing lookup (paths use the publicly-shared job_id UUID).
 	GetImportJobByJobID(ctx context.Context, jobID pgtype.UUID) (ImportJob, error)
+	// One-shot read at the top of every eval cycle; the workers cache the
+	// result locally for the cycle's per-fire payload assembly.
+	GetInstallDisplayName(ctx context.Context) (string, error)
 	GetInstallIdentity(ctx context.Context) (InstallIdentity, error)
+	// ThresholdDailyWorker reads the most-recent 1-day bucket from the
+	// measurement_daily continuous aggregate (0026). cumulative_delta is the
+	// day's total consumption — the breach metric for "daily total > N".
+	GetLatestDailyForMP(ctx context.Context, meteringPointID pgtype.UUID) (GetLatestDailyForMPRow, error)
+	// ThresholdHourlyWorker reads the most-recent 1-hour bucket from the
+	// measurement_hourly continuous aggregate (0025). avg_instant is what the
+	// rule's bound is compared against (a meter "averaged above threshold"
+	// semantic) — sum_consumption is reported in the payload but is not the
+	// breach metric.
+	GetLatestHourlyForMP(ctx context.Context, meteringPointID pgtype.UUID) (GetLatestHourlyForMPRow, error)
 	// Plan 02-08 MP detail page header card "Last reading at <time>". The
 	// (metering_point_id, time DESC) hot-path index makes this an index scan +
 	// LIMIT 1 — fast even on a 1B-row hypertable (chunk pruning by MP).
 	GetLatestMeasurement(ctx context.Context, meteringPointID pgtype.UUID) (Measurement, error)
+	// ThresholdInstantaneousWorker pulls the most-recent uplink and compares
+	// instant_value against the rule's bound(s). The (metering_point_id,
+	// time DESC) hot-path index on `measurement` (0015) makes this an
+	// index scan + LIMIT 1.
+	GetLatestMeasurementForMP(ctx context.Context, meteringPointID pgtype.UUID) (GetLatestMeasurementForMPRow, error)
 	GetMP(ctx context.Context, id pgtype.UUID) (MeteringPoint, error)
 	// MP detail page (Plan 02-08): shows "currently bound device + reading offset".
 	// LEFT JOINs return NULL for binding/device/profile columns when no active
@@ -316,6 +334,9 @@ type Querier interface {
 	// All bindings/measurements are LEFT JOINs so D-22 (no binding / no uplinks) returns the MP row.
 	// $1 = mp_id
 	GetMeteringPointDetail(ctx context.Context, id pgtype.UUID) (GetMeteringPointDetailRow, error)
+	// expandScope() helper for metering_point-scoped rules: load the MP label
+	// so the payload's target.label field is populated for the alert center.
+	GetMeteringPointLabel(ctx context.Context, id pgtype.UUID) (GetMeteringPointLabelRow, error)
 	// Plan 15 reentrant wizard: GET /api/install/state returns the singleton row,
 	// creating it on first call.
 	GetOrCreateInstallState(ctx context.Context) (InstallState, error)
@@ -330,7 +351,14 @@ type Querier interface {
 	// Returns the singleton retention configuration row (id=1).
 	// Called by both GET /api/settings/retention (read) and the PATCH handler
 	// (to snapshot before-state for the audit diff).
-	GetRetentionConfig(ctx context.Context) (RetentionConfig, error)
+	//
+	// Phase 6 Plan 06-02 schema-bridge fix: explicitly enumerate every column
+	// so that adding new columns (alerts_days / audit_log_days from 0040,
+	// future v2 fields) keeps the sqlc-generated row type aligned with the
+	// table type. sqlc emits the canonical `RetentionConfig` struct when the
+	// SELECT column set matches the table 1:1; otherwise it generates a
+	// per-query row alias that breaks downstream code expecting the table type.
+	GetRetentionConfig(ctx context.Context) (GetRetentionConfigRow, error)
 	GetSite(ctx context.Context, id pgtype.UUID) (Site, error)
 	// Plan 09 (login). Email must already be lower()'d by the caller — the
 	// 0002_users CHECK enforces it but we don't want to lose the index hit.
@@ -354,6 +382,8 @@ type Querier interface {
 	ListActiveMPs(ctx context.Context) ([]MeteringPoint, error)
 	// Site list page (D-20). archived_at IS NULL filter hits the partial index.
 	ListActiveSites(ctx context.Context) ([]Site, error)
+	// expandScope() helper for global-scoped rules.
+	ListAllActiveMeteringPoints(ctx context.Context) ([]ListAllActiveMeteringPointsRow, error)
 	ListArchivedMPs(ctx context.Context) ([]MeteringPoint, error)
 	// Archive view (D-20) — sorted most-recently-archived first so admins see
 	// their last action at the top.
@@ -417,6 +447,13 @@ type Querier interface {
 	// D-32 "Show archived" toggle. archived rows sorted by archived_at DESC
 	// first, then active rows by created_at DESC.
 	ListGatewaysIncludingArchived(ctx context.Context, arg ListGatewaysIncludingArchivedParams) ([]Gateway, error)
+	// D-15 hysteresis: devices currently 'firing' an offline alert whose
+	// last_uplink is back inside 2× expected_interval — those clear.
+	//
+	// Compared to D-15's STRICTER fire threshold (3×), the clear threshold is
+	// LOOSER (<2×) so a device that just barely recovered does not immediately
+	// re-fire on the next cycle if its uplinks bounce back into the 2×–3× band.
+	ListHysteresisClearOffline(ctx context.Context) ([]ListHysteresisClearOfflineRow, error)
 	// Used by errors.xlsx generator. Returns only invalid + failed rows so the
 	// operator gets back the cells that need fixing plus the reason.
 	ListImportJobErrorRows(ctx context.Context, importJobID pgtype.UUID) ([]ImportJobRow, error)
@@ -432,8 +469,32 @@ type Querier interface {
 	// deterministic mapping pass order — required when a later mapping references
 	// a value materialized by an earlier one.
 	ListMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) ([]DeviceProfileMapping, error)
+	// expandScope() helper for site-scoped rules — returns MP ids + labels
+	// ordered for deterministic iteration in tests.
+	ListMeteringPointsBySite(ctx context.Context, siteID pgtype.UUID) ([]ListMeteringPointsBySiteRow, error)
 	// Returns metering points in scope (all / site / single) for the meter_rows table.
 	ListMetersInScope(ctx context.Context, arg ListMetersInScopeParams) ([]ListMetersInScopeRow, error)
+	// Alerts — Phase 6 Plan 06-02 threshold + offline evaluator queries.
+	//
+	// D-12 payload shape is built in Go (internal/alert/payload.go) — these
+	// queries are the data sources the workers feed into BuildPayload.
+	//
+	// Schema note (06-02 Rule 3 deviation): the Phase 2 schema names columns
+	// differently than the 06-RESEARCH SQL did — these queries use the actual
+	// column names (`device.name` not `device.label`, `device.last_seen_at`
+	// not `last_uplink_at`, `device.device_profile_id` not `profile_id`,
+	// `device.decommissioned_at` not `disabled_at`). Migration 0045 added
+	// `device.gateway_id` + `gateway.last_seen_at` to satisfy ALERT-03.
+	// D-15 + D-14: returns device-offline candidates AND a gateway-offline flag
+	// per-row. Worker uses the flag to suppress device alerts behind downed
+	// gateways and to emit a single gateway-offline alert.
+	//
+	// The single LEFT JOIN keeps this an O(active-devices) query — without it
+	// the worker would N+1-fetch gateway last_seen_at per row. The boolean
+	// expression for gateway_offline mirrors D-15's 3× threshold (i.e. a
+	// gateway is "offline" when it has been silent for 3 × the device's
+	// expected interval — same yardstick the device uses).
+	ListOfflineDevicesWithGatewayStatus(ctx context.Context) ([]ListOfflineDevicesWithGatewayStatusRow, error)
 	// Returns placements joined with the device + device_profile data needed for
 	// client-side D-22 health computation (state colors) without a follow-up call.
 	// battery_pct and rssi come from the latest measurement row for the active
@@ -634,7 +695,7 @@ type Querier interface {
 	//
 	// $1..4 are nullable integers (sqlc maps *int32). Passing nil = COALESCE keeps
 	// the existing value. $5 yearly_days is always explicit (nil = forever).
-	UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (RetentionConfig, error)
+	UpdateRetentionConfig(ctx context.Context, arg UpdateRetentionConfigParams) (UpdateRetentionConfigRow, error)
 	// Plan 02-08 site edit dialog. parent_id intentionally NOT updatable here —
 	// moving a site between parents is a separate "reparent" flow with audit
 	// implications and is deferred to Phase 6.

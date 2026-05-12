@@ -61,7 +61,7 @@ const createDevice = `-- name: CreateDevice :one
 
 INSERT INTO device (dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at
+RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id
 `
 
 type CreateDeviceParams struct {
@@ -102,6 +102,7 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 		&i.DecommissionedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GatewayID,
 	)
 	return i, err
 }
@@ -109,7 +110,7 @@ func (q *Queries) CreateDevice(ctx context.Context, arg CreateDeviceParams) (Dev
 const decommissionDevice = `-- name: DecommissionDevice :one
 UPDATE device SET decommissioned_at = now()
 WHERE id = $1 AND decommissioned_at IS NULL
-RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at
+RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id
 `
 
 // D-15 decommission: marks the device retired. The active binding closure
@@ -131,12 +132,13 @@ func (q *Queries) DecommissionDevice(ctx context.Context, id pgtype.UUID) (Devic
 		&i.DecommissionedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GatewayID,
 	)
 	return i, err
 }
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at FROM device WHERE id = $1
+SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id FROM device WHERE id = $1
 `
 
 func (q *Queries) GetDevice(ctx context.Context, id pgtype.UUID) (Device, error) {
@@ -154,12 +156,13 @@ func (q *Queries) GetDevice(ctx context.Context, id pgtype.UUID) (Device, error)
 		&i.DecommissionedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GatewayID,
 	)
 	return i, err
 }
 
 const getDeviceByDevEUI = `-- name: GetDeviceByDevEUI :one
-SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at FROM device WHERE dev_eui = $1
+SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id FROM device WHERE dev_eui = $1
 `
 
 // Used by Plan 02-07 swap commit to find the incoming device by EUI before
@@ -180,12 +183,13 @@ func (q *Queries) GetDeviceByDevEUI(ctx context.Context, devEui string) (Device,
 		&i.DecommissionedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GatewayID,
 	)
 	return i, err
 }
 
 const listActiveDevices = `-- name: ListActiveDevices :many
-SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at FROM device
+SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id FROM device
 WHERE decommissioned_at IS NULL
 ORDER BY last_seen_at DESC NULLS LAST
 LIMIT $1 OFFSET $2
@@ -220,6 +224,7 @@ func (q *Queries) ListActiveDevices(ctx context.Context, arg ListActiveDevicesPa
 			&i.DecommissionedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GatewayID,
 		); err != nil {
 			return nil, err
 		}
@@ -232,7 +237,7 @@ func (q *Queries) ListActiveDevices(ctx context.Context, arg ListActiveDevicesPa
 }
 
 const listDevicesBySite = `-- name: ListDevicesBySite :many
-SELECT d.id, d.dev_eui, d.name, d.device_profile_id, d.cs_device_uuid, d.join_eui, d.description, d.last_seen_at, d.decommissioned_at, d.created_at, d.updated_at FROM device d
+SELECT d.id, d.dev_eui, d.name, d.device_profile_id, d.cs_device_uuid, d.join_eui, d.description, d.last_seen_at, d.decommissioned_at, d.created_at, d.updated_at, d.gateway_id FROM device d
 JOIN binding b ON b.device_id = d.id AND b.valid_to IS NULL
 JOIN metering_point mp ON mp.id = b.metering_point_id
 WHERE mp.site_id = $1 AND d.decommissioned_at IS NULL
@@ -264,6 +269,7 @@ func (q *Queries) ListDevicesBySite(ctx context.Context, siteID pgtype.UUID) ([]
 			&i.DecommissionedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GatewayID,
 		); err != nil {
 			return nil, err
 		}
@@ -419,7 +425,7 @@ func (q *Queries) ListDevicesFiltered(ctx context.Context, arg ListDevicesFilter
 }
 
 const searchDevices = `-- name: SearchDevices :many
-SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at FROM device
+SELECT id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id FROM device
 WHERE decommissioned_at IS NULL
   AND (name ILIKE '%' || $1 || '%' OR dev_eui ILIKE '%' || lower($1) || '%')
 ORDER BY last_seen_at DESC NULLS LAST
@@ -458,6 +464,7 @@ func (q *Queries) SearchDevices(ctx context.Context, arg SearchDevicesParams) ([
 			&i.DecommissionedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GatewayID,
 		); err != nil {
 			return nil, err
 		}
@@ -490,7 +497,7 @@ const updateDevice = `-- name: UpdateDevice :one
 UPDATE device SET
     name = $2, join_eui = $3, description = $4
 WHERE id = $1
-RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at
+RETURNING id, dev_eui, name, device_profile_id, cs_device_uuid, join_eui, description, last_seen_at, decommissioned_at, created_at, updated_at, gateway_id
 `
 
 type UpdateDeviceParams struct {
@@ -523,6 +530,7 @@ func (q *Queries) UpdateDevice(ctx context.Context, arg UpdateDeviceParams) (Dev
 		&i.DecommissionedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.GatewayID,
 	)
 	return i, err
 }

@@ -226,6 +226,68 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 	return string(ns.UserRole), nil
 }
 
+// Phase 6 D-08..D-12: fired alert lifecycle rows. payload JSONB is the v2-webhook-ready canonical shape from D-12.
+type Alert struct {
+	ID               pgtype.UUID
+	RuleID           pgtype.UUID
+	RuleKind         string
+	Severity         string
+	State            string
+	Payload          []byte
+	TargetEntityType string
+	TargetEntityID   pgtype.UUID
+	// D-19: synthetic test-fire alert. UI badges as TEST; auto-cleared after 60s.
+	IsTest       bool
+	FiredAt      pgtype.Timestamptz
+	ClearedAt    pgtype.Timestamptz
+	AckedAt      pgtype.Timestamptz
+	AckedBy      pgtype.UUID
+	AckNote      *string
+	SnoozedUntil pgtype.Timestamptz
+	SnoozedBy    pgtype.UUID
+	Muted        bool
+}
+
+// Phase 6 D-01..D-07 + D-17: persistent alert rule definitions. Soft-deletable via disabled_at; cooldown enforced in-engine via last_fired_at.
+type AlertRule struct {
+	ID               pgtype.UUID
+	RuleKind         string
+	ScopeKind        string
+	ScopeID          pgtype.UUID
+	HighBound        *float64
+	LowBound         *float64
+	Comparison       *string
+	Unit             *string
+	QuietWindowStart pgtype.Time
+	QuietWindowEnd   pgtype.Time
+	FlowThreshold    *float64
+	DaysOfWeek       *int32
+	Severity         string
+	Name             *string
+	Notes            *string
+	// D-05: per-rule cooldown window. Default 900s (15 min). Workers MUST gate on `last_fired_at + cooldown_seconds < now()` before raising a new fire.
+	CooldownSeconds int32
+	LastFiredAt     pgtype.Timestamptz
+	// D-04: soft delete. Disabled rules do not fire; existing fired-alert history stays queryable.
+	DisabledAt pgtype.Timestamptz
+	CreatedBy  pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+// Phase 6 D-21: one observability row per alert worker. UPSERTed at the end of every cycle; degraded flipped by the River subscriber in internal/alert/degraded.go.
+type AlertWorkerState struct {
+	WorkerKind     string
+	LastRunAt      pgtype.Timestamptz
+	RulesEvaluated int32
+	FiresEmitted   int32
+	Cleared        int32
+	DurationMs     int32
+	Degraded       bool
+	LastError      *string
+	UpdatedAt      pgtype.Timestamptz
+}
+
 type AuditLog struct {
 	ID         pgtype.UUID
 	Time       pgtype.Timestamptz
@@ -278,6 +340,7 @@ type Device struct {
 	DecommissionedAt pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	GatewayID        pgtype.UUID
 }
 
 type DeviceFloorPlanPlacement struct {
@@ -354,6 +417,7 @@ type Gateway struct {
 	ArchivedSnapshot []byte
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	LastSeenAt       pgtype.Timestamptz
 }
 
 type ImportJob struct {
@@ -532,6 +596,10 @@ type RetentionConfig struct {
 	// measurement_yearly retention. NULL = forever (D-09).
 	YearlyDays *int32
 	UpdatedAt  pgtype.Timestamptz
+	// D-13: alerts table retention. Default 365d (1 year). Settings UI exposes the slider in Plan 06-10.
+	AlertsDays int32
+	// D-38: audit_log retention. Default 1825d (5 years). Pruned via admin_prune_audit_rows() — see 0043.
+	AuditLogDays int32
 }
 
 type RiverClient struct {
@@ -626,4 +694,5 @@ type User struct {
 	DisabledAt         pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	LastLoginAt        pgtype.Timestamptz
 }

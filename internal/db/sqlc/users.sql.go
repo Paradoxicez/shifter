@@ -28,7 +28,7 @@ func (q *Queries) AdminExists(ctx context.Context) (bool, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, role, must_change_password, disabled_at, created_at, updated_at FROM "user"
+SELECT id, email, name, password_hash, role, must_change_password, disabled_at, created_at, updated_at, last_login_at FROM "user"
 WHERE email = $1
   AND disabled_at IS NULL
 `
@@ -48,6 +48,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastLoginAt,
 	)
 	return i, err
 }

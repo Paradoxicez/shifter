@@ -9,7 +9,15 @@
 -- Returns the singleton retention configuration row (id=1).
 -- Called by both GET /api/settings/retention (read) and the PATCH handler
 -- (to snapshot before-state for the audit diff).
-SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days, updated_at
+--
+-- Phase 6 Plan 06-02 schema-bridge fix: explicitly enumerate every column
+-- so that adding new columns (alerts_days / audit_log_days from 0040,
+-- future v2 fields) keeps the sqlc-generated row type aligned with the
+-- table type. sqlc emits the canonical `RetentionConfig` struct when the
+-- SELECT column set matches the table 1:1; otherwise it generates a
+-- per-query row alias that breaks downstream code expecting the table type.
+SELECT id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
+       alerts_days, audit_log_days, updated_at
 FROM retention_config
 WHERE id = 1;
 
@@ -30,4 +38,5 @@ SET raw_days     = COALESCE(sqlc.narg('raw_days')::integer, raw_days),
     yearly_days  = sqlc.narg('yearly_days')::integer,
     updated_at   = now()
 WHERE id = 1
-RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days, updated_at;
+RETURNING id, raw_days, hourly_days, daily_days, monthly_days, yearly_days,
+          alerts_days, audit_log_days, updated_at;

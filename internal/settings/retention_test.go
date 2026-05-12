@@ -268,10 +268,10 @@ func TestRetentionConfig_YearlyForever_RemovesPolicy(t *testing.T) {
 // defers tx.Rollback, a policy failure rolls back the config row change.
 // This unit-level test exercises the rollback guarantee without a real DB.
 func TestRetentionConfig_Rollback_OnPolicyFailure(t *testing.T) {
-	before := sqlc.RetentionConfig{
+	before := retentionSnapshot{
 		RawDays: 90, HourlyDays: 365, DailyDays: 1825, MonthlyDays: 7300,
 	}
-	after := sqlc.RetentionConfig{
+	after := retentionSnapshot{
 		RawDays: 60, HourlyDays: 365, DailyDays: 1825, MonthlyDays: 7300,
 	}
 

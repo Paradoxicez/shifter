@@ -14,7 +14,7 @@ import (
 const archiveGateway = `-- name: ArchiveGateway :one
 UPDATE gateway SET archived_at = now(), archived_reason = $2, archived_snapshot = $3
 WHERE id = $1 AND archived_at IS NULL
-RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at
+RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at
 `
 
 type ArchiveGatewayParams struct {
@@ -52,6 +52,7 @@ func (q *Queries) ArchiveGateway(ctx context.Context, arg ArchiveGatewayParams) 
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
@@ -71,7 +72,7 @@ const createGateway = `-- name: CreateGateway :one
 
 INSERT INTO gateway (gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at
+RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at
 `
 
 type CreateGatewayParams struct {
@@ -134,12 +135,13 @@ func (q *Queries) CreateGateway(ctx context.Context, arg CreateGatewayParams) (G
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const getGateway = `-- name: GetGateway :one
-SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at FROM gateway WHERE id = $1
+SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at FROM gateway WHERE id = $1
 `
 
 func (q *Queries) GetGateway(ctx context.Context, id pgtype.UUID) (Gateway, error) {
@@ -166,12 +168,13 @@ func (q *Queries) GetGateway(ctx context.Context, id pgtype.UUID) (Gateway, erro
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const getGatewayByGatewayID = `-- name: GetGatewayByGatewayID :one
-SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at FROM gateway WHERE gateway_id = $1
+SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at FROM gateway WHERE gateway_id = $1
 `
 
 // Lowercase EUI lookup (matches Phase 2 dev_eui pattern). Caller MUST pass
@@ -200,12 +203,13 @@ func (q *Queries) GetGatewayByGatewayID(ctx context.Context, gatewayID string) (
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
 
 const listGatewaysActive = `-- name: ListGatewaysActive :many
-SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at FROM gateway
+SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at FROM gateway
 WHERE archived_at IS NULL
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -251,6 +255,7 @@ func (q *Queries) ListGatewaysActive(ctx context.Context, arg ListGatewaysActive
 			&i.ArchivedSnapshot,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -263,7 +268,7 @@ func (q *Queries) ListGatewaysActive(ctx context.Context, arg ListGatewaysActive
 }
 
 const listGatewaysIncludingArchived = `-- name: ListGatewaysIncludingArchived :many
-SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at FROM gateway
+SELECT id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at FROM gateway
 ORDER BY archived_at DESC NULLS LAST, created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -305,6 +310,7 @@ func (q *Queries) ListGatewaysIncludingArchived(ctx context.Context, arg ListGat
 			&i.ArchivedSnapshot,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -319,7 +325,7 @@ func (q *Queries) ListGatewaysIncludingArchived(ctx context.Context, arg ListGat
 const restoreGateway = `-- name: RestoreGateway :one
 UPDATE gateway SET archived_at = NULL, archived_reason = NULL, archived_snapshot = NULL
 WHERE id = $1 AND archived_at IS NOT NULL
-RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at
+RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at
 `
 
 // Restore reads archived_snapshot and the handler calls
@@ -349,6 +355,7 @@ func (q *Queries) RestoreGateway(ctx context.Context, id pgtype.UUID) (Gateway, 
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
@@ -361,7 +368,7 @@ UPDATE gateway SET
     lat = $5, lng = $6, altitude = $7,
     tags = $8
 WHERE id = $1 AND archived_at IS NULL
-RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at
+RETURNING id, gateway_id, name, description, region, lat, lng, altitude, tags, cs_tenant_id, stats_refreshed_at, stats_rx_24h, stats_tx_24h, stats_tx_ok_24h, stats_sparkline, archived_at, archived_reason, archived_snapshot, created_at, updated_at, last_seen_at
 `
 
 type UpdateGatewayParams struct {
@@ -408,6 +415,7 @@ func (q *Queries) UpdateGateway(ctx context.Context, arg UpdateGatewayParams) (G
 		&i.ArchivedSnapshot,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
