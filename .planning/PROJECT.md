@@ -66,25 +66,30 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] D-25 decommission integration — soft-delete a device → placement removed in same transaction
 - [x] Floor-plan view + map → site → floor plan → device single-click drill-through (SITE-06)
 
+**Alerts, users, audit & operational hardening (Phase 6, 2026-05-12)**
+- [x] Threshold alerts (instantaneous, hourly, daily) with cooldown + idempotent firing + auto-clear hysteresis (ALERT-01)
+- [x] Device-offline alerts (3x interval fire / 2x interval clear) with gateway-down suppression rolled up to gateway-level (ALERT-02, ALERT-03)
+- [x] Anomaly / leak detection — P95, IQR, quiet-hour evaluators with 21-day cold-start gate (ALERT-04)
+- [x] In-app alert center — bell + badge, slide-over drawer, dedicated `/alerts` page with filter chips, ack/snooze/mute, MP-detail anomaly state card, shell degraded-worker banner (ALERT-05)
+- [x] Alert rules CRUD + test-fire from Settings → Alerts + MP detail + Site detail (ALERT-06)
+- [x] Admin can create / edit / disable users from inside the app — full Users tab with show-once password panel, last-admin guard, session-revoke on disable/role-change/reset (USER-01..04)
+- [x] Auth-event audit retrofit — login_success / login_failed / logout / password_change written in same tx as auth state change (AUDIT-01 deferred from Phase 2 closed)
+- [x] Audit log browse + CSV export — cursor-paginated filtered list, inline CSV ≤50k rows + async export worker for larger sets, admin-only (AUDIT-02, AUDIT-03)
+- [x] Settings page with workflow split into clear categories including Install Identity, ChirpStack, Data Retention (alerts + audit + telemetry), Backup Status, Restore Guidance (SETT-01, SETT-02, SETT-03, SETT-05)
+- [x] Operator-owned backup surface — `shifter backup` CLI + HTTP trigger + `mcuadros/ofelia:v0.3.22` cron sidecar in bundled compose, tar.gz with `pg_dump` + `manifest.json` (OPS-02, OPS-03)
+- [x] Restore CLI + CI round-trip — `shifter restore` with advisory lock + sha256 + TimescaleDB pre/post hooks; GitHub Actions workflow seeds, backs up, drops, restores, smoke-tests (OPS-04)
+- [x] Ops hardening — compose conventions lint test, `shifter doctor` support-diagnostic CLI with redaction, alerts retention prune worker, `/health/detailed` with alert_worker + last_backup rows, 3 operator-runbook sections (OPS-05, OPS-06, OPS-07, OPS-08)
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-**Identity & access (Phase 6 finishes admin-managed users)**
-- [ ] Admin can create / edit / disable users from inside the app
-
 **App behavior & feel**
 - [ ] All create / edit / delete flows happen in dialogs (modal-first interaction model)
-- [ ] Settings page with the workflow's settings split into clear categories
 - [ ] UI in English only
 - [ ] Mobile-responsive web (no native app in v1)
 - [ ] Modern minimal aesthetic in a blue color family, built on shadcn/ui and the shadcn ecosystem (charts, layout, blocks) for speed and visual consistency
 - [ ] The product should feel like Shifter — never like a re-skinned ChirpStack
-
-**Operational**
-- [ ] Threshold alerts (consumption above/below configured limits)
-- [ ] Anomaly / leak detection alerts (unusual consumption patterns)
-- [ ] Device-offline alerts
 
 ### Out of Scope
 
@@ -152,4 +157,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 — Phase 5 (aggregates, reports, map & floor plans) complete. 13/13 plans shipped including gap-closure plan 05-13 (router wiring + real capability gating + REQUIREMENTS evidence trail corrections); re-verification 20/20 must-haves passed. 19 requirements validated (SITE-02..06, MAP-01..04, REPT-01..07, DATA-11/12/13) plus SETT-04 migrated from Phase 6.*
+*Last updated: 2026-05-12 — Phase 6 (alerts, users, audit & operational hardening) complete. 12/12 plans shipped including gap-closure plan 06-12 (install identity GET/PATCH + mount); re-verification 25/25 must-haves passed. 24 requirements validated (ALERT-01..06, USER-01..04, AUDIT-02..03, SETT-01/02/03/05, OPS-02..08); AUDIT-01 deferred from Phase 2 also closed.*
