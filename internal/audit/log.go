@@ -81,6 +81,19 @@ const (
 	EntityTypeFloorPlan = "floor_plan"
 )
 
+// Phase 5 — Plan 05-07: placement CRUD audit constants. These strings MUST
+// exactly mirror the CHECK literals in migration 0035_audit_vocab_placement.up.sql.
+const (
+	ActionPlacementPin    = "placement.pin"
+	ActionPlacementNudge  = "placement.nudge"
+	ActionPlacementRemove = "placement.remove"
+)
+
+// Phase 5 placement entity type (mirrors 0035 CHECK literals).
+const (
+	EntityTypePlacement = "placement"
+)
+
 // Entry is the value-shape callers fill in when calling WriteEntry. It maps
 // 1:1 onto the audit_log columns minus the DB-defaulted id + time. The 8
 // caller-provided columns (D-22) plus the txn handle make audit calls

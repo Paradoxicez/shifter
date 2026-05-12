@@ -85,6 +85,34 @@ func (q *Queries) DeleteFloorPlan(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deletePlacementByDevice = `-- name: DeletePlacementByDevice :exec
+DELETE FROM device_floor_plan_placement WHERE device_id = $1
+`
+
+// Called by both right-click remove AND device decommission (D-25).
+func (q *Queries) DeletePlacementByDevice(ctx context.Context, deviceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePlacementByDevice, deviceID)
+	return err
+}
+
+const getDeviceSiteID = `-- name: GetDeviceSiteID :one
+SELECT mp.site_id
+FROM device d
+LEFT JOIN binding b ON b.device_id = d.id AND b.valid_to IS NULL
+LEFT JOIN metering_point mp ON mp.id = b.metering_point_id
+WHERE d.id = $1
+  AND d.decommissioned_at IS NULL
+`
+
+// Helper for the same-site integrity check: returns the device's site via
+// its active binding's metering_point.
+func (q *Queries) GetDeviceSiteID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getDeviceSiteID, id)
+	var site_id pgtype.UUID
+	err := row.Scan(&site_id)
+	return site_id, err
+}
+
 const getFloorPlan = `-- name: GetFloorPlan :one
 SELECT id, site_id, label, sort_order, image_path, image_w, image_h, uploaded_at, updated_at
 FROM floor_plan
@@ -104,6 +132,23 @@ func (q *Queries) GetFloorPlan(ctx context.Context, id pgtype.UUID) (FloorPlan, 
 		&i.ImageH,
 		&i.UploadedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPlacementByDevice = `-- name: GetPlacementByDevice :one
+SELECT device_id, floor_plan_id, x_frac, y_frac, created_at FROM device_floor_plan_placement WHERE device_id = $1
+`
+
+func (q *Queries) GetPlacementByDevice(ctx context.Context, deviceID pgtype.UUID) (DeviceFloorPlanPlacement, error) {
+	row := q.db.QueryRow(ctx, getPlacementByDevice, deviceID)
+	var i DeviceFloorPlanPlacement
+	err := row.Scan(
+		&i.DeviceID,
+		&i.FloorPlanID,
+		&i.XFrac,
+		&i.YFrac,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -137,6 +182,88 @@ func (q *Queries) ListFloorPlansBySite(ctx context.Context, siteID pgtype.UUID) 
 			&i.ImageH,
 			&i.UploadedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlacementsByPlan = `-- name: ListPlacementsByPlan :many
+SELECT
+  p.device_id,
+  p.floor_plan_id,
+  p.x_frac,
+  p.y_frac,
+  p.created_at,
+  d.name           AS device_name,
+  d.last_seen_at,
+  mp.id            AS metering_point_id,
+  mp.utility_class,
+  dp.expected_interval_s,
+  latest.battery_pct,
+  latest.rssi
+FROM device_floor_plan_placement p
+JOIN device d        ON d.id = p.device_id
+LEFT JOIN binding b  ON b.device_id = d.id AND b.valid_to IS NULL
+LEFT JOIN metering_point mp ON mp.id = b.metering_point_id
+JOIN device_profile dp ON dp.id = d.device_profile_id
+LEFT JOIN LATERAL (
+  SELECT battery_pct, rssi
+  FROM measurement
+  WHERE metering_point_id = mp.id
+  ORDER BY time DESC
+  LIMIT 1
+) latest ON mp.id IS NOT NULL
+WHERE p.floor_plan_id = $1
+  AND d.decommissioned_at IS NULL
+`
+
+type ListPlacementsByPlanRow struct {
+	DeviceID          pgtype.UUID
+	FloorPlanID       pgtype.UUID
+	XFrac             float32
+	YFrac             float32
+	CreatedAt         pgtype.Timestamptz
+	DeviceName        string
+	LastSeenAt        pgtype.Timestamptz
+	MeteringPointID   pgtype.UUID
+	UtilityClass      *string
+	ExpectedIntervalS int32
+	BatteryPct        *int16
+	Rssi              *int16
+}
+
+// Returns placements joined with the device + device_profile data needed for
+// client-side D-22 health computation (state colors) without a follow-up call.
+// battery_pct and rssi come from the latest measurement row for the active
+// metering point (measurement has no device_id per DATA-01 invariant).
+func (q *Queries) ListPlacementsByPlan(ctx context.Context, floorPlanID pgtype.UUID) ([]ListPlacementsByPlanRow, error) {
+	rows, err := q.db.Query(ctx, listPlacementsByPlan, floorPlanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlacementsByPlanRow
+	for rows.Next() {
+		var i ListPlacementsByPlanRow
+		if err := rows.Scan(
+			&i.DeviceID,
+			&i.FloorPlanID,
+			&i.XFrac,
+			&i.YFrac,
+			&i.CreatedAt,
+			&i.DeviceName,
+			&i.LastSeenAt,
+			&i.MeteringPointID,
+			&i.UtilityClass,
+			&i.ExpectedIntervalS,
+			&i.BatteryPct,
+			&i.Rssi,
 		); err != nil {
 			return nil, err
 		}
@@ -217,6 +344,70 @@ func (q *Queries) UpdateFloorPlanLabel(ctx context.Context, arg UpdateFloorPlanL
 		&i.ImageH,
 		&i.UploadedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePlacement = `-- name: UpdatePlacement :one
+UPDATE device_floor_plan_placement
+SET x_frac = $2, y_frac = $3
+WHERE device_id = $1
+RETURNING device_id, floor_plan_id, x_frac, y_frac, created_at
+`
+
+type UpdatePlacementParams struct {
+	DeviceID pgtype.UUID
+	XFrac    float32
+	YFrac    float32
+}
+
+// Drag-to-nudge: only x_frac / y_frac change; floor_plan_id stays.
+func (q *Queries) UpdatePlacement(ctx context.Context, arg UpdatePlacementParams) (DeviceFloorPlanPlacement, error) {
+	row := q.db.QueryRow(ctx, updatePlacement, arg.DeviceID, arg.XFrac, arg.YFrac)
+	var i DeviceFloorPlanPlacement
+	err := row.Scan(
+		&i.DeviceID,
+		&i.FloorPlanID,
+		&i.XFrac,
+		&i.YFrac,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertPlacement = `-- name: UpsertPlacement :one
+INSERT INTO device_floor_plan_placement (device_id, floor_plan_id, x_frac, y_frac)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (device_id) DO UPDATE
+SET floor_plan_id = EXCLUDED.floor_plan_id,
+    x_frac        = EXCLUDED.x_frac,
+    y_frac        = EXCLUDED.y_frac
+RETURNING device_id, floor_plan_id, x_frac, y_frac, created_at
+`
+
+type UpsertPlacementParams struct {
+	DeviceID    pgtype.UUID
+	FloorPlanID pgtype.UUID
+	XFrac       float32
+	YFrac       float32
+}
+
+// INSERT or UPDATE — device_id is PK (a device pins to one plan at a time).
+// ON CONFLICT on device_id moves the pin to the new plan (SITE-04 UPSERT).
+func (q *Queries) UpsertPlacement(ctx context.Context, arg UpsertPlacementParams) (DeviceFloorPlanPlacement, error) {
+	row := q.db.QueryRow(ctx, upsertPlacement,
+		arg.DeviceID,
+		arg.FloorPlanID,
+		arg.XFrac,
+		arg.YFrac,
+	)
+	var i DeviceFloorPlanPlacement
+	err := row.Scan(
+		&i.DeviceID,
+		&i.FloorPlanID,
+		&i.XFrac,
+		&i.YFrac,
+		&i.CreatedAt,
 	)
 	return i, err
 }
