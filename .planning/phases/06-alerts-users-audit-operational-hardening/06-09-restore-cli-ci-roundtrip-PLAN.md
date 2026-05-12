@@ -76,7 +76,7 @@ Plan 06-08 added:
 
 Phase 1 install state via internal/install/state.go for chirpstack_mode.
 
-PG advisory lock: `SELECT pg_try_advisory_lock(0x5HIFTER1)` — 64-bit constant `0x53484946 54455231` (hex of "SHIFTER1"); fits in BIGINT (9223372036854775807 max). Use a constant: `const ShifterAdvisoryLockID int64 = 0x5348494654455231` (Wave 0: verify this fits — it doesn't! 0x5348494654455231 = 5,997,124,693,706,432,049 < INT64_MAX = 9,223,372,036,854,775,807. OK.)
+PG advisory lock: `SELECT pg_try_advisory_lock(0x5348494654455231)` — 64-bit constant `0x5348494654455231` (hex of "SHIFTER1"). Decimal value 5,997,124,693,706,432,049 < INT64_MAX 9,223,372,036,854,775,807, so it fits BIGINT. Go declaration: `const ShifterAdvisoryLockID int64 = 0x5348494654455231`.
 
 CI testcontainers pattern (Phase 1 already uses): testcontainers-go/postgres with `WithImage("timescale/timescaledb:2.26.0-pg16")`.
 
@@ -93,13 +93,14 @@ D-45 acceptance test sequence (RESEARCH §Decision B): seed 1 site / 1 MP / 1 de
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-RESEARCH.md §Decision A "Exact Restore Procedure (full sequence)" — the in-shifter-restore pseudocode at lines ~388-410
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-RESEARCH.md §Pitfall 1 "pg_restore --jobs=N corrupts TimescaleDB catalogs" + §Pitfall 2 "timescaledb_pre_restore() forgotten"
     - .planning/phases/06-alerts-users-audit-operational-hardening/06-CONTEXT.md §D-44
+    - internal/audit/log.go (Plan 06-01 added `ActionBackupRestore` + `EntityTypeBackupRun` constants — use these instead of raw INSERT)
     - internal/backup/runner.go + manifest.go (Plan 06-08 substrate)
     - internal/cli/backup.go (Plan 06-08; mirror the subcommand pattern)
   </read_first>
   <behavior>
     - Test (TestRestorer_RefusesIfShifterRunning): acquire ShifterAdvisoryLockID from a parallel goroutine; call Restorer.Restore() → fails with `ErrShifterStillServing` and a helpful error message; backup_run rows untouched.
     - Test (TestRestorer_VerifiesOuterSHA256): tamper one byte of the tarball after backup but before restore → restore fails with `ErrTarballChecksumMismatch`.
-    - Test (TestRestorer_VerifiesPerFileSHA256): tamper db/shifter.bak inside the tarball (rebuild gz with edited file) → restore fails with `ErrFileChecksumMismatch` referencing the changed filename.
+    - Test (TestRestorer_VerifiesPerFileSHA256): tamper db/shifter.dump inside the tarball (rebuild gz with edited file) → restore fails with `ErrFileChecksumMismatch` referencing the changed filename.
     - Test (TestRestorer_RunsTimescaleHookSequence): mock the pg layer (testcontainers DB) → assert the SQL sequence runs IN ORDER: DROP DATABASE → CREATE DATABASE → CREATE EXTENSION timescaledb → SELECT timescaledb_pre_restore() → pg_restore (without -j) → SELECT timescaledb_post_restore(). Use a SQL capture hook OR inspect `pg_stat_statements` after restore.
     - Test (TestRestorer_NeverUsesJobsFlag): grep the args slice (or use a test double) to assert no `-j` or `--jobs` in any pg_restore invocation. (Pitfall 1 lint repeated for the restore path.)
     - Test (TestRestorer_FloorPlansRsync): tarball with `floor-plans/01H.png` + `floor-plans/02K.jpg` → after restore, `${FloorPlansDir}` contains both files with matching bytes.
@@ -205,12 +206,12 @@ D-45 acceptance test sequence (RESEARCH §Decision B): seed 1 site / 1 MP / 1 de
         }
 
         // 6. Restore each DB
-        if err := r.restoreDB(ctx, filepath.Join(tmpDir, "db/shifter.bak"), r.Cfg.DBUser, r.Cfg.DBName); err != nil {
+        if err := r.restoreDB(ctx, filepath.Join(tmpDir, "db/shifter.dump"), r.Cfg.DBUser, r.Cfg.DBName); err != nil {
             return fmt.Errorf("restore shifter DB: %w", err)
         }
         if manifest.ChirpStackDBIncluded {
-            chirpBakPath := filepath.Join(tmpDir, "db/chirpstack.bak")
-            if err := r.restoreDB(ctx, chirpBakPath, r.Cfg.ChirpStackDBUser, r.Cfg.ChirpStackDBName); err != nil {
+            chirpDumpPath := filepath.Join(tmpDir, "db/chirpstack.dump")
+            if err := r.restoreDB(ctx, chirpDumpPath, r.Cfg.ChirpStackDBUser, r.Cfg.ChirpStackDBName); err != nil {
                 return fmt.Errorf("restore chirpstack DB: %w", err)
             }
         }
@@ -221,17 +222,18 @@ D-45 acceptance test sequence (RESEARCH §Decision B): seed 1 site / 1 MP / 1 de
             if err := copyDir(srcDir, r.Cfg.FloorPlansDir); err != nil { return fmt.Errorf("rsync floor-plans: %w", err) }
         }
 
-        // 8. Write audit row (in a fresh tx against the just-restored DB)
+        // 8. Write audit row via audit.WriteEntry (use Plan 06-01 constants).
+        // Goes through the shared writer for consistency with every other audit
+        // call site in Shifter; matches Plan 06-08's audit-in-tx pattern.
         tx, err := r.Pool.BeginTx(ctx, pgx.TxOptions{})
         if err != nil { return err }
         defer tx.Rollback(ctx)
-        // NOTE: at this point the audit_log INSERT-ONLY trigger applies; we INSERT a 'backup.restore' row
-        if _, err := tx.Exec(ctx,
-            `INSERT INTO audit_log (action, entity_type, entity_id, notes)
-             VALUES ('backup.restore', 'backup_run', $1, $2)`,
-            mustUUIDFromString(manifest.InstallID),
-            fmt.Sprintf("restored from %s (size=%d, install_slug=%s, schema=%s)", filepath.Base(srcPath), len(manifestBytes), manifest.InstallSlug, manifest.DBSchemaVersion),
-        ); err != nil { return fmt.Errorf("audit: %w", err) }
+        if err := audit.WriteEntry(ctx, tx, audit.Entry{
+            Action:     audit.ActionBackupRestore,            // Plan 06-01 const "backup.restore"
+            EntityType: audit.EntityTypeBackupRun,            // Plan 06-01 const "backup_run"
+            EntityID:   mustUUIDFromString(manifest.InstallID),
+            Notes:      fmt.Sprintf("restored from %s (size=%d, install_slug=%s, schema=%s)", filepath.Base(srcPath), len(manifestBytes), manifest.InstallSlug, manifest.DBSchemaVersion),
+        }); err != nil { return fmt.Errorf("audit: %w", err) }
         return tx.Commit(ctx)
     }
 
@@ -341,6 +343,7 @@ Operator workflow:
     - `internal/backup/restore.go` contains the literal string `pg_try_advisory_lock` and `pg_advisory_unlock`
     - `internal/backup/restore.go` calls `timescaledb_pre_restore` AND `timescaledb_post_restore` for the Shifter DB ONLY (grep both strings; verify they wrap `exec.CommandContext(ctx, "pg_restore"`)
     - `internal/backup/restore.go` source contains a sanity check `if a == "-j" || a == "--jobs"` (Pitfall 1 belt-and-suspenders)
+    - `internal/cli/restore.go` (CLI orchestrator) AND `internal/backup/restore.go` audit-write paths use `audit.WriteEntry` with `audit.ActionBackupRestore` constant — NO raw `INSERT INTO audit_log` statements: `grep "audit.WriteEntry" internal/backup/restore.go` returns ≥ 1 AND `grep "INSERT INTO audit_log" internal/backup/restore.go` returns 0
     - `internal/cli/restore.go` declares `restoreFlagFrom` + `MarkFlagRequired("from")`
     - All 12 listed tests pass: `go test ./internal/backup/... ./internal/cli/... -run "TestRestorer|TestCLIRestore" -count=1 -timeout=180s` exits 0
     - `TestRestorer_NeverUsesJobsFlag` source asserts the args slice contains no `-j` substring
@@ -360,10 +363,10 @@ Operator workflow:
     - internal/cli/testharness.go OR internal/db/migrations seed pattern (for the test fixture seed function)
   </read_first>
   <behavior>
-    - Test (TestBackupRestoreRoundtrip): testcontainers spin up Postgres+TimescaleDB → apply all migrations 0001..0044 → seed (1 site, 1 MP, 1 device, 100 measurements, 1 floor plan file on disk, 5 audit rows) → call Runner.Backup → assert tarball size > 1024 → DROP SCHEMA public CASCADE + CREATE SCHEMA public + CREATE EXTENSION timescaledb → re-apply migrations → call Restorer.Restore → assert: SELECT count(*) FROM site = 1, FROM metering_point = 1, FROM device = 1, FROM measurement = 100, FROM audit_log >= 5 (the +1 backup.restore audit row is added during restore; expect 5 original + 1 restore row = 6), 1 floor-plan file exists, SELECT count(*) FROM measurement_daily > 0 (CAGG state survived).
+    - Test (TestBackupRestoreRoundtrip): testcontainers spin up Postgres+TimescaleDB → apply all migrations 0001..0047 (Phase 6 ships 0037-0047; 06-09 depends on 06-08's 0045 backup_run migration) → seed (1 site, 1 MP, 1 device, 100 measurements, 1 floor plan file on disk, 5 audit rows) → call Runner.Backup → assert tarball size > 1024 → DROP SCHEMA public CASCADE + CREATE SCHEMA public + CREATE EXTENSION timescaledb → re-apply migrations → call Restorer.Restore → assert: SELECT count(*) FROM site = 1, FROM metering_point = 1, FROM device = 1, FROM measurement = 100, FROM audit_log >= 5 (the +1 backup.restore audit row is added during restore; expect 5 original + 1 restore row = 6), 1 floor-plan file exists, SELECT count(*) FROM measurement_daily > 0 (CAGG state survived).
     - Test (TestBackupRestoreRoundtrip_CAGGSurvival): seed measurements spanning ≥ 2 hours, manually `CALL refresh_continuous_aggregate('measurement_hourly', ...)` before backup; after restore + post_restore the CAGG row count matches pre-backup count.
     - Test (TestBackupRestoreRoundtrip_BundledMode): set chirpstack_mode='bundled' + seed 1 ChirpStack DB row → backup → drop both DBs → restore → both DBs present.
-    - Test (TestBackupRestoreRoundtrip_ExternalMode): chirpstack_mode='external' → tarball has no chirpstack.bak; restore skips chirpstack DB.
+    - Test (TestBackupRestoreRoundtrip_ExternalMode): chirpstack_mode='external' → tarball has no chirpstack.dump; restore skips chirpstack DB.
   </behavior>
   <action>
     **internal/backup/roundtrip_test.go** (RESEARCH §Decision B test verbatim, adapted to the actual seeded fixture):
@@ -424,13 +427,24 @@ Operator workflow:
         require.NoError(t, err)
         require.Greater(t, fi.Size(), int64(1024))
 
-        // 4. Drop + recreate (disaster simulation)
+        // 4. Drop + recreate (disaster simulation).
+        // The integration test uses DROP SCHEMA (not DROP DATABASE) because
+        // testcontainers gives the test a single bootstrapped database whose
+        // name is fixed at container-spawn time — there is no superuser-owned
+        // 'postgres' DB connection available to issue DROP DATABASE against
+        // the test DB without re-orchestrating the container. DROP SCHEMA
+        // public CASCADE removes every table/index/extension-schema-object in
+        // the test DB; the subsequent pg_restore reconstructs the schema from
+        // the dump (pg_restore --format=custom replays CREATE TABLE statements
+        // and re-installs the timescaledb extension's schema artifacts). The
+        // PRODUCTION restore path (internal/backup/restore.go) uses the full
+        // DROP DATABASE + CREATE DATABASE sequence per RESEARCH §Decision A
+        // because it has the postgres maintenance-DB connection available.
+        // Both paths achieve the same end-state: an empty target ready for
+        // pg_restore. The test's DROP SCHEMA is a tighter operation but is
+        // semantically equivalent for the round-trip assertion.
         _, err = pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
         require.NoError(t, err)
-        // Note: re-apply migrations BEFORE restore would conflict with pg_restore's
-        // CREATE TABLE statements (restore restores schema + data atomically).
-        // Per RESEARCH §Decision A: drop + create database is the canonical path.
-        // For schema-cascade test, simplified: pg_restore creates the schema again.
 
         // 5. Restore
         restorer := backup.NewRestorer(pool, /* RestorerConfig with floorPlansDir for the restored dir */)
