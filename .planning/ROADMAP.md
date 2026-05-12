@@ -261,7 +261,7 @@ Plans:
 - [x] 07-10-anomaly-backtest-PLAN.md — Test against last 30 days + count + sparkline + profile-aware rule kind filter (D-10, D-35, D-42)
 - [ ] 07-11-saved-report-templates-PLAN.md — report_template schema + CRUD + Templates dropdown + Save dialog (Surface 6, D-14, D-15, D-39)
 - [x] 07-12-compare-view-PLAN.md — Side-by-side comparison view (Surface 5, D-16, D-37, D-38)
-- [ ] 07-13-bulk-gateway-import-PLAN.md — CSV bulk gateway import reusing Phase 3 pattern (Surface 7, D-17)
+- [x] 07-13-bulk-gateway-import-PLAN.md — CSV bulk gateway import reusing Phase 3 pattern (Surface 7, D-17)
 - [ ] 07-14-doctor-probes-and-phase-closure-PLAN.md — probe-chirpstack/probe-timescale/probe-region + /health/detailed + Playwright + REQUIREMENTS/VALIDATION/RETROSPECTIVE reconciliation (D-12, D-13, D-40)
 
 **UI hint**: yes
@@ -302,7 +302,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
-| 7. Multi-Vendor Breadth & v1.x Differentiators | 9/16 | In Progress|  |
+| 7. Multi-Vendor Breadth & v1.x Differentiators | 12/16 | In Progress|  |
 
 ## Coverage Summary
 
