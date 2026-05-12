@@ -16,6 +16,12 @@ length (43 with a deliberate gap at 0041):
 - `_0018_Down`: -17 → -23
 - `_0019_Down`: -16 → -22
 
+Plan 06-02 added 0045_device_gateway_link (chain length 45) and bumped
+the step counts again to keep them internally consistent — the
+underlying off-by-one in the test logic is unchanged:
+- `_0018_Down`: -23 → -25 (with the intermediate -24 landing in Plan 06-05)
+- `_0019_Down`: -22 → -24 (with the intermediate -23 landing in Plan 06-05)
+
 The underlying off-by-one was NOT fixed — that's a logic bug independent
 of Phase 6 scope. A future plan should rewrite both tests to assert the
 final schema_migrations version after the step rather than encoding a
