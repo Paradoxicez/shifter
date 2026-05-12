@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	apipkg "github.com/shifter-io/shifter/internal/api"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
@@ -347,6 +348,49 @@ func TestRouter_MapRouteMounted(t *testing.T) {
 	res2.Body.Close()
 	require.Equal(t, http.StatusNotFound, res2.StatusCode,
 		"nil MapDeps must NOT mount map routes — 404 expected")
+}
+
+// TestRouter_CatalogRouteMounted — Plan 07-04: When CatalogDeps is non-nil,
+// GET /api/catalog routes through auth.RequireAction (returns 401 unauth for
+// anonymous, because session middleware enforces authentication before
+// ActionCatalogRead). When CatalogDeps is nil → 404.
+func TestRouter_CatalogRouteMounted(t *testing.T) {
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	seedAdminForRouterTest(t, pool, "catalog-mount")
+	sm := auth.NewSessionManager(pool, true, time.Hour, 24*time.Hour)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	depsWithCatalog := Deps{
+		Pool: pool, SessionMgr: sm, Log: logger,
+		CatalogDeps: &apipkg.CatalogDeps{Pool: pool, SessionMgr: sm},
+	}
+	router := NewRouter(depsWithCatalog)
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/api/catalog")
+	require.NoError(t, err)
+	res.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, res.StatusCode,
+		"GET /api/catalog must reach RequireAction — 401 unauth (NOT 404 unmounted)")
+
+	// POST /api/catalog/import unauthenticated → 401 (route exists, gated by ActionCatalogImport).
+	res2, err := http.Post(srv.URL+"/api/catalog/import", "application/json", nil) //nolint:noctx
+	require.NoError(t, err)
+	res2.Body.Close()
+	require.Equal(t, http.StatusUnauthorized, res2.StatusCode,
+		"POST /api/catalog/import unauthenticated must be 401")
+
+	// nil CatalogDeps → routes not mounted → 404.
+	depsNil := Deps{Pool: pool, SessionMgr: sm, Log: logger}
+	router2 := NewRouter(depsNil)
+	srv2 := httptest.NewServer(router2)
+	t.Cleanup(srv2.Close)
+	res3, err := http.Get(srv2.URL + "/api/catalog")
+	require.NoError(t, err)
+	res3.Body.Close()
+	require.Equal(t, http.StatusNotFound, res3.StatusCode,
+		"nil CatalogDeps must NOT mount catalog routes — 404 expected")
 }
 
 // TestRouter_FloorPlanRouteMounted — Plan 05-13 gap-2 closure. When

@@ -227,6 +227,13 @@ type Deps struct {
 	//   POST /api/reports/compare — ActionReportRead (admin + viewer, read-only aggregation)
 	// nil in early-boot / router unit tests that don't need the compare route.
 	CompareDeps *apipkg.CompareDeps
+
+	// GatewayImportDeps wires Plan 07-13's bulk gateway import endpoints:
+	//   POST /api/gateways/bulk-import/validate  — ActionGatewayBulkImport (admin only)
+	//   POST /api/gateways/bulk-import/commit    — ActionGatewayBulkImport (admin only)
+	//   GET  /api/gateways/bulk-import/template  — ActionGatewayBulkImport (admin only)
+	// nil in early-boot / router unit tests that don't need gateway import.
+	GatewayImportDeps *apipkg.GatewayImportDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -588,6 +595,15 @@ func NewRouter(deps Deps) http.Handler {
 		//   POST /api/reports/compare — ActionReportRead (admin + viewer, read-only)
 		// Mounted before SPA fallback (PITFALL #4).
 		apipkg.RegisterCompareRoutes(r, *deps.CompareDeps)
+	}
+
+	if deps.GatewayImportDeps != nil {
+		// Plan 07-13: bulk gateway import (D-17 UX-POWER).
+		//   POST /api/gateways/bulk-import/validate  — ActionGatewayBulkImport (admin only)
+		//   POST /api/gateways/bulk-import/commit    — ActionGatewayBulkImport (admin only)
+		//   GET  /api/gateways/bulk-import/template  — ActionGatewayBulkImport (admin only)
+		// Mounted before SPA fallback (PITFALL #4).
+		apipkg.RegisterGatewayImportRoutes(r, *deps.GatewayImportDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
