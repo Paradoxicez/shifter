@@ -216,7 +216,7 @@ Plans:
 **Plans**: 11 plans
 
 Plans:
-- [ ] 06-01-alert-engine-substrate-PLAN.md — Wave 1: migrations 0037 (audit vocab) + 0038/0039 (alert_rule + alert tables) + 0040 (retention_config extensions) + 0042 (alert_worker_state) + 0043 (admin_prune_audit_rows SECURITY DEFINER per D-51) + internal/alert engine substrate (engine/rule_store/alert_store/degraded subscriber/audit prune worker) (D-01..D-06, D-12, D-13, D-21, D-22, D-38, D-51)
+- [x] 06-01-alert-engine-substrate-PLAN.md — Wave 1: migrations 0037 (audit vocab) + 0038/0039 (alert_rule + alert tables) + 0040 (retention_config extensions) + 0042 (alert_worker_state) + 0043 (admin_prune_audit_rows SECURITY DEFINER per D-51) + internal/alert engine substrate (engine/rule_store/alert_store/degraded subscriber/audit prune worker) (D-01..D-06, D-12, D-13, D-21, D-22, D-38, D-51)
 - [ ] 06-02-threshold-offline-evaluators-PLAN.md — Wave 2: D-12 payload builder + ThresholdInstantaneous/Hourly/Daily workers (1m/15m/1h cron) + OfflineWorker with gateway-down suppression (D-14, D-15, ALERT-01/02/03)
 - [ ] 06-03-anomaly-evaluators-cold-start-PLAN.md — Wave 2: cold-start gate (21 days) + AnomalyWorker dispatching anomaly_p95 / anomaly_iqr / anomaly_quiet_hour (cross-midnight SQL) + warmup roster query (D-16, D-17, ALERT-04)
 - [ ] 06-04-alert-center-ui-PLAN.md — Wave 2: /api/alerts + /api/alerts/rules + /api/anomaly-roster + /api/metering-points/{id}/anomaly-state + test-fire backend + header bell + slide-over drawer + /alerts page with URL chips + Settings → Alerts rule library (5-step Add Rule dialog) + MP detail AnomalyStateCard + sidebar reorder + degraded banner (D-07..D-12, D-18..D-22, ALERT-05/06 UI)

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.3.22
 milestone_name: milestone
 status: Ready to execute
-last_updated: "2026-05-12T06:35:16.901Z"
+last_updated: "2026-05-12T07:25:37.463Z"
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 83
-  completed_plans: 72
-  percent: 87
+  completed_plans: 73
+  percent: 88
 ---
 
 # Project State: Shifter
@@ -20,12 +20,12 @@ progress:
 
 **Core Value:** The operator runs their entire LoRaWAN water/electricity monitoring operation — provisioning, placement, monitoring, reporting — from Shifter alone, and meter swaps never break historical continuity.
 
-**Current Focus:** Phase 05 — aggregates-reports-map-floor-plans
+**Current Focus:** Phase 06 — alerts-users-audit-operational-hardening
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
+Phase: 06 (alerts-users-audit-operational-hardening) — EXECUTING
+Plan: 2 of 11
 
 > **Phase 5 closure (2026-05-12):** Plans 05-01..12 shipped 12 plans covering DATA-11..13, REPT-01..07, MAP-01..04, SITE-02..06, plus SETT-04 (migrated from Phase 6).
 > - 05-01 Wave 0: maroto/v2 + river + leaflet/pdfjs deps; River schema as migration 0024; pdfjs worker shim; cumulative_delta pre-check
@@ -127,6 +127,7 @@ Plan: Not started
 | Phase 05 P11 | 120 | 2 tasks | 18 files |
 | Phase 05-aggregates-reports-map-floor-plans P12 | 6 | 3 tasks | 8 files |
 | Phase 05 P13 | 14 | 3 tasks | 10 files |
+| Phase 06 P01 | 38min | 3 tasks | 28 files |
 
 ### Per-plan execution log
 
