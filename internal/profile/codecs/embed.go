@@ -18,6 +18,9 @@ var AxiomaW1 string
 //go:embed acrel_family.js
 var AcrelFamily string
 
+//go:embed itron_kinmy_lora.js
+var ItronKinmyLoRa string
+
 // CodecBySlug returns the embedded JS source for a seed profile slug.
 // Returns "" for unknown slug — the seed routine logs and skips.
 func CodecBySlug(slug string) string {
@@ -26,6 +29,8 @@ func CodecBySlug(slug string) string {
 		return AxiomaW1
 	case "acrel_adl200", "acrel_adw300": // Pitfall 6 — shared codec
 		return AcrelFamily
+	case "itron_kinmy_lora": // Phase 7 catalog seed — Itron water meter + KINMY 3rd-party LoRa module
+		return ItronKinmyLoRa
 	default:
 		return ""
 	}

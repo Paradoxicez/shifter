@@ -350,3 +350,334 @@ All deferred items captured in 07-CONTEXT.md `<deferred>` section. Key categorie
 - Per-user templates → V2 multi-operator
 - CSV-with-pick-on-map → friction-reduction, V2
 - Test-runner fixtures + expected-JSON diff → V2 codec-dev tools
+
+---
+
+# Update Pass — 2026-05-12
+
+**Mode:** discuss (interactive, update)
+**Areas discussed (4 + 7 Itron+KINMY clarifications):** Codec runtime + test-runner, Catalog migration for 3 existing seeds, Promote Claude's Discretion items, Comparison + template + notification UX, plus Itron+KINMY operator-supplied codec specifics (fPort, battery encoding, reverse_flow semantics, meter_id usage, meter clock fields, profile-aware anomaly/offline thresholds, slug naming)
+
+**Trigger:** User invoked `/gsd-discuss-phase 7` → "Update it". Codebase scout surfaced critical contradiction: D-19 said "Codec source = embedded Go functions" but actual Phase 2 architecture is JS codecs pushed to ChirpStack QuickJS. Update pass corrects D-19, promotes 4 Claude's-Discretion items to locked decisions, and adds 13 new decisions (D-26..D-48).
+
+---
+
+## Codec runtime + test-runner
+
+### Q1: D-19 correction — how should catalog ship codecs?
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| JS files via //go:embed | Match existing arch: catalog references `internal/profile/codecs/*.js`, ChirpStack QuickJS runs them | ✓ |
+| Inline JS string in catalog JSON | Single-file vendor entries; JSON-escaped JS ugly to diff | |
+| Migrate to Go decoders | Rewrite Phase 2; add goja runtime in Shifter; deprecate ChirpStack codec push | |
+
+**User's choice:** JS files via //go:embed (recommended)
+**Notes:** Zero rewrite of Phase 2 substrate. Becomes D-19 corrected wording.
+
+### Q2: Test-runner execution path
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Local goja JS runtime | Embed `dop251/goja`; run codec_js in Shifter process; <50ms, no ChirpStack dep | ✓ |
+| ChirpStack codec-test gRPC API | Authoritative; runs exact engine prod uses; requires API to exist in v4.17 | |
+| Round-trip via fake uplink | Publish synthetic MQTT uplink, read decoded event back; brittle, high latency | |
+
+**User's choice:** Local goja JS runtime (recommended)
+**Notes:** Becomes D-26. Adds ~3MB Go dep but enables D-27 (pre-sync testing).
+
+### Q3: Test-runner behavior when codec_js_synced_at IS NULL
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Always works (local exec) | Test pre-sync (D-26 enables this); operator validates before pushing | ✓ |
+| Disable until synced | Forces sync-first workflow; worse UX | |
+| Warn but allow | Banner "results may differ from ChirpStack QuickJS"; muddy | |
+
+**User's choice:** Always works (recommended)
+**Notes:** Becomes D-27.
+
+### Q4: Test-runner failure UX
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Inline error panel with line/col | Left panel: error type + msg + goja stack line/col + original hex; right panel grays out | ✓ |
+| Toast + clear panels | Simpler UI; loses debug context | |
+| Inline error + last successful result | Could confuse operator; "why does right show old data?" | |
+
+**User's choice:** Inline error panel (recommended)
+**Notes:** Becomes D-28.
+
+---
+
+## Catalog migration for 3 existing seeds
+
+### Q5: How to reconcile 3 existing seed rows with catalog system
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Backfill catalog_source on existing rows | Migration adds 3 cols; backfills slug + v1.0.0 + customer_edited; clean future Updates | ✓ |
+| Treat existing rows as legacy (NULL catalog_source) | Forces operator delete + re-import to get on catalog track | |
+| Re-import wizard on first Phase 7 boot | One-time UX wizard; more friction but explicit | |
+
+**User's choice:** Backfill (recommended). Becomes D-29.
+
+### Q6: Backfill version for existing seeds
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| 1.0.0 (catalog's initial seed version) | Existing seeds match what's shipped; no day-1 update noise | ✓ |
+| 0.9.0 (force "update available" on day 1) | Demonstrates the flow; creates noise | |
+| NULL (untracked, never auto-updates) | Pairs with legacy treatment | |
+
+**User's choice:** 1.0.0 (recommended). Becomes D-30.
+
+### Q7: Operator codec_js drift handling on migration
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Detect drift, set customer_edited=true, preserve operator's JS | Hash-compare row vs embedded; flag for D-34 diff UI | ✓ |
+| Overwrite with catalog version | Operator tweaks lost; violates D-04 | |
+| Skip migration if any drift, error to operator | Too aggressive; blocks upgrade | |
+
+**User's choice:** Detect drift + preserve (recommended). Becomes D-31.
+
+### Q8: Acrel shared-codec representation in catalog
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Two catalog entries, same codec_js_path | Two distinct catalog rows; share codec source; matches Phase 2 Pitfall 6 | ✓ |
+| One catalog entry with two model variants | Single family entry with models[] array; needs UI for one-to-many | |
+| Flatten — codec inlined into both JSON entries | Self-contained but maintenance pain | |
+
+**User's choice:** Two catalog entries, same codec_js_path (recommended). Becomes D-32.
+
+---
+
+## Promote Claude's Discretion items
+
+### Q9: Catalog JSON schema fields
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Minimal: slug, name, vendor, family, capabilities, version, codec_js_path, counter_modulus, mac_version, region | Mirrors device_profile table 1:1 | ✓ |
+| Minimal + display metadata (icon, descriptions, vendor_url) | UI polish; 5 extra fields per entry | |
+| Minimal + display + telemetry hints | Adds expected_interval, default_battery_low, payload_size_bytes | |
+
+**User's choice:** Minimal (recommended). Becomes D-33 (later expanded to include Phase 7-specific fields D-41..D-45).
+
+### Q10: Diff modal layout (D-24 specifics)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Field-by-field rows with side-by-side values | git-mergetool mental model; per-field toggle + "you edited this" flag | ✓ |
+| Unified diff (text-style) | Familiar but noisy for non-codec fields | |
+| Structured form pre-populated with catalog values | Loses "this changed" signal | |
+
+**User's choice:** Field-by-field rows (recommended). Becomes D-34.
+
+### Q11: Backtest result format (D-10 specifics)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Single count + daily sparkline | Lightweight; shows clustering vs even distribution | ✓ |
+| Single count only | Simplest; loses distribution nuance | |
+| Count + histogram + timestamp list | Power-user surface; overkill | |
+
+**User's choice:** Count + sparkline (recommended). Becomes D-35.
+
+### Q12: Codec re-sync trigger on catalog Update
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Auto-clear codec_js_synced_at; background sync via existing seed routine | Reuses Phase 2 substrate; zero new sync code | ✓ |
+| Synchronous push as part of Update click | Worse UX if ChirpStack slow; tight coupling | |
+| Operator confirms re-push in second dialog | Adds friction; second dialog is noise | |
+
+**User's choice:** Auto-clear (recommended). Becomes D-36.
+
+---
+
+## Comparison + template + notification UX
+
+### Q13: Comparison entity picker UX (D-16 specifics)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Two dropdowns at top of compare view | Searchable; swap A↔B button; mobile-friendly | ✓ |
+| Click "Compare with…" from any list row | Contextual entrypoint but spreads across pages | |
+| Dedicated compare-builder page (multi-step wizard) | Overkill for 2-entity feature | |
+
+**User's choice:** Two dropdowns (recommended). Becomes D-37.
+
+### Q14: YoY mode engagement
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Toggle at top: "Compare entities" vs "Compare time ranges" | Clear mode separation; discoverable | ✓ |
+| Entity B picker has "Same as A" option revealing 2nd time range | Discoverability poor | |
+| Separate "Year-over-year" tab in entity detail page | Splits the compare story | |
+
+**User's choice:** Top toggle (recommended). Becomes D-38.
+
+### Q15: Template listing UX
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Alphabetical with search box | Predictable; search essential at 10+ templates | ✓ |
+| Most-recently-used at top, then alphabetical | Frequent workflows one click away; adds last_run_at maint | |
+| Categorized by scope | Premature structure for <30 templates | |
+
+**User's choice:** Alphabetical + search (recommended). Becomes D-39.
+
+### Q16: Update notification surface + probe retention
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Settings-only badge for catalog; /health/detailed last-run for probes | Operator-pull model; no notification fatigue | ✓ |
+| Sidebar nav badge for catalog; last-run for probes | More visible but trains operators to ignore | |
+| Catalog banner + 7-day probe history | More signal; more surface to maintain | |
+
+**User's choice:** Settings-only + last-run (recommended). Becomes D-40.
+
+---
+
+## Itron+KINMY operator-supplied codec — clarifications
+
+User submitted a JS decoder for "Itron LoRa Module" (3rd-party module on Itron water meter). Codec saved at `internal/profile/codecs/itron_kinmy_lora.js` (renamed from `itron_lora_module.js` after slug clarification — see Q23). Below are clarifications.
+
+### Q17: fPort filter
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Restrict to known fPort (e.g., fPort == 2) | Like axioma_w1 fPort=100 check; rejects ACK/keepalive frames | |
+| Accept all fPorts; SOF=0x6F filter only | Trust frame-format byte 0 check; flexible if firmware uses multiple fPorts | ✓ |
+
+**User's choice:** Accept all (operator answered "รับทุก fPort")
+**Notes:** Catalog metadata sets `fPort: null` (no fPort filter). Reflected in D-48 catalog entry.
+
+### Q18: Battery encoding (voltage vs percent)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: Keep battery_v raw; no canonical pct | ALERT-02 (battery low) broken — alert needs pct | |
+| B: Convert in codec (linear curve) | Simple; but Li-SOCl2 discharge non-linear → misleading % | |
+| C: Codec emits battery_v raw; normalize.go applies per-vendor curve | Vendor curve in Go (testable, updateable); raw voltage preserved in JSONB | ✓ |
+
+**User's choice:** C (Claude recommended after asking "แนะนำอันไหน")
+**Notes:** Becomes D-44. New `battery_curve` registry in normalize.go. Itron+KINMY uses `li_socl2_3v6` curve.
+
+### Q19: reverse_flow semantics
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: raw JSONB only, no surface | Lost data; debug-only | |
+| B: New canonical column reverse_cumulative_value | Schema migration; sparse for most vendors | |
+| C: raw JSONB + new alert rule `reverse_flow_increase` (delta-based) | No canonical schema touch; practical alert | ✓ |
+| D: Calculate delta-from-previous in alert evaluator only | Subset of C | |
+
+**User's choice:** C (Claude recommended; operator confirmed + added crucial context: "reverse_flow is cumulative and never resets — used to check meter installed wrong direction")
+**Notes:** Becomes D-46. Cumulative-never-reset semantic dictates delta-based alert (not absolute threshold).
+
+### Q20: meter_id usage
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: raw JSONB only, no surface | Misses cross-vendor meter-swap detection | |
+| B: Promote to canonical meter_serial column + swap detection in Phase 7 | Correct but big scope (schema migration + swap logic + cumulative discontinuity handling) | |
+| C: raw JSONB + `vendor_has_separate_meter_serial: true` flag | Phase 4 advanced tab auto-surfaces; Phase 8 can promote later | ✓ |
+
+**User's choice:** C (Claude recommended after "แนะนำอันไหน")
+**Notes:** Becomes D-45. The `vendor_has_separate_meter_serial` flag is a forward-marker for Phase 8 canonical promotion.
+
+### Q21: meter clock fields (meter_date, meter_time)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: Drop (use server timestamp only) | Loses metadata for debug | |
+| B: Store in raw JSONB | Free auto-surface; Phase 8 can add clock-drift alert | ✓ |
+| C: raw JSONB + clock-drift alert in Phase 7 | Adds scope; deferred to Phase 8 | |
+| D: Override canonical timestamp with meter clock | Breaks timescaledb CAGGs; never do this | |
+
+**User's choice:** B
+**Notes:** Becomes D-47. Phase 4 advanced tab auto-surfaces.
+
+### Q22 (6.1): `expected_uplink_interval_seconds` per profile
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: Add field to catalog; refactor ALERT-03/04 profile-aware | Correct; scope creep | ✓ |
+| B: No field; global threshold for all profiles | Itron alert spam; tunability lost | |
+| C: Catalog default + per-MP override | A + override UI; max flex but more scope | |
+
+**User's choice:** A
+**Notes:** Becomes D-41. Phase 7 scope expands to refactor ALERT-03/04. Per-MP override deferred to Phase 8.
+
+### Q23 (6.2): `anomaly_compatibility` enum per profile
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: Enum `full \| limited \| unsupported`; Settings UI hides incompatible rules | Simple; covers Phase 7 cases | ✓ |
+| B: No flag; operator manually disable per rule (docs guide) | Tech debt; muddy | |
+| C: Granular per-rule per-profile list (e.g., anomaly_rules: ["p95", "iqr"]) | Max flex; bigger scope | |
+
+**User's choice:** A
+**Notes:** Becomes D-42. Itron+KINMY = `limited` (p95+iqr with 60-day warmup; quiet_hour disabled).
+
+### Q24 (6.3): ALERT-03 offline threshold multiplier
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: ×1.5 (=36h for Itron) | Sensitive; false-positive risk on retry chains | |
+| B: ×2.0 (=48h) | Standard default; slow detection | |
+| C: ×2.5 (=60h) | Conservative; 2.5-day business value lost | |
+| D: per-profile multiplier in catalog (Itron=1.8 → 43h) | Vendor-aware; ships better defaults | ✓ |
+| E: Global ×2 + per-MP override UI | Future upgrade path | |
+
+**User's choice:** D
+**Notes:** Becomes D-43. Itron+KINMY multiplier = 1.8 (≈43h). Other vendors set per catalog.
+
+### Q25: Slug + vendor field for Itron+KINMY entry
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| A: vendor=Itron, family=LoRa Module | Operator searches by meter brand; misses module brand | |
+| B: vendor=KINMY, family=Itron meter | Technically correct; operators don't know module brand | |
+| C: vendor=Itron, family=KINMY LoRa Module | Hybrid — search by meter, family ID's module | ✓ |
+| D: vendor=3rd-Party, family=Itron LoRa Module | Awkward vendor name in UI | |
+
+**User's choice:** C, plus slug renamed to `itron_kinmy_lora` (more explicit than `itron_lora_module`)
+**Notes:** Becomes D-48. Codec file renamed `itron_lora_module.js` → `itron_kinmy_lora.js`; embed.go updated.
+
+---
+
+## Claude's Discretion (remaining after update pass)
+
+After update pass promotions, the still-discretion items are:
+- Migration ordering (single migration or two for catalog_source columns + battery_curve)
+- `report_template` table schema details
+- Backtest button placement (inside rule-enable dialog vs separate Test CTA)
+- goja sandbox limits (timeout, memory cap)
+- Catalog `TestCatalogValid` test layout (table-driven vs per-file subtests)
+- Compare view mobile layout (stacked cards vs collapsed dropdown rows)
+- Reverse-flow alert rule constant naming (`alert.RuleKind.ReverseFlowIncrease`)
+
+## Auto-Resolved
+
+None — update pass was fully interactive.
+
+## Codec compatibility report (Itron+KINMY)
+
+Operator-supplied codec adapted to Phase 2 convention before saving:
+- Return shape `{data, errors, warnings}` (was `{data: {error: "..."}}`)
+- Defensive `bytes.length < 28` check added
+- try/catch wrapper added
+- Field names snake_case (was camelCase): `forward_flow_m3`, `reverse_flow_m3`, `battery_v`, `meter_id`, `meter_date`, `meter_time`, `tamper`, `leak`
+- ES5 syntax (was ES6 arrow + spread + const + template literals)
+- Helper `pad2()` as named function (was `const pad = n =>`)
+
+Logic preserved verbatim: byte offsets, bit masks, ÷1000 (raw liters → m³), ÷10 (raw voltage × 10 → V), BE-reversed meter_id.
+
+## Architectural correction logged
+
+D-19 originally said "Codec source = embedded Go functions in `internal/codec/{vendor}/`." Codebase scout surfaced contradiction: actual Phase 2 architecture is JS codecs (`internal/profile/codecs/*.js`) embedded via `//go:embed`, pushed to ChirpStack v4 via gRPC, executed in ChirpStack's QuickJS sandbox. D-19 corrected in CONTEXT.md update. Cascades into D-26..D-28 (test-runner = local goja), D-32 (shared codec_js_path), D-36 (re-sync via codec_js_synced_at NULL).
