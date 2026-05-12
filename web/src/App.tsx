@@ -4,6 +4,10 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
+// Leaflet CSS shim — MUST be imported before any component that uses Leaflet.
+// Three CSS imports loaded as a side effect so tiles + popups + cluster icons render.
+// Pitfall #4 from RESEARCH: without this, map shows as a grey box.
+import './lib/leaflet-css'
 import AuthLayout from '@/routes/_auth'
 import RootLayout, { rootLoader } from '@/routes/_root'
 
@@ -22,6 +26,7 @@ const ProfilesPage = lazy(() => import('@/routes/profiles'))
 const ProfileEditorRoute = lazy(() => import('@/routes/profiles/$id'))
 const AdminImportsPage = lazy(() => import('@/routes/admin/imports'))
 const ImportJobDetailPage = lazy(() => import('@/routes/admin/imports/$jobId'))
+const MapPage = lazy(() => import('@/routes/map'))
 
 /**
  * Phase 1 router skeleton.
@@ -169,6 +174,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <ImportJobDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'map',
+        element: (
+          <Suspense fallback={null}>
+            <MapPage />
           </Suspense>
         ),
       },

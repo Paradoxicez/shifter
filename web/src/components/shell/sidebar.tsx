@@ -1,7 +1,9 @@
 import {
   Cpu,
+  FileText,
   LayoutDashboard,
   Layers,
+  Map,
   MapPin,
   Radio,
   Settings as SettingsIcon,
@@ -18,9 +20,14 @@ import { useCurrentUser } from '@/lib/use-current-user'
  *   Imports (`/admin/imports`) — D-36 + T-3-90 mitigation.
  *
  * Dashboard at top — operator's primary surface.
+ *
+ * Plan 05-08 adds Reports + Map between Dashboard and Gateways (UI-SPEC §Sidebar):
+ *   Dashboard → Reports → Map → Gateways → Sites → Devices → Profiles → Settings
  */
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/map', label: 'Map', icon: Map },
   { to: '/gateways', label: 'Gateways', icon: Radio },
   { to: '/sites', label: 'Sites', icon: MapPin },
   { to: '/devices', label: 'Devices', icon: Cpu },
