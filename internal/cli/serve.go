@@ -384,6 +384,15 @@ var serveCmd = &cobra.Command{
 			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
 		})
 
+		// Phase 6 — Plan 06-03 (ALERT-04): statistical anomaly evaluator.
+		// One worker dispatches all three anomaly rule kinds (p95, iqr,
+		// quiet_hour) per cycle so install_tz is loaded once (the
+		// quiet-hour SQL needs install-local time). Cadence: 1h per
+		// 06-RESEARCH §Decision C.
+		river.AddWorker(riverWorkers, &alert.AnomalyWorker{
+			Eng: alertEng, Rules: alertRules, Alerts: alertStore, WorkerStat: alertWorkerStat,
+		})
+
 		// Build cron schedule for the audit prune. Install timezone is
 		// pulled from install_identity (singleton id=1) so the operator-
 		// chosen tz at install time drives the schedule. Falls back to
@@ -443,6 +452,19 @@ var serveCmd = &cobra.Command{
 				river.PeriodicInterval(2*time.Minute),
 				func() (river.JobArgs, *river.InsertOpts) {
 					return alert.OfflineArgs{}, nil
+				},
+				&river.PeriodicJobOpts{RunOnStart: false},
+			),
+			// Phase 6 Plan 06-03 (ALERT-04) — statistical anomaly evaluator.
+			// 1 hour cadence per 06-RESEARCH §Decision C: p95 / iqr baselines
+			// shift slowly so hourly checks are sufficient; quiet-hour
+			// breaches don't need sub-hour latency either (an unauthorized
+			// 03:00 leak shows up in the 04:00 cycle, which is well inside
+			// operator-acceptable bounds).
+			river.NewPeriodicJob(
+				river.PeriodicInterval(1*time.Hour),
+				func() (river.JobArgs, *river.InsertOpts) {
+					return alert.AnomalyArgs{}, nil
 				},
 				&river.PeriodicJobOpts{RunOnStart: false},
 			),

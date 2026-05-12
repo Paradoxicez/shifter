@@ -120,19 +120,21 @@ func TestColdStart_OldMPIsEligible(t *testing.T) {
 }
 
 // TestWarmupRoster_DaysUntilEligible: roster reports correct days_until_eligible
-// for varying ages.
+// for varying ages. Time-arithmetic-edge: we seed measurements at +12h offsets
+// (5d12h instead of 5d) so EXTRACT(DAY FROM now() - m.time) lands stably on
+// the integer floor (no jitter between 4 and 5).
 func TestWarmupRoster_DaysUntilEligible(t *testing.T) {
 	env := newColdStartTestEnv(t)
 	ctx := context.Background()
 
 	// MP with no measurements → 21 days until eligible.
 	mpNoData := env.seedMP(t, "cs-noData")
-	// MP with 5 days of history → 16 days until eligible.
+	// MP with ~5.5 days of history → 21-5=16 days until eligible.
 	mp5 := env.seedMP(t, "cs-5days")
-	env.seedMeasurement(t, mp5, time.Now().UTC().Add(-5*24*time.Hour))
+	env.seedMeasurement(t, mp5, time.Now().UTC().Add(-(5*24+12)*time.Hour))
 	// MP eligible already (≥ 21 days) → 0.
 	mpEligible := env.seedMP(t, "cs-eligible")
-	env.seedMeasurement(t, mpEligible, time.Now().UTC().Add(-25*24*time.Hour))
+	env.seedMeasurement(t, mpEligible, time.Now().UTC().Add(-(25*24+12)*time.Hour))
 
 	roster, err := ListAnomalyWarmupRoster(ctx, env.queries)
 	require.NoError(t, err)
@@ -159,11 +161,12 @@ func TestWarmupRoster_OrderingByDaysUntilEligible(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed three MPs: 0 days (eligible), 16 days (5d old), 21 days (no data).
+	// +12h offsets ensure stable EXTRACT(DAY FROM ...) floor.
 	mpNoData := env.seedMP(t, "cs-order-nodata")
 	mp5 := env.seedMP(t, "cs-order-5days")
-	env.seedMeasurement(t, mp5, time.Now().UTC().Add(-5*24*time.Hour))
+	env.seedMeasurement(t, mp5, time.Now().UTC().Add(-(5*24+12)*time.Hour))
 	mpEligible := env.seedMP(t, "cs-order-eligible")
-	env.seedMeasurement(t, mpEligible, time.Now().UTC().Add(-25*24*time.Hour))
+	env.seedMeasurement(t, mpEligible, time.Now().UTC().Add(-(25*24+12)*time.Hour))
 
 	roster, err := ListAnomalyWarmupRoster(ctx, env.queries)
 	require.NoError(t, err)
