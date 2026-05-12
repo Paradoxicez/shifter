@@ -179,7 +179,7 @@ Plans:
   4. Admin can upload one or more floor-plan images per site (PNG/JPG/PDF→PNG with size cap and format whitelist), supporting both horizontal (campus / single-floor) and vertical (multi-floor building) layouts; admin drags devices onto a floor plan and positions are stored as normalized fractions (`x_frac`, `y_frac` ∈ [0, 1]) — resolution-independent, surviving image replacement and Retina/mobile DPR.
   5. Floor plan view shows each placed device with a state-tinted marker (green / yellow / red) reflecting current health; user can navigate map → site → floor plan → device detail in a single click-through path.
 
-**Plans**: 12 plans
+**Plans**: 13 plans (12 original + 1 gap-closure)
 
 Plans:
 - [x] 05-01-wave-0-deps-skeletons-PLAN.md — Wave 0: install maroto/river/leaflet/pdfjs, embed River schema as migration 0024, skeleton tests, pdfjs worker shim, cumulative_delta pre-check
@@ -194,6 +194,7 @@ Plans:
 - [x] 05-10-floor-plan-frontend-PLAN.md — Site detail Floor plan tab + canvas with fractional coords + DevicePin drag + popover + pdf.js conversion + live SSE health (SITE-02..06 frontend)
 - [x] 05-11-settings-data-retention-PLAN.md — Settings Data Retention card + PATCH /api/settings/retention with same-tx policy reconciliation + SETT-04 traceability flip (DATA-13 UI)
 - [x] 05-12-phase-closure-PLAN.md — 6 Playwright E2E specs + REQUIREMENTS/ROADMAP/VALIDATION/RESEARCH reconciliation + UX-03 vocabulary audit
+- [ ] 05-13-router-wiring-capabilities-PLAN.md — gap closure: mapapi+floorplan router wiring + real install_identity.capabilities passthrough + REQUIREMENTS.md migration filename corrections (verifier gaps 1-4)
 
 **UI hint**: yes
 
@@ -267,7 +268,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 2. Domain Model & Canonical Schema | 15/15 | Complete | 2026-05-04 |
 | 3. Provisioning (Gateways, Devices, Bulk Import) | 10/10 | Complete | 2026-05-11 |
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
-| 5. Aggregates, Reports, Map & Floor Plans | 12/12 | Complete   | 2026-05-12 |
+| 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 0/0 | Not started | - |
 | 7. Multi-Vendor Breadth & v1.x Differentiators | 0/0 | Not started | - |
 
