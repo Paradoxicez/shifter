@@ -206,6 +206,12 @@ type Deps struct {
 	//   POST /api/catalog/{profile_id}/update — ActionCatalogUpdate (admin only)
 	// nil in early-boot / router unit tests that don't need catalog routes.
 	CatalogDeps *apipkg.CatalogDeps
+
+	// BacktestDeps wires Plan 07-10's POST /api/alerts/backtest (D-10 read-only
+	// anomaly backtest). Admin-only (ActionAlertRuleCreate — same permission as
+	// creating a rule; backtest is part of the configure-rule flow).
+	// nil in early-boot / router unit tests that don't need the backtest route.
+	BacktestDeps *apipkg.BacktestDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -538,6 +544,17 @@ func NewRouter(deps Deps) http.Handler {
 		//   POST /api/catalog/{profile_id}/update — ActionCatalogUpdate (admin only)
 		// Mounted before SPA fallback (PITFALL #4).
 		apipkg.RegisterCatalogRoutes(r, *deps.CatalogDeps)
+	}
+
+	if deps.BacktestDeps != nil {
+		// Plan 07-10: read-only anomaly backtest (D-10).
+		//   POST /api/alerts/backtest — ActionAlertRuleCreate (admin only)
+		// Never writes to the alert table (T-07-10-04). Mounted before SPA
+		// fallback (PITFALL #4).
+		r.Group(func(rt chi.Router) {
+			rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
+			rt.Post("/api/alerts/backtest", apipkg.BacktestHandler(*deps.BacktestDeps))
+		})
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
