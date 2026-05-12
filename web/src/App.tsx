@@ -32,6 +32,7 @@ const UsersPage = lazy(() => import('@/routes/settings/users'))
 const AlertsPage = lazy(() => import('@/routes/alerts'))
 const AlertRulesPage = lazy(() => import('@/routes/settings/alerts'))
 const AuditPage = lazy(() => import('@/routes/audit'))
+const CompareView = lazy(() => import('@/routes/reports/CompareView').then((m) => ({ default: m.CompareView })))
 
 /**
  * Phase 1 router skeleton.
@@ -227,6 +228,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <AuditPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'compare',
+        element: (
+          <Suspense fallback={null}>
+            <CompareView />
           </Suspense>
         ),
       },

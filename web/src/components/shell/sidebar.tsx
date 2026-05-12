@@ -2,6 +2,7 @@ import {
   Bell,
   Cpu,
   FileText,
+  GitCompare,
   LayoutDashboard,
   Layers,
   Map,
@@ -31,6 +32,7 @@ const NAV: Array<{
 }> = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/compare', label: 'Compare', icon: GitCompare },
   { to: '/map', label: 'Map', icon: Map },
   { to: '/gateways', label: 'Gateways', icon: Radio },
   { to: '/sites', label: 'Sites', icon: MapPin },
