@@ -13,6 +13,7 @@ import {
   type ChirpStackSettings,
   type TestConnResult,
 } from '@/lib/settings'
+import { InstallIdentityCard } from '@/components/settings/InstallIdentityCard'
 import { DataRetentionCard } from '@/components/settings/DataRetentionCard'
 import { BackupStatusCard } from '@/components/settings/BackupStatusCard'
 import { RestoreGuidanceCard } from '@/components/settings/RestoreGuidanceCard'
@@ -59,6 +60,9 @@ export default function SettingsPage() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-12">
+      {/* Install Identity — SETT-01 / SETT-02 / Plan 06-12 gap closure */}
+      <InstallIdentityCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Account</CardTitle>
