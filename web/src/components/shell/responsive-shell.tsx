@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { AccountMenu } from './account-menu'
+import { AlertWorkerBanner } from './AlertWorkerBanner'
 import { Sidebar } from './sidebar'
 import { Topbar } from './topbar'
 
@@ -15,6 +16,10 @@ export interface ShellProps {
 /**
  * UI-SPEC §App shell — wraps Topbar + Sidebar around <Outlet />.
  * Single canonical shell for every authenticated route.
+ *
+ * Plan 06-04 adds <AlertWorkerBanner /> directly under the topbar — renders
+ * a sticky warning banner when the alert engine reports degraded workers
+ * via /api/health/detailed. Banner self-hides when healthy.
  */
 export function ResponsiveShell(props: ShellProps) {
   return (
@@ -30,6 +35,7 @@ export function ResponsiveShell(props: ShellProps) {
           onSignOut={props.onSignOut}
         />
       </Topbar>
+      <AlertWorkerBanner />
       <div className="flex flex-1">
         <Sidebar />
         <main className="flex-1 px-4 py-4 md:px-8 md:py-6">
