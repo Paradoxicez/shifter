@@ -404,9 +404,11 @@ import (
     "strconv"
 
     "github.com/alexedwards/scs/v2"
+    "github.com/go-chi/chi/v5"
     "github.com/go-chi/chi/v5/middleware"
     "github.com/google/uuid"
     "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgconn"
 
     "github.com/shifter-io/shifter/internal/audit"
     "github.com/shifter-io/shifter/internal/auth"
@@ -526,12 +528,14 @@ func PatchIdentityHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
             return
         }
 
-        // Caller identity for audit row.
-        caller := auth.UserFromContext(r.Context())
-        var callerID uuid.UUID
-        if caller != nil {
-            callerID = caller.ID
+        // Caller identity for audit row — mirrors backup_card.go PatchBackupThresholdsHandler.
+        // auth.GetUser always succeeds here: RequireAction already returned 403 if no user.
+        user, ok := auth.GetUser(r.Context(), sm)
+        if !ok {
+            writeError(w, http.StatusUnauthorized, "unauthorized")
+            return
         }
+        callerID := uuid.MustParse(user.ID)
         reqID := middleware.GetReqID(r.Context())
 
         // Build before/after for audit diff.
@@ -599,18 +603,20 @@ func PatchIdentityHandler(deps Deps, sm *scs.SessionManager) http.HandlerFunc {
         writeJSON(w, http.StatusOK, resp)
     }
 }
-```
 
-NOTE: `isTxSerializationFailure` is likely already defined in `settings` package (check `retention.go`) — use the existing helper. If not present, add:
-```go
 // isTxSerializationFailure returns true when err is a Postgres 40001
 // serialization_failure (two concurrent Serializable txns conflicted).
+// NOTE: this helper does NOT exist elsewhere in the settings package —
+// add it here at the bottom of identity.go.
 func isTxSerializationFailure(err error) bool {
     var pgErr *pgconn.PgError
     return errors.As(err, &pgErr) && pgErr.Code == "40001"
 }
 ```
-(Import `"github.com/jackc/pgx/v5/pgconn"` — it's already in go.mod.)
+
+**NOTE: `isTxSerializationFailure` does NOT exist anywhere in the `settings` package (confirmed: `retention.go` and `backup_card.go` do not define it; only `isSerializationFailure` in `internal/user/handler.go` exists, in a different package with a different name). Add the helper shown above at the bottom of `identity.go` — it is the only definition in the package.**
+
+`"github.com/jackc/pgx/v5/pgconn"` is already in go.mod (used by pgx/v5 transitively).
 
 **Step 5 — internal/settings/routes.go:**
 
@@ -620,7 +626,7 @@ In `RegisterRoutes`, add a call to `RegisterIdentityRoutes` at the end of the fu
 RegisterIdentityRoutes(r, deps, sm)
 ```
 
-This ensures `RegisterRoutesWithBackup` also gets the identity routes (it calls `RegisterRoutes` first).
+`RegisterRoutesWithBackup` calls `RegisterRoutes` at line 46 of `routes.go`, so identity routes are automatically included without further changes.
 
 **Step 6 — Bump migration version assertions:**
 
@@ -777,7 +783,7 @@ Add 2 new tests:
 Use MSW handler pattern already present in the test file for other cards.
   </action>
   <verify>
-    <automated>pnpm --dir web test:run -- --reporter=verbose 2>&1 | grep -E "install.identity|InstallIdentity|settings.tsx" && grep -q "InstallIdentityCard" web/src/routes/settings.tsx</automated>
+    <automated>pnpm --dir web test:run && grep -q "InstallIdentityCard" web/src/routes/settings.tsx</automated>
   </verify>
   <done>
     - `grep -q "InstallIdentityCard" web/src/routes/settings.tsx` exits 0
