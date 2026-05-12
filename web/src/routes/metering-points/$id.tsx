@@ -31,6 +31,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { apiFetch } from '@/lib/api'
 import { useSSE, type MeasurementDelta } from '@/hooks/useSSE'
 import { AdvancedTab } from '@/components/metering-point/AdvancedTab'
+import { AnomalyStateCard } from '@/components/metering-point/AnomalyStateCard'
 import { NormalTab } from '@/components/metering-point/NormalTab'
 import { UplinksLogTab } from '@/components/metering-point/UplinksLogTab'
 import type { DetailResponse } from '@/components/metering-point/NormalTab'
@@ -111,6 +112,9 @@ export default function MeteringPointDetailPage() {
           </Badge>
         </div>
       </header>
+
+      {/* Plan 06-04 D-16 — anomaly state card above the existing tabs */}
+      <AnomalyStateCard meteringPointId={mp.id} />
 
       {/* 3-tab layout */}
       <TooltipProvider>

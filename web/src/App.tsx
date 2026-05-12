@@ -29,6 +29,8 @@ const ImportJobDetailPage = lazy(() => import('@/routes/admin/imports/$jobId'))
 const MapPage = lazy(() => import('@/routes/map'))
 const ReportsPage = lazy(() => import('@/routes/reports'))
 const UsersPage = lazy(() => import('@/routes/settings/users'))
+const AlertsPage = lazy(() => import('@/routes/alerts'))
+const AlertRulesPage = lazy(() => import('@/routes/settings/alerts'))
 
 /**
  * Phase 1 router skeleton.
@@ -200,6 +202,22 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={null}>
             <ReportsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'alerts',
+        element: (
+          <Suspense fallback={null}>
+            <AlertsPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'settings/alerts',
+        element: (
+          <Suspense fallback={null}>
+            <AlertRulesPage />
           </Suspense>
         ),
       },
