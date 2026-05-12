@@ -227,7 +227,7 @@ Plans:
 - [x] 06-09-restore-cli-ci-roundtrip-PLAN.md — Wave 3: internal/backup/restore.go (PG advisory lock + sha256 verify + timescaledb_pre_restore/post_restore + no -j) + `shifter restore --from` Cobra + .github/workflows/backup-restore-roundtrip.yml CI gate + operator runbook Backup & Restore section (D-44, D-45, OPS-04)
 - [x] 06-10-settings-extensions-PLAN.md — Wave 2: retention.go extension (alerts_days + audit_log_days fields) + migration 0045 (backup_warn/crit_threshold_hours) + Backup status card backend + DataRetentionCard frontend (7 rows) + BackupStatusCard + BackupHistoryList + RestoreGuidanceCard + InstallIdentityCard note + Playwright (D-13, D-38, D-46, D-47, SETT-02/05; preserves SETT-01/03/04)
 - [x] 06-11-ops-hardening-doctor-runbook-PLAN.md — Wave 3: AlertsPruneWorker (03:30 cron) + audit vocab migration 0046 (alert.pruned) + /health/detailed extension (alert_workers[] + last_backup) + `shifter doctor` CLI + redaction package + compose conventions audit + automated lint test + operator-runbook sections (Compose conventions + Upgrading Shifter) (D-21, D-22, D-48..D-50, OPS-05/06/07/08, AUDIT-02 reinforcement)
-- [ ] 06-12-install-identity-surface-PLAN.md — Gap closure: migration 0049 (settings.identity_update audit vocab) + GET/PATCH /api/settings/identity handlers + ActionSettingsIdentityUpdate RBAC + audit-in-tx + mount InstallIdentityCard + admin edit dialog (SETT-01, SETT-02)
+- [x] 06-12-install-identity-surface-PLAN.md — Gap closure: migration 0049 (settings.identity_update audit vocab) + GET/PATCH /api/settings/identity handlers + ActionSettingsIdentityUpdate RBAC + audit-in-tx + mount InstallIdentityCard + admin edit dialog (SETT-01, SETT-02)
 
 **UI hint**: yes
 
