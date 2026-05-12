@@ -43,6 +43,7 @@ import (
 	"github.com/shifter-io/shifter/internal/settings"
 	"github.com/shifter-io/shifter/internal/site"
 	"github.com/shifter-io/shifter/internal/swap"
+	"github.com/shifter-io/shifter/internal/user"
 )
 
 // Deps groups every dependency the router needs. Plan 18 (serve.go) constructs
@@ -131,6 +132,12 @@ type Deps struct {
 	// nil in early-boot / router unit tests that don't need the map route.
 	// Plan 05-13 gap closure — Phase 5 verification gap 1.
 	MapDeps *mapapi.Deps
+
+	// UserDeps wires Plan 06-05's /api/users CRUD + reset-password +
+	// logout-everywhere endpoints. nil in early-boot / router unit tests
+	// that don't need user-mgmt routes (router test fixture can keep its
+	// minimal Deps shape).
+	UserDeps *user.Deps
 
 	// FloorPlanDeps wires Plan 05-05/07's 12 floor-plan endpoints:
 	//   POST   /api/sites/{siteID}/floor-plans              (admin only)
@@ -343,6 +350,12 @@ func NewRouter(deps Deps) http.Handler {
 		// package's RegisterRoutes. Mounted before SPA fallback (PITFALL #4).
 		// Plan 05-13 gap closure.
 		mapapi.RegisterRoutes(r, *deps.MapDeps)
+	}
+	if deps.UserDeps != nil {
+		// UserDeps mounts Plan 06-05's /api/users surface. Auth is enforced
+		// inside each route group via RequireAction (see user.RegisterRoutes
+		// for the per-route mapping). Mounted before SPA fallback (PITFALL #4).
+		user.RegisterRoutes(r, *deps.UserDeps)
 	}
 	if deps.FloorPlanDeps != nil {
 		// FloorPlanDeps mounts Plan 05-05 + 05-07's 12 floor-plan routes.

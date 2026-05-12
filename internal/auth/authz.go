@@ -123,6 +123,29 @@ const (
 	ActionSettingsUpdate Action = "settings.update"
 )
 
+// Phase 6 — Plan 06-05: fine-grained user-management actions. The Phase 1
+// umbrella ActionUserManage stays as the legacy "do anything with users"
+// admin gate. The new actions split that umbrella so each REST verb is
+// individually grant-checkable, the future viewer-self-edit surface
+// (ActionUserReadSelf) doesn't accidentally inherit the umbrella, and audit
+// rows can record the specific verb that was permitted.
+//
+// All eight mutating actions are admin-only. ActionUserReadSelf is granted
+// to RoleViewer so the Phase 6 viewer-of-own-row UI doesn't 403 the
+// /api/account/me-equivalent endpoints (today /api/account/me satisfies
+// the role; ActionUserReadSelf is reserved for any future per-row read).
+const (
+	ActionUserList             Action = "user.list"
+	ActionUserCreate           Action = "user.create"
+	ActionUserUpdate           Action = "user.update"
+	ActionUserDisable          Action = "user.disable"
+	ActionUserEnable           Action = "user.enable"
+	ActionUserChangeRole       Action = "user.change_role"
+	ActionUserResetPassword    Action = "user.reset_password"
+	ActionUserLogoutEverywhere Action = "user.logout_everywhere"
+	ActionUserReadSelf         Action = "user.read_self"
+)
+
 // Phase 3 — Plan 03-02: gateway CRUD + bulk-import + secret reveal.
 // All mutating actions admin-only; viewer denied via fail-closed default.
 // ActionGatewayRead is the single exception viewers retain (mirrors
@@ -210,6 +233,19 @@ var roleBundles = map[Role]map[Action]bool{
 		// T-05-11-01: viewers cannot PATCH retention; Can() returns false for
 		// RoleViewer (ActionSettingsUpdate intentionally absent from viewer bundle).
 		ActionSettingsUpdate: true,
+
+		// Phase 6 — Plan 06-05: fine-grained user management. Every mutating
+		// action is admin-only. ActionUserReadSelf is the lone read-self
+		// surface, granted to both roles below.
+		ActionUserList:             true,
+		ActionUserCreate:           true,
+		ActionUserUpdate:           true,
+		ActionUserDisable:          true,
+		ActionUserEnable:           true,
+		ActionUserChangeRole:       true,
+		ActionUserResetPassword:    true,
+		ActionUserLogoutEverywhere: true,
+		ActionUserReadSelf:         true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -232,6 +268,13 @@ var roleBundles = map[Role]map[Action]bool{
 		// actions (create/update/archive/restore), bulk_import, and
 		// reveal_secrets are all intentionally absent — fail-closed.
 		ActionGatewayRead: true,
+
+		// Phase 6 — Plan 06-05: viewer can read their own user row (the
+		// /api/account/me path is already granted via ActionAccountSelfEdit;
+		// this action is reserved for future per-row read surfaces). NONE of
+		// the user-mgmt mutating actions are granted to viewer — every
+		// mutating endpoint 403s for viewer per D-26 + the umbrella RBAC test.
+		ActionUserReadSelf: true,
 	},
 }
 

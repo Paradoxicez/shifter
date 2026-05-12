@@ -99,3 +99,43 @@ func TestCan_Phase2_ViewerMutationsDenied(t *testing.T) {
 		require.False(t, Can(viewer, a, nil), "viewer must NOT be able to %s", a)
 	}
 }
+
+// TestCan_Phase6_UserMgmt_AdminEverything — admin can perform every fine-
+// grained user-management action declared by Plan 06-05 (D-30 + USER-01..04
+// + RBAC defense in depth on top of RequireAction).
+func TestCan_Phase6_UserMgmt_AdminEverything(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	for _, a := range []Action{
+		ActionUserList,
+		ActionUserCreate,
+		ActionUserUpdate,
+		ActionUserDisable,
+		ActionUserEnable,
+		ActionUserChangeRole,
+		ActionUserResetPassword,
+		ActionUserLogoutEverywhere,
+		ActionUserReadSelf,
+	} {
+		require.True(t, Can(admin, a, nil), "admin must be able to %s", a)
+	}
+}
+
+// TestCan_Phase6_UserMgmt_ViewerOnlyReadSelf — viewer is allowed
+// ActionUserReadSelf only; every mutating action 403s. T-06-05-01
+// (viewer-creates-admin) mitigation verified at the role-bundle level.
+func TestCan_Phase6_UserMgmt_ViewerOnlyReadSelf(t *testing.T) {
+	viewer := &User{ID: "u2", Role: "viewer"}
+	require.True(t, Can(viewer, ActionUserReadSelf, nil), "viewer can read self row")
+	for _, a := range []Action{
+		ActionUserList,
+		ActionUserCreate,
+		ActionUserUpdate,
+		ActionUserDisable,
+		ActionUserEnable,
+		ActionUserChangeRole,
+		ActionUserResetPassword,
+		ActionUserLogoutEverywhere,
+	} {
+		require.False(t, Can(viewer, a, nil), "viewer must NOT be able to %s", a)
+	}
+}

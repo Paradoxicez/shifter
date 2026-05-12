@@ -61,6 +61,7 @@ import (
 	"github.com/shifter-io/shifter/internal/resolver"
 	"github.com/shifter-io/shifter/internal/settings"
 	"github.com/shifter-io/shifter/internal/swap"
+	"github.com/shifter-io/shifter/internal/user"
 )
 
 // secretsDir is the on-disk path under which file-by-REF secrets live.
@@ -467,6 +468,12 @@ var serveCmd = &cobra.Command{
 				Queries:    q,
 				SessionMgr: sm,
 				ImageRoot:  cfg.FloorPlanRoot,
+			},
+			UserDeps: &user.Deps{
+				Pool:       pool,
+				Store:      userStore,
+				SessionMgr: sm,
+				Log:        log.With("component", "user"),
 			},
 			SPA: httpapi.SPAHandler(),
 		})
