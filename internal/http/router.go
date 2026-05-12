@@ -32,9 +32,11 @@ import (
 	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/events"
+	"github.com/shifter-io/shifter/internal/floorplan"
 	"github.com/shifter-io/shifter/internal/gateway"
 	importpkg "github.com/shifter-io/shifter/internal/import"
 	"github.com/shifter-io/shifter/internal/install"
+	mapapi "github.com/shifter-io/shifter/internal/map"
 	"github.com/shifter-io/shifter/internal/meteringpoint"
 	"github.com/shifter-io/shifter/internal/profile"
 	"github.com/shifter-io/shifter/internal/report"
@@ -123,6 +125,28 @@ type Deps struct {
 	//   PATCH /api/settings/retention  — admin only (T-05-11-01)
 	// nil in early-boot / router unit tests that don't need retention routes.
 	SettingsDeps *settings.Deps
+
+	// MapDeps wires Plan 05-04's map data endpoint:
+	//   GET /api/map/data — admin + viewer (auth.ActionSiteRead)
+	// nil in early-boot / router unit tests that don't need the map route.
+	// Plan 05-13 gap closure — Phase 5 verification gap 1.
+	MapDeps *mapapi.Deps
+
+	// FloorPlanDeps wires Plan 05-05/07's 12 floor-plan endpoints:
+	//   POST   /api/sites/{siteID}/floor-plans              (admin only)
+	//   GET    /api/sites/{siteID}/floor-plans              (admin + viewer)
+	//   GET    /api/floor-plans/{id}                        (admin + viewer)
+	//   GET    /api/floor-plans/{id}/image                  (admin + viewer)
+	//   GET    /api/floor-plans/{id}/placements             (admin + viewer)
+	//   PATCH  /api/floor-plans/{id}                        (admin only)
+	//   PATCH  /api/floor-plans/{id}/label                  (admin only)
+	//   PATCH  /api/floor-plans/{id}/placements/{deviceID}  (admin only)
+	//   DELETE /api/floor-plans/{id}                        (admin only)
+	//   DELETE /api/floor-plans/{id}/placements/{deviceID}  (admin only)
+	//   POST   /api/floor-plans/{id}/placements             (admin only)
+	// nil in early-boot / router unit tests that don't need floor-plan routes.
+	// Plan 05-13 gap closure — Phase 5 verification gap 2.
+	FloorPlanDeps *floorplan.Deps
 
 	// SPA fallback handler (Plan 19). Optional — if nil the router does NOT
 	// register the catch-all so /unknown/path returns 404 instead of HTML.
@@ -312,6 +336,21 @@ func NewRouter(deps Deps) http.Handler {
 		//   PATCH /api/settings/retention — admin only (T-05-11-01)
 		// Mounted before the SPA fallback (PITFALL #4).
 		settings.RegisterRoutes(r, *deps.SettingsDeps, deps.SessionMgr)
+	}
+	if deps.MapDeps != nil {
+		// MapDeps mounts Plan 05-04's GET /api/map/data endpoint.
+		// Auth (admin + viewer via ActionSiteRead) enforced inside the
+		// package's RegisterRoutes. Mounted before SPA fallback (PITFALL #4).
+		// Plan 05-13 gap closure.
+		mapapi.RegisterRoutes(r, *deps.MapDeps)
+	}
+	if deps.FloorPlanDeps != nil {
+		// FloorPlanDeps mounts Plan 05-05 + 05-07's 12 floor-plan routes.
+		// Auth groups (site.read / site.create / site.update / site.archive)
+		// are applied inside the package's RegisterRoutes per route.
+		// Mounted before SPA fallback (PITFALL #4).
+		// Plan 05-13 gap closure.
+		floorplan.RegisterRoutes(r, *deps.FloorPlanDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without
