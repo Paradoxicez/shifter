@@ -23,7 +23,7 @@ func TestNormalizeMeasurement_SingleField(t *testing.T) {
 	}
 	decoded := map[string]any{"liters": 100000.0}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.NoError(t, err)
 	require.NotNil(t, out.RawValue)
 	f, _ := out.RawValue.Float64()
@@ -45,7 +45,7 @@ func TestNormalizeMeasurement_MultipleCanonical(t *testing.T) {
 		"temp":    22.5,
 	}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.NoError(t, err)
 	require.NotNil(t, out.RawValue)
 	require.NotNil(t, out.BatteryPct)
@@ -73,7 +73,7 @@ func TestNormalizeMeasurement_ExtraFields(t *testing.T) {
 		"factory_id": "ABC123",
 	}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.NoError(t, err)
 	require.NotNil(t, out.Extra)
 	require.Contains(t, out.Extra, "voltage_l1")
@@ -93,7 +93,7 @@ func TestNormalizeMeasurement_MissingPointer_Skips(t *testing.T) {
 	}
 	decoded := map[string]any{"other": 42.0}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.ErrorIs(t, err, ErrNoCanonicalValue)
 	require.Nil(t, out.RawValue, "missing pointer left RawValue unset")
 }
@@ -120,7 +120,7 @@ func TestNormalizeMeasurement_DataTypeBool(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := NormalizeMeasurement(tc.decoded, mappings)
+			out, err := NormalizeMeasurement(tc.decoded, mappings, "")
 			require.NoError(t, err)
 			require.NotNil(t, out.LeakDetected, "leak_detected populated")
 			require.Equal(t, tc.want, *out.LeakDetected)
@@ -142,7 +142,7 @@ func TestNormalizeMeasurement_PositionOrderApplied(t *testing.T) {
 	}
 	decoded := map[string]any{"v": 10.0}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.NoError(t, err)
 	require.NotNil(t, out.RawValue)
 	f, _ := out.RawValue.Float64()
@@ -161,7 +161,7 @@ func TestNormalizeMeasurement_InstantValueSatisfiesCanonical(t *testing.T) {
 	}
 	decoded := map[string]any{"flow": 12.5}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	require.NoError(t, err, "instant_value alone satisfies canonical requirement")
 	require.NotNil(t, out.InstantValue)
 	require.Nil(t, out.RawValue)
@@ -214,9 +214,76 @@ func TestNormalizeMeasurement_RootPointer_WholeObject(t *testing.T) {
 	}
 	decoded := map[string]any{"x": 1.0}
 
-	out, err := NormalizeMeasurement(decoded, mappings)
+	out, err := NormalizeMeasurement(decoded, mappings, "")
 	// The whole-document is map[string]any, not a number — coerce fails →
 	// nothing populated → ErrNoCanonicalValue.
 	require.ErrorIs(t, err, ErrNoCanonicalValue)
 	require.Nil(t, out.RawValue)
+}
+
+// TestNormalizeMeasurement_BatteryCurve_LiSOCl23V6 verifies that passing
+// battery_curve="li_socl2_3v6" and Extra["battery_v"]=3.5 produces a
+// BatteryPct of approximately 92 (band 3.4–3.6: 85–100, halfway → ~92).
+func TestNormalizeMeasurement_BatteryCurve_LiSOCl23V6(t *testing.T) {
+	t.Parallel()
+
+	// The codec emits battery_v as a float; the mapping routes it to extra.battery_v.
+	// The battery curve then converts that voltage to BatteryPct.
+	mappings := []profile.Mapping{
+		{JSONPointer: "/v", Target: "raw_value", DataType: "numeric", Position: 0},
+		{JSONPointer: "/battery_v", Target: "extra.battery_v", DataType: "numeric", Position: 1},
+	}
+	decoded := map[string]any{
+		"v":         1000.0,
+		"battery_v": 3.5,
+	}
+
+	out, err := NormalizeMeasurement(decoded, mappings, BatteryCurveLiSOCl23V6)
+	require.NoError(t, err)
+	require.NotNil(t, out.BatteryPct, "BatteryPct must be set when battery curve applied")
+	// 3.5V is in the 3.4–3.6 band (85–100), so ~92%.
+	require.GreaterOrEqual(t, *out.BatteryPct, int16(90))
+	require.LessOrEqual(t, *out.BatteryPct, int16(95))
+	// Extra["battery_v"] must still be preserved.
+	require.Contains(t, out.Extra, "battery_v", "extra.battery_v should be preserved")
+}
+
+// TestNormalizeMeasurement_BatteryCurve_LinearPct_Passthrough verifies that
+// linear_pct does NOT override the codec's own battery_pct mapping.
+func TestNormalizeMeasurement_BatteryCurve_LinearPct_Passthrough(t *testing.T) {
+	t.Parallel()
+
+	mappings := []profile.Mapping{
+		{JSONPointer: "/v", Target: "raw_value", DataType: "numeric", Position: 0},
+		{JSONPointer: "/battery_pct", Target: "battery_pct", DataType: "int", Position: 1},
+		{JSONPointer: "/battery_v", Target: "extra.battery_v", DataType: "numeric", Position: 2},
+	}
+	decoded := map[string]any{
+		"v":           1000.0,
+		"battery_pct": 75.0,
+		"battery_v":   3.5,
+	}
+
+	// With linear_pct curve, the codec's own battery_pct (75) must win.
+	out, err := NormalizeMeasurement(decoded, mappings, BatteryCurveLinearPct)
+	require.NoError(t, err)
+	require.NotNil(t, out.BatteryPct)
+	require.Equal(t, int16(75), *out.BatteryPct, "linear_pct: codec's 75%% must be preserved")
+}
+
+// TestNormalizeMeasurement_BatteryCurve_NoBatteryV_NoOverride verifies that
+// if the decoded payload has no battery_v field in Extra, the curve is not
+// applied (no spurious BatteryPct is generated).
+func TestNormalizeMeasurement_BatteryCurve_NoBatteryV_NoOverride(t *testing.T) {
+	t.Parallel()
+
+	mappings := []profile.Mapping{
+		{JSONPointer: "/v", Target: "raw_value", DataType: "numeric", Position: 0},
+	}
+	decoded := map[string]any{"v": 1000.0}
+
+	out, err := NormalizeMeasurement(decoded, mappings, BatteryCurveLiSOCl23V6)
+	require.NoError(t, err)
+	// No battery_v in Extra → BatteryPct must remain nil.
+	require.Nil(t, out.BatteryPct, "no battery_v → no BatteryPct override")
 }
