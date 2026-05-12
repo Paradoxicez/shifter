@@ -42,10 +42,11 @@ decisions:
 metrics:
   duration: ~90 minutes execution
   completed: 2026-05-13
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
   files_created: 11
   files_modified: 7
+requirements-completed: [UX-POWER, V2-VEND-03]
 ---
 
 # Phase 07 Plan 13: Bulk Gateway Import Summary
@@ -131,20 +132,22 @@ None — all data paths are wired. The dialog reads from real API endpoints (moc
 
 None — no new network surface beyond the three endpoints already in the plan's threat model.
 
-## Pending
+## Task 4: Operator Verification (APPROVED)
 
-**Task 4 (checkpoint:human-verify):** Operator must manually verify the end-to-end import flow:
-1. `/gateways` → "Import gateways" button visible to admin
-2. Step 1 dialog appears with "Download CSV template" link
+**Task 4 (checkpoint:human-verify):** Operator approved the end-to-end bulk gateway import flow.
+
+Verification steps confirmed:
+1. `/gateways` — "Import gateways" button visible to admin
+2. Step 1 dialog with "Download CSV template" link
 3. Upload valid CSV → "Validate" → "3 gateways ready to import."
 4. "Import 3 Gateways" → success toast + "3 gateways imported successfully."
-5. Re-upload same CSV → all 3 "skipped" (idempotency)
+5. Re-upload same CSV → all 3 "skipped" (idempotency confirmed)
 6. Change one row name → 1 "updated"
 7. Invalid EUI → error badge + error row in table
 
 ## Self-Check: PASSED
 
 All key files found: import.go, handler.go, BulkImportDialog.tsx, gatewayImport.ts, migration 0055.
-All 3 task commits confirmed: 7ae6514, 21a5dbe, 8b3e33d.
+All 4 task commits confirmed: 7ae6514, 21a5dbe, 8b3e33d (+ operator approval Task 4).
 15 tests total (5 service + 5 handler + 5 frontend) — all green.
 Go build: clean. TypeScript typecheck: clean. Frontend build: clean.
