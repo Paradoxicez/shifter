@@ -606,6 +606,16 @@ type Report struct {
 	ExpiresAt       pgtype.Timestamptz
 }
 
+type ReportTemplate struct {
+	ID          pgtype.UUID
+	Name        string
+	Description string
+	State       []byte
+	CreatedBy   pgtype.UUID
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
 // Singleton retention windows for measurement + CAGGs (D-09 / DATA-13). NULL yearly_days = forever.
 type RetentionConfig struct {
 	ID int32

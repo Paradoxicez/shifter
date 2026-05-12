@@ -138,6 +138,32 @@ const (
 	ActionCodecTestRun Action = "codec.test_run"
 )
 
+// Phase 7 — Plan 07-11a: Saved Report Templates RBAC (UX-POWER Surface 6).
+//
+// ActionReportTemplateRead is granted to admin + viewer — both roles can list
+// and use saved templates (read-only browse + apply to generate).
+//
+// ActionReportTemplateCreate / ActionReportTemplateUpdate / ActionReportTemplateDelete
+// are admin-only (T-07-11a-02 mitigation: viewer forging POST returns 403 from
+// RequireAction before the handler runs; defense-in-depth).
+const (
+	// ActionReportTemplateRead gates GET /api/reports/templates and
+	// GET /api/reports/templates/{id}. Admin + viewer allowed (read-only).
+	ActionReportTemplateRead Action = "report_template.read"
+
+	// ActionReportTemplateCreate gates POST /api/reports/templates.
+	// Admin-only — creates a new report_template row + writes audit row.
+	ActionReportTemplateCreate Action = "report_template.create"
+
+	// ActionReportTemplateUpdate gates PATCH /api/reports/templates/{id}.
+	// Admin-only — renames/updates state + writes audit row.
+	ActionReportTemplateUpdate Action = "report_template.update"
+
+	// ActionReportTemplateDelete gates DELETE /api/reports/templates/{id}.
+	// Admin-only — hard-deletes template + writes audit row (T-07-11a-03).
+	ActionReportTemplateDelete Action = "report_template.delete"
+)
+
 // Phase 7 — Plan 07-04: Vendor Catalog HTTP API actions (V2-VEND-01).
 //
 // ActionCatalogRead is granted to admin + viewer — the catalog list and entry
@@ -357,6 +383,14 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionCatalogRead:   true,
 		ActionCatalogImport: true,
 		ActionCatalogUpdate: true,
+
+		// Phase 7 — Plan 07-11a: Saved Report Templates. Admin has all 4 actions.
+		// ActionReportTemplateRead is also granted to RoleViewer below (read-only).
+		// Create/Update/Delete are admin-only (T-07-11a-02 mitigation).
+		ActionReportTemplateRead:   true,
+		ActionReportTemplateCreate: true,
+		ActionReportTemplateUpdate: true,
+		ActionReportTemplateDelete: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -405,6 +439,11 @@ var roleBundles = map[Role]map[Action]bool{
 		// + entry detail). ActionCatalogImport and ActionCatalogUpdate are
 		// intentionally absent — fail-closed default returns false (T-07-04-01).
 		ActionCatalogRead: true,
+
+		// Phase 7 — Plan 07-11a: viewer can READ saved report templates (list +
+		// get). ActionReportTemplateCreate/Update/Delete are intentionally absent —
+		// fail-closed default returns false (T-07-11a-02 mitigation).
+		ActionReportTemplateRead: true,
 	},
 }
 

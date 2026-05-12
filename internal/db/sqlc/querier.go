@@ -207,6 +207,10 @@ type Querier interface {
 	//   range=yearly  → measurement_monthly (bucketed to years in query)
 	//-------- REPORT METADATA CRUD ----------
 	CreateReport(ctx context.Context, arg CreateReportParams) (Report, error)
+	// Inserts a new report template and returns the full row.
+	// The UNIQUE constraint on name means a duplicate raises pgconn error 23505 (unique_violation).
+	// Caller maps 23505 → HTTP 409.
+	CreateReportTemplate(ctx context.Context, arg CreateReportTemplateParams) (ReportTemplate, error)
 	// Site (D-17 + D-20) — physical/logical hierarchy anchor for metering points
 	// and devices. Soft-deleted via archived_at; hard delete blocked by FKs from
 	// metering_point and (transitively) binding.
@@ -266,6 +270,9 @@ type Querier interface {
 	DeleteMappingsByProfile(ctx context.Context, deviceProfileID pgtype.UUID) error
 	// Called by both right-click remove AND device decommission (D-25).
 	DeletePlacementByDevice(ctx context.Context, deviceID pgtype.UUID) error
+	// Hard-deletes a report template by primary key.
+	// Caller checks rows-affected = 0 → 404.
+	DeleteReportTemplate(ctx context.Context, id pgtype.UUID) error
 	// D-07: per-profile expected_interval_s; online = last_seen_at within 2x interval.
 	// Joins device → device_profile → binding → metering_point to filter by utility.
 	// $1 = utility_class text
@@ -401,6 +408,9 @@ type Querier interface {
 	// Returns only the columns needed so the handler avoids a full DeviceProfile scan.
 	GetProfileForCodecTest(ctx context.Context, id pgtype.UUID) (GetProfileForCodecTestRow, error)
 	GetReport(ctx context.Context, id pgtype.UUID) (Report, error)
+	// Fetches a single report template by UUID primary key.
+	// Returns pgx.ErrNoRows when the template does not exist.
+	GetReportTemplate(ctx context.Context, id pgtype.UUID) (ReportTemplate, error)
 	// internal/db/queries/settings.sql
 	// Retention configuration queries (DATA-13 / D-09 / Plan 05-11).
 	//
@@ -601,6 +611,13 @@ type Querier interface {
 	// Bounded by both time floor ($2) AND row count ($3) so a misconfigured UI
 	// can't accidentally page through years of telemetry.
 	ListRecentMeasurements(ctx context.Context, arg ListRecentMeasurementsParams) ([]Measurement, error)
+	// report_templates.sql — Phase 7 Plan 11a: Saved Report Templates (UX-POWER Surface 6).
+	//
+	// All 5 queries target the report_template table added by migration 0053.
+	// RBAC enforcement is at the HTTP handler layer; these queries have no auth logic.
+	// Returns all report templates ordered case-insensitively by name ascending.
+	// The lower(name) functional index (0053) makes this sort O(log N).
+	ListReportTemplates(ctx context.Context) ([]ReportTemplate, error)
 	// Map view queries (Phase 5 MAP-01..04, plan 05-04).
 	//
 	// These queries power GET /api/map/data in internal/map/handler.go.
@@ -809,6 +826,10 @@ type Querier interface {
 	// Drag-to-nudge: only x_frac / y_frac change; floor_plan_id stays.
 	UpdatePlacement(ctx context.Context, arg UpdatePlacementParams) (DeviceFloorPlanPlacement, error)
 	UpdateReportPDFStatus(ctx context.Context, arg UpdateReportPDFStatusParams) error
+	// Updates name, description, and state for an existing template.
+	// Caller checks rows-affected = 0 → 404.
+	// Duplicate name on rename raises pgconn 23505 → caller maps to HTTP 409.
+	UpdateReportTemplate(ctx context.Context, arg UpdateReportTemplateParams) error
 	// Partial update via COALESCE: only fields whose $N is non-NULL are changed.
 	// yearly_days is NOT wrapped in COALESCE — the handler passes the resolved
 	// value explicitly (including NULL to express "forever"), using a sentinel

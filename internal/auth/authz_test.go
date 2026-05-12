@@ -223,3 +223,34 @@ func TestAuthz_AlertActionsAdminOnlyExceptRead(t *testing.T) {
 			"viewer must NOT be able to %s (D-11 read-only)", a)
 	}
 }
+
+// TestAuthz_ReportTemplate_AdminCanAll — Plan 07-11a T-07-11a-02:
+// Admin can perform all 4 report-template actions; viewer can only read.
+// ActionReportTemplateRead is viewer-accessible (both roles);
+// ActionReportTemplateCreate/Update/Delete are admin-only (T-07-11a-02).
+func TestAuthz_ReportTemplate_AdminCanAll(t *testing.T) {
+	admin := &User{ID: "u1", Role: "admin"}
+	viewer := &User{ID: "u2", Role: "viewer"}
+
+	// Admin can read, create, update, and delete.
+	for _, a := range []Action{
+		ActionReportTemplateRead,
+		ActionReportTemplateCreate,
+		ActionReportTemplateUpdate,
+		ActionReportTemplateDelete,
+	} {
+		require.True(t, Can(admin, a, nil), "admin must be able to %s", a)
+	}
+
+	// Viewer can read but NOT create, update, or delete (T-07-11a-02).
+	require.True(t, Can(viewer, ActionReportTemplateRead, nil),
+		"viewer must be able to report_template.read (read-only)")
+	for _, a := range []Action{
+		ActionReportTemplateCreate,
+		ActionReportTemplateUpdate,
+		ActionReportTemplateDelete,
+	} {
+		require.False(t, Can(viewer, a, nil),
+			"viewer must NOT be able to %s (T-07-11a-02)", a)
+	}
+}

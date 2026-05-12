@@ -52,7 +52,7 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 51 (Plan 06-01 bumped from 37 to 43:
+	// Reapply. Should succeed back up to 54 (Plan 06-01 bumped from 37 to 43:
 	// 0038_alert_rule / 0039_alert / 0040_retention_config_phase6 /
 	// 0042_alert_worker_state / 0043_admin_prune_audit_rows — 0041 is a
 	// deliberate gap so the SECURITY DEFINER prune function gets terminal
@@ -68,13 +68,18 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 	// Plan 07-02 adds 0050_catalog_metadata bringing us to 50.
 	// Plan 07-04 adds 0051_audit_vocab_catalog bringing us to 51
 	// (catalog.profile.imported / catalog.profile.updated / catalog.profile.codec_resynced).
+	// Plan 07-09b adds 0052_anomaly_compat_check bringing us to 52.
+	// Plan 07-11a adds 0053_report_template bringing us to 53.
+	// Plan 07-11a adds 0054_audit_vocab_report_template bringing us to 54
+	// (report_template.created / report_template.updated / report_template.deleted +
+	//  report_template entity type).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(51), v)
+	require.Equal(t, uint(54), v)
 
 	// Verify seeds re-inserted after the round-trip (3 from 0010 + 1 from 0050).
 	var n int

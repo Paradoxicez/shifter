@@ -191,6 +191,29 @@ const (
 // Catalog mutations use EntityTypeDeviceProfile (already defined above).
 // No new entity type is needed — the catalog action rows target device_profile rows.
 
+// Phase 7 — Plan 07-11a: saved report template lifecycle audit constants.
+// These strings MUST exactly mirror the CHECK literals added by
+// migration 0054_audit_vocab_report_template.up.sql — any drift = 23514 at write.
+//
+// AuditActionReportTemplateCreated fires when an operator calls
+// POST /api/reports/templates (creates a new saved template row).
+//
+// AuditActionReportTemplateUpdated fires when an operator calls
+// PATCH /api/reports/templates/{id} (renames or updates state).
+//
+// AuditActionReportTemplateDeleted fires when an operator calls
+// DELETE /api/reports/templates/{id} (removes the template).
+const (
+	AuditActionReportTemplateCreated = "report_template.created"
+	AuditActionReportTemplateUpdated = "report_template.updated"
+	AuditActionReportTemplateDeleted = "report_template.deleted"
+)
+
+// Phase 7 — Plan 07-11a: report_template entity type (mirrors 0054 CHECK literal).
+const (
+	EntityTypeReportTemplate = "report_template"
+)
+
 // Gap closure Plan 06-12 — SETT-02: install_identity entity type.
 // Used as EntityType in audit.Entry for identity update rows.
 const (
