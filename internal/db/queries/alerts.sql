@@ -310,6 +310,71 @@ SELECT
         0.0
     ) AS past_value;
 
+-- ============================================================================
+-- Phase 7 Plan 07-10 — Backtest queries (D-10 read-only two-pass pattern).
+-- All queries target measurement_hourly CAGG. No writes.
+-- Pitfall 4 (RESEARCH): window function calls cannot be nested inside
+-- aggregate calls in TimescaleDB CAGGs — all baselines computed in pass 1,
+-- counts in pass 2. No window functions used inside aggregate calls.
+-- ============================================================================
+
+-- name: BacktestP95Pass1 :one
+-- Pass 1: compute P95 of avg_instant over the entire window as the baseline.
+-- Returns NULL (→ *float64 nil) if no rows exist in the window.
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY avg_instant) AS p95
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval;
+
+-- name: BacktestP95Pass2 :many
+-- Pass 2: count hourly buckets strictly exceeding the P95 baseline per day.
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND avg_instant > $3
+GROUP BY 1
+ORDER BY 1;
+
+-- name: BacktestIQRPass1 :one
+-- Pass 1: compute Q1 + Q3 (IQR bounds) over the window.
+-- Returns NULL→ nil if no rows exist.
+SELECT
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY avg_instant) AS q1,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY avg_instant) AS q3
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval;
+
+-- name: BacktestIQRPass2 :many
+-- Pass 2: count hourly buckets outside [low, high] per day.
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND (avg_instant < $3 OR avg_instant > $4)
+GROUP BY 1
+ORDER BY 1;
+
+-- name: BacktestQuietHourCount :many
+-- Single-pass: rows in quiet window (hours between $3 and $4 inclusive) where
+-- avg_instant > flow_threshold ($5), grouped by day.
+-- EXTRACT(HOUR FROM bucket) returns UTC hour; matches AnomalyWorker convention.
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND EXTRACT(hour FROM bucket)::int BETWEEN $3::int AND $4::int
+  AND avg_instant > $5
+GROUP BY 1
+ORDER BY 1;
+
 -- name: NonZeroFlowDuringQuietWindow :one
 -- D-17 Rule 3 + Pitfall 9 cross-midnight OR-form.
 -- Parameters (named via sqlc.arg so the generated Params struct fields read

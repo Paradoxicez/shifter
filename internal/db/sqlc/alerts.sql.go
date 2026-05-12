@@ -11,6 +11,212 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const backtestIQRPass1 = `-- name: BacktestIQRPass1 :one
+SELECT
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY avg_instant) AS q1,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY avg_instant) AS q3
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+`
+
+type BacktestIQRPass1Params struct {
+	MeteringPointID pgtype.UUID
+	Column2         pgtype.Interval
+}
+
+type BacktestIQRPass1Row struct {
+	Q1 float64
+	Q3 float64
+}
+
+// Pass 1: compute Q1 + Q3 (IQR bounds) over the window.
+// Returns NULL→ nil if no rows exist.
+func (q *Queries) BacktestIQRPass1(ctx context.Context, arg BacktestIQRPass1Params) (BacktestIQRPass1Row, error) {
+	row := q.db.QueryRow(ctx, backtestIQRPass1, arg.MeteringPointID, arg.Column2)
+	var i BacktestIQRPass1Row
+	err := row.Scan(&i.Q1, &i.Q3)
+	return i, err
+}
+
+const backtestIQRPass2 = `-- name: BacktestIQRPass2 :many
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND (avg_instant < $3 OR avg_instant > $4)
+GROUP BY 1
+ORDER BY 1
+`
+
+type BacktestIQRPass2Params struct {
+	MeteringPointID pgtype.UUID
+	Column2         pgtype.Interval
+	AvgInstant      float64
+	AvgInstant_2    float64
+}
+
+type BacktestIQRPass2Row struct {
+	Day   pgtype.Date
+	Fires int64
+}
+
+// Pass 2: count hourly buckets outside [low, high] per day.
+func (q *Queries) BacktestIQRPass2(ctx context.Context, arg BacktestIQRPass2Params) ([]BacktestIQRPass2Row, error) {
+	rows, err := q.db.Query(ctx, backtestIQRPass2,
+		arg.MeteringPointID,
+		arg.Column2,
+		arg.AvgInstant,
+		arg.AvgInstant_2,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BacktestIQRPass2Row
+	for rows.Next() {
+		var i BacktestIQRPass2Row
+		if err := rows.Scan(&i.Day, &i.Fires); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const backtestP95Pass1 = `-- name: BacktestP95Pass1 :one
+
+SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY avg_instant) AS p95
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+`
+
+type BacktestP95Pass1Params struct {
+	MeteringPointID pgtype.UUID
+	Column2         pgtype.Interval
+}
+
+// ============================================================================
+// Phase 7 Plan 07-10 — Backtest queries (D-10 read-only two-pass pattern).
+// All queries target measurement_hourly CAGG. No writes.
+// Pitfall 4 (RESEARCH): window function calls cannot be nested inside
+// aggregate calls in TimescaleDB CAGGs — all baselines computed in pass 1,
+// counts in pass 2. No window functions used inside aggregate calls.
+// ============================================================================
+// Pass 1: compute P95 of avg_instant over the entire window as the baseline.
+// Returns NULL (→ *float64 nil) if no rows exist in the window.
+func (q *Queries) BacktestP95Pass1(ctx context.Context, arg BacktestP95Pass1Params) (float64, error) {
+	row := q.db.QueryRow(ctx, backtestP95Pass1, arg.MeteringPointID, arg.Column2)
+	var p95 float64
+	err := row.Scan(&p95)
+	return p95, err
+}
+
+const backtestP95Pass2 = `-- name: BacktestP95Pass2 :many
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND avg_instant > $3
+GROUP BY 1
+ORDER BY 1
+`
+
+type BacktestP95Pass2Params struct {
+	MeteringPointID pgtype.UUID
+	Column2         pgtype.Interval
+	AvgInstant      float64
+}
+
+type BacktestP95Pass2Row struct {
+	Day   pgtype.Date
+	Fires int64
+}
+
+// Pass 2: count hourly buckets strictly exceeding the P95 baseline per day.
+func (q *Queries) BacktestP95Pass2(ctx context.Context, arg BacktestP95Pass2Params) ([]BacktestP95Pass2Row, error) {
+	rows, err := q.db.Query(ctx, backtestP95Pass2, arg.MeteringPointID, arg.Column2, arg.AvgInstant)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BacktestP95Pass2Row
+	for rows.Next() {
+		var i BacktestP95Pass2Row
+		if err := rows.Scan(&i.Day, &i.Fires); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const backtestQuietHourCount = `-- name: BacktestQuietHourCount :many
+SELECT
+    time_bucket('1 day', bucket)::date AS day,
+    count(*) AS fires
+FROM measurement_hourly
+WHERE metering_point_id = $1
+  AND bucket >= now() - $2::interval
+  AND EXTRACT(hour FROM bucket)::int BETWEEN $3::int AND $4::int
+  AND avg_instant > $5
+GROUP BY 1
+ORDER BY 1
+`
+
+type BacktestQuietHourCountParams struct {
+	MeteringPointID pgtype.UUID
+	Column2         pgtype.Interval
+	Column3         int32
+	Column4         int32
+	AvgInstant      float64
+}
+
+type BacktestQuietHourCountRow struct {
+	Day   pgtype.Date
+	Fires int64
+}
+
+// Single-pass: rows in quiet window (hours between $3 and $4 inclusive) where
+// avg_instant > flow_threshold ($5), grouped by day.
+// EXTRACT(HOUR FROM bucket) returns UTC hour; matches AnomalyWorker convention.
+func (q *Queries) BacktestQuietHourCount(ctx context.Context, arg BacktestQuietHourCountParams) ([]BacktestQuietHourCountRow, error) {
+	rows, err := q.db.Query(ctx, backtestQuietHourCount,
+		arg.MeteringPointID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.AvgInstant,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BacktestQuietHourCountRow
+	for rows.Next() {
+		var i BacktestQuietHourCountRow
+		if err := rows.Scan(&i.Day, &i.Fires); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countAlertsUnreadBySeverity = `-- name: CountAlertsUnreadBySeverity :one
 
 SELECT

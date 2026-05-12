@@ -66,6 +66,27 @@ type Querier interface {
 	// D-20 soft-delete. Idempotent guard `archived_at IS NULL` — re-archiving an
 	// already-archived site returns no row (caller treats as no-op).
 	ArchiveSite(ctx context.Context, id pgtype.UUID) (Site, error)
+	// Pass 1: compute Q1 + Q3 (IQR bounds) over the window.
+	// Returns NULL→ nil if no rows exist.
+	BacktestIQRPass1(ctx context.Context, arg BacktestIQRPass1Params) (BacktestIQRPass1Row, error)
+	// Pass 2: count hourly buckets outside [low, high] per day.
+	BacktestIQRPass2(ctx context.Context, arg BacktestIQRPass2Params) ([]BacktestIQRPass2Row, error)
+	// ============================================================================
+	// Phase 7 Plan 07-10 — Backtest queries (D-10 read-only two-pass pattern).
+	// All queries target measurement_hourly CAGG. No writes.
+	// Pitfall 4 (RESEARCH): window function calls cannot be nested inside
+	// aggregate calls in TimescaleDB CAGGs — all baselines computed in pass 1,
+	// counts in pass 2. No window functions used inside aggregate calls.
+	// ============================================================================
+	// Pass 1: compute P95 of avg_instant over the entire window as the baseline.
+	// Returns NULL (→ *float64 nil) if no rows exist in the window.
+	BacktestP95Pass1(ctx context.Context, arg BacktestP95Pass1Params) (float64, error)
+	// Pass 2: count hourly buckets strictly exceeding the P95 baseline per day.
+	BacktestP95Pass2(ctx context.Context, arg BacktestP95Pass2Params) ([]BacktestP95Pass2Row, error)
+	// Single-pass: rows in quiet window (hours between $3 and $4 inclusive) where
+	// avg_instant > flow_threshold ($5), grouped by day.
+	// EXTRACT(HOUR FROM bucket) returns UTC hour; matches AnomalyWorker convention.
+	BacktestQuietHourCount(ctx context.Context, arg BacktestQuietHourCountParams) ([]BacktestQuietHourCountRow, error)
 	// D-14: valid_to = swap.confirm_time (operator click) — the closing side of
 	// a swap. Idempotent guard: only closes a still-open binding.
 	CloseBinding(ctx context.Context, arg CloseBindingParams) (Binding, error)
