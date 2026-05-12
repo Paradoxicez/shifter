@@ -260,7 +260,7 @@ Plans:
 - [ ] 07-09-profile-aware-alerts-battery-curve-reverse-flow-PLAN.md — ALERT-03/04 profile-aware refactor + battery curve registry + reverse_flow_increase rule (D-09, D-41..D-46)
 - [x] 07-10-anomaly-backtest-PLAN.md — Test against last 30 days + count + sparkline + profile-aware rule kind filter (D-10, D-35, D-42)
 - [ ] 07-11-saved-report-templates-PLAN.md — report_template schema + CRUD + Templates dropdown + Save dialog (Surface 6, D-14, D-15, D-39)
-- [ ] 07-12-compare-view-PLAN.md — Side-by-side comparison view (Surface 5, D-16, D-37, D-38)
+- [x] 07-12-compare-view-PLAN.md — Side-by-side comparison view (Surface 5, D-16, D-37, D-38)
 - [ ] 07-13-bulk-gateway-import-PLAN.md — CSV bulk gateway import reusing Phase 3 pattern (Surface 7, D-17)
 - [ ] 07-14-doctor-probes-and-phase-closure-PLAN.md — probe-chirpstack/probe-timescale/probe-region + /health/detailed + Playwright + REQUIREMENTS/VALIDATION/RETROSPECTIVE reconciliation (D-12, D-13, D-40)
 
