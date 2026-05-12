@@ -52,7 +52,7 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	// Reapply. Should succeed back up to 47 (Plan 06-01 bumped from 37 to 43:
+	// Reapply. Should succeed back up to 50 (Plan 06-01 bumped from 37 to 43:
 	// 0038_alert_rule / 0039_alert / 0040_retention_config_phase6 /
 	// 0042_alert_worker_state / 0043_admin_prune_audit_rows — 0041 is a
 	// deliberate gap so the SECURITY DEFINER prune function gets terminal
@@ -64,22 +64,23 @@ func TestRunMigrations_RoundTrip(t *testing.T) {
 	// taken by 06-08; Rule 3 deviation documented in 06-10 SUMMARY).
 	// Plan 06-11 adds 0048_audit_vocab_alert_prune bringing us to 48 — 0047 was
 	// taken by 06-10; Rule 3 deviation documented in 06-11 SUMMARY.
-	// Plan 06-12 gap closure adds 0049_audit_vocab_identity bringing us to 49
-	// (settings.identity_update action + install_identity entity type for SETT-02).
+	// Plan 06-12 adds 0049_audit_vocab_identity bringing us to 49.
+	// Plan 07-02 adds 0050_catalog_metadata bringing us to 50
+	// (catalog tracking columns + profile-aware alert metadata + Itron+KINMY seed row).
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		t.Fatalf("migrate up after down: %v", err)
 	}
 	v, dirty, err := m.Version()
 	require.NoError(t, err)
 	require.False(t, dirty)
-	require.Equal(t, uint(49), v)
+	require.Equal(t, uint(50), v)
 
-	// Verify seeds re-inserted after the round-trip.
+	// Verify seeds re-inserted after the round-trip (3 from 0010 + 1 from 0050).
 	var n int
 	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT count(*) FROM device_profile WHERE slug IN ('axioma_w1','acrel_adl200','acrel_adw300')`,
+		`SELECT count(*) FROM device_profile WHERE slug IN ('axioma_w1','acrel_adl200','acrel_adw300','itron_kinmy_lora')`,
 	).Scan(&n))
-	require.Equal(t, 3, n, "seeds present after round-trip")
+	require.Equal(t, 4, n, "seeds present after round-trip")
 }
 
 // TestRunMigrations_MeasurementInsertedNotifyPropagatesToChunks — Plan 04-01

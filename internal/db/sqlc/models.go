@@ -369,22 +369,29 @@ type DeviceFloorPlanPlacement struct {
 }
 
 type DeviceProfile struct {
-	ID                pgtype.UUID
-	Slug              string
-	Name              string
-	Vendor            string
-	Family            *string
-	Capabilities      []string
-	CounterModulus    int64
-	CodecJs           string
-	CsProfileID       pgtype.UUID
-	CodecJsSyncedAt   pgtype.Timestamptz
-	Region            *string
-	MacVersion        string
-	ArchivedAt        pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
-	ExpectedIntervalS int32
+	ID                            pgtype.UUID
+	Slug                          string
+	Name                          string
+	Vendor                        string
+	Family                        *string
+	Capabilities                  []string
+	CounterModulus                int64
+	CodecJs                       string
+	CsProfileID                   pgtype.UUID
+	CodecJsSyncedAt               pgtype.Timestamptz
+	Region                        *string
+	MacVersion                    string
+	ArchivedAt                    pgtype.Timestamptz
+	CreatedAt                     pgtype.Timestamptz
+	UpdatedAt                     pgtype.Timestamptz
+	ExpectedIntervalS             int32
+	CatalogSource                 *string
+	CatalogSourceVersion          *string
+	CustomerEdited                bool
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
 }
 
 type DeviceProfileMapping struct {
