@@ -222,6 +222,11 @@ type Deps struct {
 	//   DELETE /api/reports/templates/{id}   — ActionReportTemplateDelete (admin only)
 	// nil in early-boot / router unit tests that don't need template routes.
 	ReportTemplateDeps *apipkg.ReportTemplateDeps
+
+	// CompareDeps wires Plan 07-12's POST /api/reports/compare (Surface 5):
+	//   POST /api/reports/compare — ActionReportRead (admin + viewer, read-only aggregation)
+	// nil in early-boot / router unit tests that don't need the compare route.
+	CompareDeps *apipkg.CompareDeps
 }
 
 // NewRouter builds the production chi router with the canonical middleware
@@ -576,6 +581,13 @@ func NewRouter(deps Deps) http.Handler {
 		//   DELETE /api/reports/templates/{id}   — ActionReportTemplateDelete (admin only)
 		// Mounted before SPA fallback (PITFALL #4).
 		apipkg.RegisterReportTemplateRoutes(r, *deps.ReportTemplateDeps)
+	}
+
+	if deps.CompareDeps != nil {
+		// Plan 07-12: Compare View endpoint (Surface 5, UX-POWER).
+		//   POST /api/reports/compare — ActionReportRead (admin + viewer, read-only)
+		// Mounted before SPA fallback (PITFALL #4).
+		apipkg.RegisterCompareRoutes(r, *deps.CompareDeps)
 	}
 
 	// SPA fallback — MUST be the LAST route registered (PITFALL #4). Without

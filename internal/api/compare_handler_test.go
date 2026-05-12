@@ -118,8 +118,8 @@ func TestCompareHandler_EntitiesMode_TwoMPs(t *testing.T) {
 		{mpBID, now.Add(-24 * time.Hour), 50},
 	} {
 		_, err := pool.Exec(ctx,
-			`INSERT INTO measurement (metering_point_id, time, cumulative_value, quality)
-			 VALUES ($1::uuid, $2, $3, 'ok')`,
+			`INSERT INTO measurement (metering_point_id, time, cumulative_value, quality, raw_payload, decoded_object)
+			 VALUES ($1::uuid, $2, $3, 'ok', '\x'::bytea, '{}'::jsonb)`,
 			row.mp, row.ts, row.val)
 		require.NoError(t, err)
 	}
