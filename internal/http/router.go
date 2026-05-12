@@ -31,6 +31,7 @@ import (
 	"github.com/shifter-io/shifter/internal/alert"
 	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
+	"github.com/shifter-io/shifter/internal/backup"
 	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/device"
 	"github.com/shifter-io/shifter/internal/events"
@@ -146,6 +147,14 @@ type Deps struct {
 	// distincts; ActionAuditExport gates export + export-async (D-35).
 	// nil in early-boot / router unit tests that don't need audit routes.
 	AuditDeps *audit.Deps
+
+	// BackupDeps wires Plan 06-08's /api/backup/* endpoints (OPS-02, OPS-03):
+	//   GET  /api/backup/list      — ActionBackupRead (admin + viewer, D-46)
+	//   GET  /api/backup/last      — ActionBackupRead (admin + viewer)
+	//   GET  /api/backup/jobs/{id} — ActionBackupRead (admin + viewer)
+	//   POST /api/backup/run-now   — ActionBackupRun  (admin only, T-06-08-01)
+	// nil in early-boot / router unit tests that don't need backup routes.
+	BackupDeps *backup.Deps
 
 	// AlertDeps wires Plan 06-04's /api/alerts + /api/alerts/rules +
 	// /api/anomaly-roster + /api/metering-points/{id}/anomaly-state surfaces.
@@ -453,6 +462,17 @@ func NewRouter(deps Deps) http.Handler {
 			g.Use(auth.RequireAction(deps.SessionMgr, auth.ActionAlertRuleCreate))
 			g.Patch("/api/metering-points/{id}/anomaly-rules/{kind}", alert.ToggleMPAnomalyHandler(alertDeps))
 		})
+	}
+
+	if deps.BackupDeps != nil {
+		// BackupDeps mounts Plan 06-08's four /api/backup/* routes.
+		// Auth groups enforced inside RegisterRoutes:
+		//   GET  /api/backup/list        — ActionBackupRead (admin + viewer)
+		//   GET  /api/backup/last        — ActionBackupRead (admin + viewer)
+		//   GET  /api/backup/jobs/{id}   — ActionBackupRead (admin + viewer)
+		//   POST /api/backup/run-now     — ActionBackupRun  (admin only)
+		// Mounted before SPA fallback (PITFALL #4).
+		backup.RegisterRoutes(r, *deps.BackupDeps)
 	}
 
 	if deps.AuditDeps != nil {

@@ -149,6 +149,7 @@ services:
       SHIFTER_TLS_MODE: internal
       SHIFTER_LOGO_STORAGE_DIR: /var/lib/shifter/logos
       SHIFTER_FLOOR_PLANS_DIR: /var/lib/shifter/floor-plans
+      SHIFTER_BACKUP_DIR: /var/lib/shifter/backups
     ports:
       # Exposed for the bundled smoke test (`just compose-smoke-bundled`
       # polls /health on the host). In production deploys behind Caddy
@@ -158,6 +159,7 @@ services:
       - shifter_logos:/var/lib/shifter/logos
       - floor_plans:/var/lib/shifter/floor-plans
       - reports_cache:/var/lib/shifter/reports
+      - backups:/var/lib/shifter/backups
     logging: *json-logging
     networks: [shifter]
 
@@ -180,6 +182,29 @@ services:
     logging: *json-logging
     networks: [shifter]
 
+  # backup-cron — ofelia cron sidecar (OPS-03, D-43).
+  #
+  # Runs `shifter backup --trigger cron` on a daily schedule using Docker
+  # label-driven job configuration. Shares the backups volume so the tarball
+  # is written to the same named volume that the shifter service reads from.
+  #
+  # The @daily schedule fires at 00:00 UTC. Override via SHIFTER_BACKUP_SCHEDULE
+  # (e.g. "0 2 * * *" for 02:00 UTC). Ofelia tolerates a missing container
+  # gracefully — if shifter is not running it logs the error and moves on.
+  backup-cron:
+    image: mcuadros/ofelia:v0.3.22
+    restart: unless-stopped
+    depends_on: [shifter]
+    command: daemon --docker
+    labels:
+      ofelia.job-exec.backup.schedule: "${SHIFTER_BACKUP_SCHEDULE:-@daily}"
+      ofelia.job-exec.backup.container: "shifter"
+      ofelia.job-exec.backup.command: "shifter backup --trigger cron"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    logging: *json-logging
+    networks: [shifter]
+
 volumes:
   postgres_data:
   mosquitto_data:
@@ -188,6 +213,7 @@ volumes:
   shifter_logos:
   floor_plans:
   reports_cache:
+  backups:
   caddy_data:
   caddy_config:
 

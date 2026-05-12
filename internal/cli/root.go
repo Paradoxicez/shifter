@@ -33,8 +33,9 @@ dashboard SPA. Subcommands:
 // registers every subcommand and runs Cobra's dispatch. Errors are printed to
 // stderr and surfaced to the caller so main() can exit non-zero.
 //
-// The 7 canonical subcommands per D-12 + D-27: serve, migrate, version,
-// create-admin, config-check, healthcheck, test-harness.
+// The 8 canonical subcommands per D-12 + D-27 + OPS-02:
+// serve, migrate, version, create-admin, config-check, healthcheck,
+// test-harness, backup.
 func Execute() error {
 	rootCmd.AddCommand(
 		serveCmd,
@@ -44,6 +45,7 @@ func Execute() error {
 		configCheckCmd,
 		healthcheckCmd,
 		TestHarnessCmd,
+		backupCmd,
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

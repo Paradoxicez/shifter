@@ -128,6 +128,20 @@ const (
 	ActionSettingsUpdate Action = "settings.update"
 )
 
+// Phase 6 — Plan 06-08: backup actions (OPS-02 / OPS-03 / SETT-05).
+//
+// ActionBackupRun gates POST /api/backup/run-now — admin-only (T-06-08-01).
+// ActionBackupRead gates GET /api/backup/list, /last, /jobs/{id} — admin +
+//   viewer (D-46: viewer can see backup status + history but cannot trigger).
+// ActionBackupConfigure is reserved for the SETT-05 threshold edit surface
+//   that Plan 06-10 wires; declared here so the action vocabulary is
+//   locked before the handler is written.
+const (
+	ActionBackupRun       Action = "backup.run"
+	ActionBackupRead      Action = "backup.read"
+	ActionBackupConfigure Action = "backup.configure"
+)
+
 // Phase 6 — Plan 06-04: alert-center actions (D-11 viewer read-only).
 // ActionAlertRead is the only action granted to RoleViewer; every mutating
 // action is admin-only. Server-side RBAC mirrors the UI: the drawer + page
@@ -281,6 +295,13 @@ var roleBundles = map[Role]map[Action]bool{
 		ActionAlertRuleDisable: true,
 		ActionAlertRuleEnable:  true,
 		ActionAlertTestFire:    true,
+
+		// Phase 6 — Plan 06-08: backup surface. Admin can run, read, and
+		// configure backups. ActionBackupRun is admin-only (T-06-08-01).
+		// ActionBackupRead is also granted to RoleViewer below (D-46).
+		ActionBackupRun:       true,
+		ActionBackupRead:      true,
+		ActionBackupConfigure: true,
 	},
 	RoleViewer: {
 		// Viewers can change their own password.
@@ -319,6 +340,11 @@ var roleBundles = map[Role]map[Action]bool{
 		// mutating alert action (ack, snooze, mute, rule create/update/
 		// disable/enable, test_fire) is intentionally absent — fail-closed.
 		ActionAlertRead: true,
+
+		// Phase 6 — Plan 06-08: viewer can READ backup status + history (D-46).
+		// ActionBackupRun and ActionBackupConfigure are intentionally absent —
+		// viewer cannot trigger a backup or change backup thresholds.
+		ActionBackupRead: true,
 	},
 }
 

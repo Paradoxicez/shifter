@@ -52,6 +52,141 @@ type Runner struct {
 	Log   *slog.Logger
 }
 
+// BackupWithNotify is like Backup but sends the backup_run.id on idCh as
+// soon as the 'running' row is committed (before pg_dump starts). This lets
+// HTTP callers return 202 with the id immediately without a separate
+// pre-insert step that would create a second row.
+//
+// If idCh is nil, behavior is identical to Backup.
+func (r *Runner) BackupWithNotify(ctx context.Context, destDir string, triggerKind string, userID *uuid.UUID, idCh chan<- uuid.UUID) (uuid.UUID, string, error) {
+	// We need to capture the run ID after the first tx commits, before
+	// pg_dump runs.  Temporarily replace the pool-backed Store with a wrapper
+	// that notifies on first insert.  Simpler: override the notify inside
+	// Backup by passing idCh to an inner context value — but Go contexts
+	// don't carry typed values cleanly for internal use.  Instead: subclass
+	// by running the start tx here, sending on idCh, then delegating rest.
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Minute)
+	defer cancel()
+
+	if err := os.MkdirAll(destDir, 0o750); err != nil {
+		return uuid.Nil, "", fmt.Errorf("create dest dir %q: %w", destDir, err)
+	}
+
+	csMode := r.Cfg.ChirpStackMode
+	if csMode == "" {
+		csMode = "external"
+	}
+	schemaVer := r.Cfg.SchemaVersion
+
+	tx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("begin tx: %w", err)
+	}
+	sp := StartParams{
+		TriggerKind:    triggerKind,
+		TriggeredBy:    userID,
+		DestinationDir: destDir,
+		ChirpStackMode: &csMode,
+		SchemaVersion:  &schemaVer,
+	}
+	runRow, err := r.Store.InsertStartedTx(ctx, tx, sp)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return uuid.Nil, "", fmt.Errorf("insert backup_run: %w", err)
+	}
+	auditUserID := uuid.Nil
+	if userID != nil {
+		auditUserID = *userID
+	}
+	if err := audit.WriteEntry(ctx, tx, audit.Entry{
+		UserID:     auditUserID,
+		Action:     audit.ActionBackupStart,
+		EntityType: audit.EntityTypeBackupRun,
+		EntityID:   runRow.ID,
+		After:      map[string]any{"trigger_kind": triggerKind, "destination_dir": destDir},
+	}); err != nil {
+		_ = tx.Rollback(ctx)
+		return uuid.Nil, "", fmt.Errorf("audit backup.start: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, "", fmt.Errorf("commit start tx: %w", err)
+	}
+
+	// Notify caller of the run ID now that the row is committed.
+	if idCh != nil {
+		idCh <- runRow.ID
+	}
+
+	// Proceed with the tarball build.
+	tarPath, manifestData, finalErr := r.buildTarball(ctx, destDir, runRow.ID, csMode)
+	if finalErr != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, finalErr)
+		return runRow.ID, "", finalErr
+	}
+
+	outerSHA, err := ComputeFileSHA256(tarPath)
+	if err != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+	fi, err := os.Stat(tarPath)
+	if err != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+	manifestJSON, err := json.Marshal(manifestData)
+	if err != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+
+	finishTx, err := r.Pool.Begin(ctx)
+	if err != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, fmt.Errorf("begin finish tx: %w", err))
+		return runRow.ID, "", err
+	}
+	cp := CompleteParams{
+		ID:            runRow.ID,
+		FileName:      filepath.Base(tarPath),
+		FileSizeBytes: fi.Size(),
+		SHA256:        outerSHA,
+		ManifestJSON:  json.RawMessage(manifestJSON),
+		FinishedAt:    manifestData.FinishedAt,
+	}
+	if err := r.Store.UpdateCompletedTx(ctx, finishTx, cp); err != nil {
+		_ = finishTx.Rollback(ctx)
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+	if err := audit.WriteEntry(ctx, finishTx, audit.Entry{
+		UserID:     auditUserID,
+		Action:     audit.ActionBackupComplete,
+		EntityType: audit.EntityTypeBackupRun,
+		EntityID:   runRow.ID,
+		After: map[string]any{
+			"file_name":       cp.FileName,
+			"file_size_bytes": cp.FileSizeBytes,
+			"sha256":          outerSHA,
+		},
+	}); err != nil {
+		_ = finishTx.Rollback(ctx)
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+	if err := finishTx.Commit(ctx); err != nil {
+		r.markFailed(ctx, runRow.ID, auditUserID, err)
+		return runRow.ID, "", err
+	}
+
+	r.Log.Info("backup completed",
+		"backup_run_id", runRow.ID,
+		"file", cp.FileName,
+		"size_bytes", cp.FileSizeBytes,
+		"sha256", outerSHA,
+	)
+	return runRow.ID, tarPath, nil
+}
+
 // Backup builds a backup tarball at destDir/{tarball-name}.tar.gz.
 //
 // It:
