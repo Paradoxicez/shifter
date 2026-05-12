@@ -12,6 +12,7 @@ import {
   type ChirpStackSettings,
   type TestConnResult,
 } from '@/lib/settings'
+import { DataRetentionCard } from '@/components/settings/DataRetentionCard'
 import { EditConnectionDialog } from './settings/edit-connection-dialog'
 import { TestConnectionPanel } from './settings/test-connection'
 
@@ -113,6 +114,9 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Data Retention card — D-09 / DATA-13 / Plan 05-11 */}
+      <DataRetentionCard />
 
       {csQ.data ? (
         <EditConnectionDialog
