@@ -50,26 +50,28 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] Date-range picker drives consumption charts with URL-state (mirrors Phase 3 D-15) — Recharts `AreaChart` with D-12 server-mirrored bucket schedule, D-13 live-mode pulse marker on Today/24h only (DASH-04, DASH-05)
 - [x] Empty-state progressive onboarding when no devices yet — D-21 3-stage cards link to `/gateways` and `/devices`; live-channel banner reflects SSE connection state (DASH-06)
 
+**Aggregates, reports, map & floor plans (Phase 5, 2026-05-12)**
+- [x] Daily, monthly, and yearly consumption summaries — 4-level TimescaleDB CAGG hierarchy (hourly→daily→monthly→yearly) with refresh + retention policies (DATA-11, DATA-12)
+- [x] Both per-meter detail and aggregate ("all meters") summaries — scope picker (all-meters / by-site / single-meter) × group-by (site / category) (REPT-01..04)
+- [x] Export reports as CSV / Excel — UTF-8 BOM, ISO timestamps, install timezone in header; 3-sheet workbook with formatted dates/units/totals (REPT-05)
+- [x] Export reports as PDF — maroto v2 with full per-page branding, async via River background worker, 24h artifact TTL, status polling endpoint (REPT-06, REPT-07)
+- [x] D-03 silent fallback — prior-period and YoY deltas omit gracefully when prior data is missing
+- [x] Configurable retention — Settings → Data Retention card, same-tx TimescaleDB policy reconciliation; admin can tighten/loosen windows after install (DATA-13, SETT-04)
+- [x] Show all sites and their devices on a real-world map — `/map` route with Leaflet + clustering + OSM tiles + capability-gated popups + drill-through to `/sites/:id` (MAP-01..04, SITE-06)
+- [x] GW-04 "Pick on map" — modal MapPicker invoked from gateway create/edit dialog reuses the same MapView
+- [x] Support both horizontal (campus / floor) and vertical (multi-floor building) layouts — multi-row `sort_order`, floor selector pill strip (SITE-02)
+- [x] Upload floor plans (PNG/JPG/PDF→PNG via client-side pdf.js) — MIME-sniff + dimension probe BEFORE write, 10MB / 8192² caps, server never accepts `application/pdf` (SITE-03)
+- [x] Drop devices as normalized fractional points (x_frac, y_frac ∈ [0, 1]) — custom pointer-event-driven canvas (no third-party lib), resolution-independent, survives image replacement and Retina/mobile DPR (SITE-04)
+- [x] State-tinted device pins reflecting current health — live SSE updates via Phase 4 Hub `mp:<uuid>` topics (SITE-05)
+- [x] D-25 decommission integration — soft-delete a device → placement removed in same transaction
+- [x] Floor-plan view + map → site → floor plan → device single-click drill-through (SITE-06)
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
 **Identity & access (Phase 6 finishes admin-managed users)**
 - [ ] Admin can create / edit / disable users from inside the app
-
-**Sites & physical layout (Phase 5)**
-- [ ] Support both horizontal (campus / floor) and vertical (building with multiple floors) layouts
-- [ ] Import floor plans / images and drop devices as normalized fractional points (x_frac, y_frac in [0, 1]) on them — resolution-independent, survives image replacement and Retina/mobile DPR
-- [ ] Show all sites and their devices on a real-world map (OpenStreetMap via Leaflet or MapLibre) — also delivers GW-04 "Pick on map" for gateways
-
-**Live data & dashboard**
-- [ ] Map view of sites and devices
-
-**Reporting**
-- [ ] Daily, monthly, and yearly consumption summaries
-- [ ] Both per-meter detail and aggregate ("all meters") summaries
-- [ ] Export reports as CSV / Excel
-- [ ] Export reports as PDF
 
 **App behavior & feel**
 - [ ] All create / edit / delete flows happen in dialogs (modal-first interaction model)
@@ -150,4 +152,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-11 — Phase 4 (realtime & dashboard) complete. 10/10 plans shipped, automated verification passed (5/5 must-haves, 9/9 requirements), 4 real-stack UAT items pending in 04-HUMAN-UAT.md (SSE round-trip, Playwright fixture regen, Caddy in production, mobile reconnect).*
+*Last updated: 2026-05-12 — Phase 5 (aggregates, reports, map & floor plans) complete. 13/13 plans shipped including gap-closure plan 05-13 (router wiring + real capability gating + REQUIREMENTS evidence trail corrections); re-verification 20/20 must-haves passed. 19 requirements validated (SITE-02..06, MAP-01..04, REPT-01..07, DATA-11/12/13) plus SETT-04 migrated from Phase 6.*
