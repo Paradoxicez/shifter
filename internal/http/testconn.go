@@ -115,9 +115,23 @@ func TestConnHandler(deps TestConnDeps) http.HandlerFunc {
 
 		resp := testConnResponse{}
 
+		// When the FE omits the api_token (settings page "Test connection"
+		// button — operator wants to re-validate the persisted connection
+		// without retyping the secret), load the stored token from disk via
+		// the api_token_ref recorded in chirpstack_connection.
+		apiToken := req.APIToken
+		if apiToken == "" {
+			ref, err := loadStoredAPITokenRef(ctx, deps.Pool)
+			if err == nil && ref != "" {
+				if b, err := os.ReadFile(ref); err == nil {
+					apiToken = strings.TrimSpace(string(b))
+				}
+			}
+		}
+
 		// Channel 1: gRPC + ProbeVersion
 		t0 := time.Now()
-		cfg := config.CSConfig{GRPCURL: req.GRPCURL, APIToken: req.APIToken, Insecure: true}
+		cfg := config.CSConfig{GRPCURL: req.GRPCURL, APIToken: apiToken, Insecure: true}
 		conn, err := deps.Dial(ctx, cfg)
 		if err != nil {
 			ms := int(time.Since(t0).Milliseconds())
@@ -381,4 +395,22 @@ func nullable(s string) any {
 		return nil
 	}
 	return s
+}
+
+// loadStoredAPITokenRef returns the filesystem path stored in
+// chirpstack_connection.api_token_ref for the singleton row, or empty string
+// when no connection has been configured yet.
+func loadStoredAPITokenRef(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	if pool == nil {
+		return "", errors.New("no pool")
+	}
+	var ref string
+	err := pool.QueryRow(ctx, `SELECT api_token_ref FROM chirpstack_connection LIMIT 1`).Scan(&ref)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	return ref, nil
 }
