@@ -172,7 +172,7 @@ services:
       - "443:443"
     environment:
       SHIFTER_DOMAIN: ${SHIFTER_DOMAIN:-localhost}
-      SHIFTER_TLS_EMAIL: ${SHIFTER_TLS_EMAIL:-}
+      SHIFTER_TLS_EMAIL: ${SHIFTER_TLS_EMAIL:-admin@localhost}
       CADDY_TLS_BLOCK: ${CADDY_TLS_BLOCK:-tls internal}
       CADDY_GLOBAL_TLS_BLOCK: ${CADDY_GLOBAL_TLS_BLOCK:-}
     volumes:
