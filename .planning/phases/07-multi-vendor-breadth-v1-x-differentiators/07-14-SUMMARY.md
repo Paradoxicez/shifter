@@ -33,10 +33,10 @@ key_decisions:
   - ROADMAP SC#5 connect-time ChirpStack refusal scoped to manual shifter doctor invocation per D-12/D-13 — not a connect-time hook
 metrics:
   duration_minutes: 45
-  tasks_completed: 4
+  tasks_completed: 5
   tasks_total: 5
   completed_date: "2026-05-13"
-  checkpoint_at: "Task 5 (human-verify)"
+requirements-completed: [INST-HARDEN, ALERT-04, V2-VEND-01, V2-VEND-02, V2-VEND-03, UX-POWER]
 ---
 
 # Phase 7 Plan 14: Doctor Probes + Phase Closure Summary
@@ -51,7 +51,7 @@ metrics:
 | 2 | Cobra subcommands + /health/detailed probe_results | fdf6d45 | `internal/cli/doctor.go`, `internal/http/health.go`, `internal/http/health_test.go` |
 | 3 | Fill in Phase 7 Playwright E2E specs | e537c88 | `web/playwright/specs/phase-07-vendor-catalog.spec.ts` |
 | 4 | Reconcile REQUIREMENTS, VALIDATION, RETROSPECTIVE | 3bfc4e0 | `.planning/REQUIREMENTS.md`, `07-VALIDATION.md`, `.planning/RETROSPECTIVE.md` |
-| 5 | Final Phase 7 smoke test (checkpoint:human-verify) | — | Awaiting operator sign-off |
+| 5 | Final Phase 7 smoke test (checkpoint:human-verify) | approved | Operator sign-off received |
 
 ## What Was Built
 
@@ -136,17 +136,17 @@ None — all Phase 7 plan objectives delivered. The Playwright E2E specs use a g
 
 No new threat surface introduced beyond what the plan's `<threat_model>` already covers (T-07-14-01 through T-07-14-05).
 
-## Self-Check: PENDING
+## Self-Check: PASSED
 
-Task 5 (checkpoint:human-verify) not yet approved. Self-check will be completed after operator sign-off.
+Task 5 operator sign-off received. All tasks complete.
 
-Files created:
-- `internal/doctor/probes.go` — exists (committed 0bc6af1)
-- `internal/install/probe/chirpstack_test.go` — exists (committed 0bc6af1)
-- `.planning/RETROSPECTIVE.md` — exists (committed 3bfc4e0)
+Files created — verified present:
+- `internal/doctor/probes.go` — FOUND (committed 0bc6af1)
+- `internal/install/probe/chirpstack_test.go` — FOUND (committed 0bc6af1)
+- `.planning/RETROSPECTIVE.md` — FOUND (committed 3bfc4e0)
 
-Key commits:
-- 0bc6af1 — ProbeChirpStack, ProbeTimescale, ProbeRegion + tests
-- fdf6d45 — Cobra subcommands + /health/detailed probe_results
-- e537c88 — Phase 7 Playwright E2E specs
-- 3bfc4e0 — REQUIREMENTS + VALIDATION + RETROSPECTIVE reconciliation
+Key commits — verified in git log:
+- 0bc6af1 — FOUND: ProbeChirpStack, ProbeTimescale, ProbeRegion + tests
+- fdf6d45 — FOUND: Cobra subcommands + /health/detailed probe_results
+- e537c88 — FOUND: Phase 7 Playwright E2E specs
+- 3bfc4e0 — FOUND: REQUIREMENTS + VALIDATION + RETROSPECTIVE reconciliation
