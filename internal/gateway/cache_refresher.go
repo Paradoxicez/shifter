@@ -32,6 +32,7 @@ import (
 	common "github.com/chirpstack/chirpstack/api/go/v4/common"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/shifter-io/shifter/internal/chirpstack"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 )
 
@@ -39,6 +40,12 @@ import (
 // *chirpstack.MetricsCache satisfies it.
 type MetricsCacheGetter interface {
 	Get(ctx context.Context, gatewayID string) (*api.GetGatewayMetricsResponse, error)
+}
+
+// GatewayInfoGetter exposes the single chirpstack.Client method the refresher
+// needs to refresh last_seen_at. *chirpstack.Client satisfies it.
+type GatewayInfoGetter interface {
+	GetGateway(ctx context.Context, gatewayID string) (*chirpstack.Gateway, error)
 }
 
 // StatsWriter is the narrow sqlc subset the refresher needs. Tests can
@@ -55,6 +62,7 @@ type StatsWriter interface {
 // Lazy + single-flight + TTL pattern (RESEARCH §GetMetrics Caching).
 type CacheRefresher struct {
 	Cache   MetricsCacheGetter
+	CSInfo  GatewayInfoGetter // optional; nil = skip last_seen_at refresh
 	Queries StatsWriter
 	Log     *slog.Logger
 
@@ -102,12 +110,22 @@ func (r *CacheRefresher) refreshOne(gw GatewayRow) {
 	if r.Queries == nil {
 		return
 	}
+	// Best-effort fetch of LastSeenAt from CS. Optional dep — older test
+	// harnesses construct CacheRefresher without CSInfo and we MUST NOT
+	// regress those by hard-requiring it.
+	var lastSeen pgtype.Timestamptz
+	if r.CSInfo != nil {
+		if cs, err := r.CSInfo.GetGateway(ctx, gw.GatewayID); err == nil && cs != nil && cs.LastSeenAt != nil {
+			lastSeen = pgtype.Timestamptz{Time: *cs.LastSeenAt, Valid: true}
+		}
+	}
 	if err := r.Queries.UpdateGatewayStatsCache(ctx, sqlc.UpdateGatewayStatsCacheParams{
 		ID:             pgtype.UUID{Bytes: gw.ID, Valid: true},
 		StatsRx24h:     &rx,
 		StatsTx24h:     &tx,
 		StatsTxOk24h:   &txOK,
 		StatsSparkline: sparkline,
+		LastSeenAt:     lastSeen,
 	}); err != nil {
 		if r.Log != nil {
 			r.Log.Warn("gateway stats cache write failed",

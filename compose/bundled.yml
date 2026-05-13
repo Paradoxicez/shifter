@@ -113,6 +113,20 @@ services:
     depends_on: [mosquitto]
     ports:
       - "1700:1700/udp"
+    environment:
+      # Wire MQTT to the bundled mosquitto service (default config tries
+      # 127.0.0.1:1883 inside the bridge container and silently restart-loops).
+      INTEGRATION__MQTT__AUTH__TYPE: generic
+      INTEGRATION__MQTT__AUTH__GENERIC__SERVERS: tcp://mosquitto:1883
+      # Topic templates must match the region that ChirpStack core subscribes
+      # to. We default to as923_2 because the install wizard locks Thailand
+      # operators to AS923-2 (NBTC requirement, PITFALLS §8). Override at
+      # install time if the operator picks a different region.
+      INTEGRATION__MQTT__EVENT_TOPIC_TEMPLATE: "${SHIFTER_GATEWAY_REGION_PREFIX:-as923_2}/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+      INTEGRATION__MQTT__STATE_TOPIC_TEMPLATE: "${SHIFTER_GATEWAY_REGION_PREFIX:-as923_2}/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
+      # Subscribe side uses MQTT wildcard `#` (no .CommandType variable in
+      # the bridge's subscribe template) — matches chirpstack-docker reference.
+      INTEGRATION__MQTT__COMMAND_TOPIC_TEMPLATE: "${SHIFTER_GATEWAY_REGION_PREFIX:-as923_2}/gateway/{{ .GatewayID }}/command/#"
     logging: *json-logging
     networks: [shifter]
 

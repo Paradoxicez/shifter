@@ -307,6 +307,7 @@ var serveCmd = &cobra.Command{
 			metricsCache := chirpstack.NewMetricsCache(csClient)
 			cacheRefresher := &gateway.CacheRefresher{
 				Cache:   metricsCache,
+				CSInfo:  csClient,
 				Queries: sqlc.New(pool),
 				Log:     log,
 			}

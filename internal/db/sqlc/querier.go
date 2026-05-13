@@ -820,6 +820,9 @@ type Querier interface {
 	UpdateFloorPlanLabel(ctx context.Context, arg UpdateFloorPlanLabelParams) (FloorPlan, error)
 	UpdateGateway(ctx context.Context, arg UpdateGatewayParams) (Gateway, error)
 	// Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
+	// $6 is the chirpstack-reported last_seen_at (NULL when never_seen). Keeping
+	// last_seen_at on the same cache row means a single read covers status badge
+	// + 24h stats for the gateway list page (no separate query path).
 	UpdateGatewayStatsCache(ctx context.Context, arg UpdateGatewayStatsCacheParams) error
 	// Upload handler bulk-update after dry-run validation runs. Counter values
 	// supplied directly so the handler doesn't have to issue per-status COUNT(*)

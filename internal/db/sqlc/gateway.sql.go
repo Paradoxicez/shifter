@@ -426,7 +426,8 @@ UPDATE gateway SET
     stats_rx_24h       = $2,
     stats_tx_24h       = $3,
     stats_tx_ok_24h    = $4,
-    stats_sparkline    = $5
+    stats_sparkline    = $5,
+    last_seen_at       = $6
 WHERE id = $1
 `
 
@@ -436,9 +437,13 @@ type UpdateGatewayStatsCacheParams struct {
 	StatsTx24h     *int64
 	StatsTxOk24h   *int64
 	StatsSparkline []byte
+	LastSeenAt     pgtype.Timestamptz
 }
 
 // Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
+// $6 is the chirpstack-reported last_seen_at (NULL when never_seen). Keeping
+// last_seen_at on the same cache row means a single read covers status badge
+// + 24h stats for the gateway list page (no separate query path).
 func (q *Queries) UpdateGatewayStatsCache(ctx context.Context, arg UpdateGatewayStatsCacheParams) error {
 	_, err := q.db.Exec(ctx, updateGatewayStatsCache,
 		arg.ID,
@@ -446,6 +451,7 @@ func (q *Queries) UpdateGatewayStatsCache(ctx context.Context, arg UpdateGateway
 		arg.StatsTx24h,
 		arg.StatsTxOk24h,
 		arg.StatsSparkline,
+		arg.LastSeenAt,
 	)
 	return err
 }

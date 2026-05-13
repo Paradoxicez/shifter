@@ -77,10 +77,14 @@ RETURNING *;
 
 -- name: UpdateGatewayStatsCache :exec
 -- Called by cache_refresher.go after a successful GetMetrics fetch (D-02).
+-- $6 is the chirpstack-reported last_seen_at (NULL when never_seen). Keeping
+-- last_seen_at on the same cache row means a single read covers status badge
+-- + 24h stats for the gateway list page (no separate query path).
 UPDATE gateway SET
     stats_refreshed_at = now(),
     stats_rx_24h       = $2,
     stats_tx_24h       = $3,
     stats_tx_ok_24h    = $4,
-    stats_sparkline    = $5
+    stats_sparkline    = $5,
+    last_seen_at       = $6
 WHERE id = $1;

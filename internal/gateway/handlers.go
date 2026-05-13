@@ -1111,8 +1111,35 @@ func gatewayToJSON(g sqlc.Gateway, deps Deps) map[string]any {
 		out["stats_tx_ok_24h"] = g.StatsTxOk24h
 		out["stats_sparkline"] = rawJSON(g.StatsSparkline)
 	}
+	// Surface live-merged last_seen_at + derived state (UI status badge).
+	// last_seen_at is written by the async cache refresher after a CS
+	// GetGateway round-trip, so it lags the wire by at most one TTL window.
+	out["last_seen_at"] = timestamptzText(g.LastSeenAt)
+	out["state"] = deriveGatewayState(g.LastSeenAt)
 	_ = deps // reserved for future use (e.g. region display lookup)
 	return out
+}
+
+// deriveGatewayState maps last_seen_at into the wire-shape state string the
+// SPA renders. The thresholds mirror chirpstack's own UI conventions:
+//
+//	last_seen <= 5 min ago  → ONLINE
+//	last_seen <= 24h ago    → OFFLINE
+//	null / older            → NEVER_SEEN
+//
+// Tuning these requires only changing the constants below.
+func deriveGatewayState(lastSeen pgtype.Timestamptz) string {
+	if !lastSeen.Valid {
+		return "NEVER_SEEN"
+	}
+	age := time.Since(lastSeen.Time)
+	if age <= 5*time.Minute {
+		return "ONLINE"
+	}
+	if age <= 24*time.Hour {
+		return "OFFLINE"
+	}
+	return "NEVER_SEEN"
 }
 
 func uuidString(u pgtype.UUID) string {
