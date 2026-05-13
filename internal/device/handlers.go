@@ -448,8 +448,10 @@ func filteredDevicesToJSON(rows []sqlc.ListDevicesFilteredRow) []map[string]any 
 			"decommissioned_at": timestamptzText(r.DecommissionedAt),
 			"created_at":        timestamptzText(r.CreatedAt),
 			"updated_at":        timestamptzText(r.UpdatedAt),
-			"current_site_id":   uuidStringOrNil(r.CurrentSiteID),
-			"current_site_name": derefString(r.CurrentSiteName),
+			"current_site_id":     uuidStringOrNil(r.CurrentSiteID),
+			"current_site_name":   derefString(r.CurrentSiteName),
+			"device_profile_name": derefString(r.DeviceProfileName),
+			"expected_interval_s": r.ExpectedIntervalS,
 		})
 	}
 	return out

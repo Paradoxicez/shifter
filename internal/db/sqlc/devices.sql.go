@@ -302,9 +302,12 @@ SELECT
     d.created_at,
     d.updated_at,
     ab.site_id   AS current_site_id,
-    ab.site_name AS current_site_name
+    ab.site_name AS current_site_name,
+    dp.name AS device_profile_name,
+    dp.expected_interval_s
 FROM device d
 LEFT JOIN active_bindings ab ON ab.device_id = d.id
+LEFT JOIN device_profile dp ON dp.id = d.device_profile_id
 WHERE d.decommissioned_at IS NULL
   AND (
         cardinality($1::uuid[]) = 0
@@ -350,19 +353,21 @@ type ListDevicesFilteredParams struct {
 }
 
 type ListDevicesFilteredRow struct {
-	ID               pgtype.UUID
-	DevEui           string
-	Name             string
-	DeviceProfileID  pgtype.UUID
-	CsDeviceUuid     *string
-	JoinEui          *string
-	Description      *string
-	LastSeenAt       pgtype.Timestamptz
-	DecommissionedAt pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	CurrentSiteID    pgtype.UUID
-	CurrentSiteName  *string
+	ID                pgtype.UUID
+	DevEui            string
+	Name              string
+	DeviceProfileID   pgtype.UUID
+	CsDeviceUuid      *string
+	JoinEui           *string
+	Description       *string
+	LastSeenAt        pgtype.Timestamptz
+	DecommissionedAt  pgtype.Timestamptz
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	CurrentSiteID     pgtype.UUID
+	CurrentSiteName   *string
+	DeviceProfileName *string
+	ExpectedIntervalS *int32
 }
 
 // Phase 3 D-12..D-18: server-side filter/sort/page for the Devices list.
@@ -413,6 +418,8 @@ func (q *Queries) ListDevicesFiltered(ctx context.Context, arg ListDevicesFilter
 			&i.UpdatedAt,
 			&i.CurrentSiteID,
 			&i.CurrentSiteName,
+			&i.DeviceProfileName,
+			&i.ExpectedIntervalS,
 		); err != nil {
 			return nil, err
 		}

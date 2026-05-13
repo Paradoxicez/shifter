@@ -97,6 +97,7 @@ type Querier interface {
 	// Both queries hit measurement_daily CAGG for day-level bucketing.
 	// Range param semantics: from inclusive, to exclusive (half-open interval).
 	// Returns daily consumption totals for a given site (summing all metering points).
+	// value cast to bigint (rounded m³) so sqlc maps it to int64 cleanly.
 	CompareSiteDaily(ctx context.Context, arg CompareSiteDailyParams) ([]CompareSiteDailyRow, error)
 	// ============================================================================
 	// Phase 6 Plan 06-04 — alert center HTTP handlers (list / detail / bell
@@ -731,6 +732,12 @@ type Querier interface {
 	ReportYearlyByCategory(ctx context.Context, arg ReportYearlyByCategoryParams) ([]ReportYearlyByCategoryRow, error)
 	ReportYearlyByMP(ctx context.Context, arg ReportYearlyByMPParams) ([]ReportYearlyByMPRow, error)
 	ReportYearlyBySite(ctx context.Context, arg ReportYearlyBySiteParams) ([]ReportYearlyBySiteRow, error)
+	// Plan 07-04 catalog Import: when the slug already exists but the profile
+	// is archived, restore it with fresh catalog fields instead of rejecting
+	// the import with 409. Operator expectation: "delete then re-import works".
+	// Resets customer_edited because the catalog version is canonical again,
+	// and clears codec_js_synced_at so the boot seed routine re-pushes to CS.
+	RestoreArchivedDeviceProfileFromCatalog(ctx context.Context, arg RestoreArchivedDeviceProfileFromCatalogParams) (DeviceProfile, error)
 	// Restore reads archived_snapshot and the handler calls
 	// chirpstackClient.CreateGateway with it; this UPDATE clears the archive
 	// columns atomic with the CS recreate.

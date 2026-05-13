@@ -32,6 +32,8 @@ export interface Device {
   /** Phase 3 listDevices envelope adds these (active binding context). */
   current_site_id?: string | null
   current_site_name?: string | null
+  device_profile_name?: string | null
+  expected_interval_s?: number | null
 }
 
 /**

@@ -118,9 +118,12 @@ SELECT
     d.created_at,
     d.updated_at,
     ab.site_id   AS current_site_id,
-    ab.site_name AS current_site_name
+    ab.site_name AS current_site_name,
+    dp.name AS device_profile_name,
+    dp.expected_interval_s
 FROM device d
 LEFT JOIN active_bindings ab ON ab.device_id = d.id
+LEFT JOIN device_profile dp ON dp.id = d.device_profile_id
 WHERE d.decommissioned_at IS NULL
   AND (
         cardinality($1::uuid[]) = 0
