@@ -26,15 +26,18 @@ import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { apiFetch } from '@/lib/api'
 import { useSSE, type MeasurementDelta } from '@/hooks/useSSE'
+import { useCurrentUser } from '@/lib/use-current-user'
 import { AdvancedTab } from '@/components/metering-point/AdvancedTab'
 import { AnomalyStateCard } from '@/components/metering-point/AnomalyStateCard'
 import { NormalTab } from '@/components/metering-point/NormalTab'
 import { UplinksLogTab } from '@/components/metering-point/UplinksLogTab'
 import type { DetailResponse } from '@/components/metering-point/NormalTab'
+import { SwapMeterDialog } from './swap-meter-dialog'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +73,11 @@ export default function MeteringPointDetailPage() {
     enabled: !!id && detailQuery.data?.latest_reading != null,
   })
 
+  // Swap dialog state + admin gate
+  const [swapOpen, setSwapOpen] = useState(false)
+  const user = useCurrentUser()
+  const isAdmin = user?.role === 'admin'
+
   // Pending payload for AdvancedTab (forensic-safety — D-20)
   const [pendingPayload, setPendingPayload] = useState<MeasurementDelta | null>(null)
 
@@ -102,15 +110,22 @@ export default function MeteringPointDetailPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Page header */}
-      <header>
-        <h1 className="text-2xl font-semibold leading-8">{mp.name}</h1>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-          <span>{mp.site_name ?? '—'}</span>
-          <span>·</span>
-          <Badge variant="secondary" className="text-xs uppercase">
-            {mp.utility_class}
-          </Badge>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold leading-8">{mp.name}</h1>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+            <span>{mp.site_name ?? '—'}</span>
+            <span>·</span>
+            <Badge variant="secondary" className="text-xs uppercase">
+              {mp.utility_class}
+            </Badge>
+          </div>
         </div>
+        {isAdmin && (
+          <Button variant="outline" size="sm" onClick={() => setSwapOpen(true)}>
+            Swap Meter
+          </Button>
+        )}
       </header>
 
       {/* Plan 06-04 D-16 — anomaly state card above the existing tabs */}
@@ -180,6 +195,14 @@ export default function MeteringPointDetailPage() {
           </TabsContent>
         </Tabs>
       </TooltipProvider>
+      {isAdmin && id && (
+        <SwapMeterDialog
+          open={swapOpen}
+          onOpenChange={setSwapOpen}
+          meteringPointId={id}
+          meteringPointName={mp.name}
+        />
+      )}
     </div>
   )
 }
