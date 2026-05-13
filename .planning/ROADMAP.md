@@ -253,7 +253,7 @@ Plans:
 - [x] 07-02-migration-and-catalog-json-PLAN.md — migration 0050 (7 new device_profile columns) + 4 catalog JSON entries + 5 sqlc queries (D-01, D-21, D-29..D-31, D-33, D-41..D-44, D-48)
 - [x] 07-03-catalog-loader-and-drift-detection-PLAN.md — LoadAll/Get + TestCatalogValid (D-22) + RunCatalogDriftCheck boot wiring (D-31, D-36)
 - [x] 07-04-catalog-http-api-PLAN.md — 4 endpoints + audit vocab + RBAC (D-03, D-04, D-23, D-24, D-34, D-36)
-- [ ] 07-05-vendor-catalog-tab-ui-PLAN.md — Settings → Vendor Catalog DataTable + tab badge (Surface 1, D-02, D-23..D-25, D-40)
+- [x] 07-05-vendor-catalog-tab-ui-PLAN.md — Settings → Vendor Catalog DataTable + tab badge (Surface 1, D-02, D-23..D-25, D-40)
 - [ ] 07-06-import-and-update-dialogs-PLAN.md — Import + Update Diff modals (Surfaces 2-3, D-03, D-04, D-24, D-34)
 - [x] 07-07-goja-codec-runner-PLAN.md — sandboxed goja runtime + POST /api/profiles/{id}/test-codec (D-26..D-28; security-critical)
 - [ ] 07-08-codec-test-runner-ui-PLAN.md — Test Codec panel in profile editor (Surface 4, D-05..D-08)
@@ -302,7 +302,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
-| 7. Multi-Vendor Breadth & v1.x Differentiators | 12/16 | In Progress|  |
+| 7. Multi-Vendor Breadth & v1.x Differentiators | 13/16 | In Progress|  |
 
 ## Coverage Summary
 
