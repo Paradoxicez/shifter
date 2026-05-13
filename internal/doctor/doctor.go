@@ -26,15 +26,16 @@ import (
 // PII is masked by MarshalRedacted before the bundle is written to stdout or
 // file.
 type Bundle struct {
-	GeneratedAt        time.Time         `json:"generated_at"`
-	Shifter            ShifterInfo       `json:"shifter"`
-	ConfigCheck        any               `json:"config_check"`
-	HealthDetailed     any               `json:"health_detailed"`
-	AlertWorkers       []AlertWorkerRow  `json:"alert_workers"`
-	LastBackup         *LastBackupRow    `json:"last_backup"`
-	ChirpstackGRPCPing GRPCPingResult    `json:"chirpstack_grpc_ping"`
-	RecentAudit        []AuditRow        `json:"recent_audit"`
-	Logs               []string          `json:"logs"`
+	GeneratedAt        time.Time            `json:"generated_at"`
+	Shifter            ShifterInfo          `json:"shifter"`
+	ConfigCheck        any                  `json:"config_check"`
+	HealthDetailed     any                  `json:"health_detailed"`
+	AlertWorkers       []AlertWorkerRow     `json:"alert_workers"`
+	LastBackup         *LastBackupRow       `json:"last_backup"`
+	ChirpstackGRPCPing GRPCPingResult       `json:"chirpstack_grpc_ping"`
+	RecentAudit        []AuditRow           `json:"recent_audit"`
+	Logs               []string             `json:"logs"`
+	ProbeResults       map[string]ProbeResult `json:"probe_results,omitempty"`
 }
 
 // ShifterInfo contains build and runtime metadata.
