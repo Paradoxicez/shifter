@@ -270,6 +270,32 @@ func TestSettings_PutChirpStack_RejectsV3(t *testing.T) {
 	require.Equal(t, "v3_detected", resp["error"])
 }
 
+// TestSettings_GetChirpStack_EmptyTable_Returns404 — GET with no rows in
+// chirpstack_connection returns 404 with {"error":"not_configured"}.
+func TestSettings_GetChirpStack_EmptyTable_Returns404(t *testing.T) {
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	deps := TestConnDeps{
+		Pool:     pool,
+		Log:      slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		Dial:     dialMockTC(t, "v4"),
+		PingMQTT: func(_ context.Context, _, _, _ string) error { return nil },
+	}
+	// Intentionally do NOT seed a chirpstack_connection row.
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/settings/chirpstack", GetChirpStackHandler(deps))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/api/settings/chirpstack")
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, 404, res.StatusCode, "empty chirpstack_connection table must return 404")
+	var resp map[string]string
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&resp))
+	require.Equal(t, "not_configured", resp["error"], "body must be {\"error\":\"not_configured\"}")
+}
+
 // readJSON drains the response body and returns it as a string for substring
 // assertions. Keeps the GET test honest — we're proving api_token never
 // appears as a JSON KEY name, regardless of nesting.

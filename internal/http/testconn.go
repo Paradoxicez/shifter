@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
@@ -190,6 +191,10 @@ func GetChirpStackHandler(deps TestConnDeps) http.HandlerFunc {
 		var mode, grpcURL, mqttURL, regionName, regionCommon string
 		var mqttUser *string
 		if err := row.Scan(&mode, &grpcURL, &mqttURL, &mqttUser, &regionName, &regionCommon); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_configured"})
+				return
+			}
 			deps.Log.Error("get chirpstack settings", "err", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 			return
