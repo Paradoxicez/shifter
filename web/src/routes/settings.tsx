@@ -19,6 +19,8 @@ import { BackupStatusCard } from '@/components/settings/BackupStatusCard'
 import { RestoreGuidanceCard } from '@/components/settings/RestoreGuidanceCard'
 import { EditConnectionDialog } from './settings/edit-connection-dialog'
 import { TestConnectionPanel } from './settings/test-connection'
+import { VendorCatalogCard } from './settings/VendorCatalogCard'
+import { fetchCatalog } from '@/lib/catalog'
 
 /**
  * Phase 1 Settings page.
@@ -38,6 +40,16 @@ import { TestConnectionPanel } from './settings/test-connection'
  *   - "Edit connection" admin button label
  *   - "Connection updated" success toast (raised by parent on PUT success)
  */
+/**
+ * Derives the update-available count for the Vendor Catalog tab label.
+ * Returns 0 while loading so the label shows plain "Vendor Catalog".
+ */
+function VendorCatalogTabLabelWithCount() {
+  const { data } = useQuery({ queryKey: ['catalog'], queryFn: fetchCatalog })
+  const count = (data?.profiles ?? []).filter((p) => p.status === 'update-available').length
+  return count === 0 ? <>Vendor Catalog</> : <>Vendor Catalog ({count})</>
+}
+
 export default function SettingsPage() {
   const meQ = useQuery({ queryKey: ['me'], queryFn: fetchSessionUser })
   const csQ = useQuery({ queryKey: ['cs-settings'], queryFn: fetchChirpStackSettings })
@@ -147,6 +159,16 @@ export default function SettingsPage() {
 
       {/* Restore guidance — D-47 / Plan 06-10 */}
       <RestoreGuidanceCard />
+
+      {/* Vendor Catalog — D-23, D-40 / Plan 07-05 (Surface 1)
+          Tab-label with (N) count is rendered by VendorCatalogTabLabelWithCount above.
+          The card itself is mounted here so it appears in the settings scroll layout. */}
+      <div id="vendor-catalog">
+        <h2 className="mb-4 text-xl font-semibold">
+          <VendorCatalogTabLabelWithCount />
+        </h2>
+        <VendorCatalogCard />
+      </div>
 
       {csQ.data ? (
         <EditConnectionDialog
