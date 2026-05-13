@@ -575,6 +575,47 @@ var serveCmd = &cobra.Command{
 			},
 		}
 
+		// BackupDeps — wire the four /api/backup/* routes (BUG-02: BackupDeps was nil).
+		var backupDeps *backup.Deps
+		{
+			var csMode, installSlug, installID string
+			biRow := pool.QueryRow(ctx,
+				`SELECT COALESCE(chirpstack_mode, 'external'), COALESCE(slug, ''), COALESCE(id::text, '')
+				   FROM install_identity LIMIT 1`)
+			if err := biRow.Scan(&csMode, &installSlug, &installID); err != nil {
+				log.Warn("backup: install_identity not found; defaulting to external mode", "err", err)
+				csMode = "external"
+			}
+			var schemaVersion string
+			svRow := pool.QueryRow(ctx, `SELECT version::text FROM schema_migrations`)
+			if err := svRow.Scan(&schemaVersion); err != nil {
+				schemaVersion = "unknown"
+			}
+			bkStore := backup.NewStore(pool)
+			backupDeps = &backup.Deps{
+				Runner: &backup.Runner{
+					Pool:  pool,
+					Store: bkStore,
+					Cfg: backup.RunnerConfig{
+						DBHost:         cfg.DB.Host,
+						DBPort:         cfg.DB.Port,
+						DBUser:         cfg.DB.User,
+						DBName:         cfg.DB.Database,
+						DBPassword:     cfg.DB.Password,
+						ChirpStackMode: csMode,
+						FloorPlansDir:  cfg.FloorPlanRoot,
+						InstallSlug:    installSlug,
+						InstallID:      installID,
+						SchemaVersion:  schemaVersion,
+					},
+					Log: log.With("component", "backup.runner"),
+				},
+				Store:      bkStore,
+				SessionMgr: sm,
+				Log:        log.With("component", "backup.handler"),
+			}
+		}
+
 		// 9. Router with full Phase 2 + Phase 3 + Phase 4 wiring.
 		router := httpapi.NewRouter(httpapi.Deps{
 			Pool:         pool,
@@ -608,6 +649,7 @@ var serveCmd = &cobra.Command{
 			BackupCardCfg: settings.BackupCardConfig{
 				BackupDir: cfg.BackupDir,
 			},
+			BackupDeps: backupDeps,
 			MapDeps: &mapapi.Deps{
 				Pool:       pool,
 				Logger:     log.With("component", "mapapi"),
