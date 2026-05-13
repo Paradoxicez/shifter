@@ -69,7 +69,7 @@ const BASE_RULE_KINDS = [
   'threshold_hourly',
   'threshold_daily',
   'offline_device',
-  'gateway_offline',
+  'offline_gateway',
   'battery_low',
   'reverse_flow_increase',
 ] as const
