@@ -38,7 +38,7 @@ requirements-completed: [V2-VEND-02]
 metrics:
   duration_minutes: 5
   completed_date: "2026-05-13"
-  tasks_completed: 2
+  tasks_completed: 3
   tasks_total: 3
   files_changed: 4
 ---
@@ -53,7 +53,7 @@ metrics:
 |------|------|--------|-------|
 | 1 | Add API client + implement CodecTestRunner component | 1a8728b | codecTest.ts, CodecTestRunner.tsx, CodecTestRunner.test.tsx |
 | 2 | Mount CodecTestRunner inside Edit Profile dialog | e113246 | mapping-editor.tsx |
-| 3 | Visual end-to-end verification (checkpoint) | — | awaiting operator |
+| 3 | Visual end-to-end verification (checkpoint) | approved | operator verified 2026-05-13 |
 
 ## What Was Built
 
@@ -126,7 +126,7 @@ None — Task 3 is a human-verify checkpoint (visual end-to-end). No code stubs.
 
 No new network endpoints, auth paths, or trust boundaries introduced by this plan. The frontend calls `POST /api/device-profiles/{id}/test-codec` which is admin-only with per-user 30/min rate limit (plan 07-07). All sandbox safety is server-side.
 
-## Self-Check: PARTIAL (Task 3 pending operator verification)
+## Self-Check: PASSED (Task 3 operator-approved 2026-05-13)
 
 Files verified on disk:
 - web/src/lib/codecTest.ts: FOUND
