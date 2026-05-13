@@ -140,7 +140,7 @@ export function DateRangePicker({ mode, value, onChange }: DateRangePickerProps)
       : 'Custom'
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1">
       {/* Preset buttons */}
       {PRESETS.map(({ value: preset, label }) => (
         <Button

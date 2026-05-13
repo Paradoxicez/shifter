@@ -28,7 +28,6 @@ test.describe('Dashboard mobile viewport (admin)', () => {
   })
 
   test('KPI cards stack vertically and no horizontal scroll', async ({ page }) => {
-    await seedFixture('water-1mp')
     await page.goto('/')
     await expect(page.getByRole('heading', { name: /Dashboard/i })).toBeVisible()
 

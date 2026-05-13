@@ -147,7 +147,7 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <LiveChannelBanner status={sse.status} lastEventAt={sse.lastEventAt} />
 
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
         <h1 className="text-2xl font-semibold leading-8">Dashboard</h1>
         <DateRangePicker mode="shared-url" />
       </div>
