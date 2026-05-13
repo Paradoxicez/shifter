@@ -9,8 +9,62 @@
  */
 
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { subDays } from 'date-fns'
+import { ChevronDown } from 'lucide-react'
 import type { AuditFilters } from '@/lib/auditParams'
+
+interface MultiSelectChipProps {
+  label: string
+  options: string[]
+  value: string[]
+  onChange: (next: string[]) => void
+}
+
+function MultiSelectChip({ label, options, value, onChange }: MultiSelectChipProps) {
+  const summary =
+    value.length === 0
+      ? 'Any'
+      : value.length === 1
+      ? value[0]
+      : `${value.length} selected`
+  function toggle(opt: string) {
+    onChange(value.includes(opt) ? value.filter((v) => v !== opt) : [...value, opt])
+  }
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs hover:bg-muted/40 transition-colors"
+          aria-label={`${label} filter`}
+        >
+          <span className="font-medium text-muted-foreground">{label}:</span>
+          <span className="font-medium">{summary}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-2" align="start">
+        {options.length === 0 ? (
+          <p className="text-xs text-muted-foreground p-2">No options available</p>
+        ) : (
+          <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+            {options.map((opt) => (
+              <label
+                key={opt}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 cursor-pointer text-xs"
+              >
+                <Checkbox checked={value.includes(opt)} onCheckedChange={() => toggle(opt)} />
+                <span className="font-mono">{opt}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export interface AuditFilterChipsProps {
   params: AuditFilters
@@ -78,48 +132,22 @@ export function AuditFilterChips({
 
       {/* Entity type multi-select */}
       {availableEntityTypes.length > 0 && (
-        <label className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs">
-          <span className="font-medium text-muted-foreground">Entity type:</span>
-          <select
-            multiple
-            className="bg-transparent text-xs font-medium focus:outline-none max-h-[80px]"
-            aria-label="Entity type"
-            value={params.entity_type}
-            onChange={(e) => {
-              const selected = Array.from(e.target.selectedOptions, (o) => o.value)
-              setParams({ entity_type: selected })
-            }}
-          >
-            {availableEntityTypes.map((et) => (
-              <option key={et} value={et}>
-                {et}
-              </option>
-            ))}
-          </select>
-        </label>
+        <MultiSelectChip
+          label="Entity type"
+          options={availableEntityTypes}
+          value={params.entity_type}
+          onChange={(next) => setParams({ entity_type: next })}
+        />
       )}
 
       {/* Action multi-select */}
       {availableActions.length > 0 && (
-        <label className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs">
-          <span className="font-medium text-muted-foreground">Action:</span>
-          <select
-            multiple
-            className="bg-transparent text-xs font-medium focus:outline-none max-h-[80px]"
-            aria-label="Action"
-            value={params.action}
-            onChange={(e) => {
-              const selected = Array.from(e.target.selectedOptions, (o) => o.value)
-              setParams({ action: selected })
-            }}
-          >
-            {availableActions.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </label>
+        <MultiSelectChip
+          label="Action"
+          options={availableActions}
+          value={params.action}
+          onChange={(next) => setParams({ action: next })}
+        />
       )}
 
       {/* Last 7 days chip (always shown) */}
