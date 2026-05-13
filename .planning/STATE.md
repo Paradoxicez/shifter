@@ -427,6 +427,7 @@ Plan: Not started
 | 260513-n7m | fix 3 P1 UAT blockers: dashboard auth bypass, swap dialog mount, login rate-limit | 2026-05-13 | c7c6f97 | [260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp](./quick/260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp/) |
 | 260513-nqo | fix 4 Major UAT issues: /metering-points list, /account route, settings chirpstack 500, mobile overflow | 2026-05-13 | 05de8eb | [260513-nqo-fix-4-major-uat-issues-metering-points-l](./quick/260513-nqo-fix-4-major-uat-issues-metering-points-l/) |
 | 260513-p71 | fix 3 High UAT issues: BackupDeps wiring, gateway_offline enum, floor plan sidebar URL | 2026-05-13 | 5e12710 | [260513-p71-fix-3-high-uat-issues-backupdeps-wiring-](./quick/260513-p71-fix-3-high-uat-issues-backupdeps-wiring-/) |
+| 260513-pkp | fix 5 medium/low UAT issues: install-state console noise, HydrateFallback, devices JOIN profile, chart No-data state, compare labels | 2026-05-13 | 865db07 | [260513-pkp-fix-5-medium-low-uat-issues-install-stat](./quick/260513-pkp-fix-5-medium-low-uat-issues-install-stat/) |
 
 ## Session Continuity
 
