@@ -18,8 +18,8 @@ export interface AuditRow {
   user_id: string | null
   request_id: string | null
   notes: string | null
-  before_json: string | null
-  after_json: string | null
+  before: string | null
+  after: string | null
 }
 
 export interface AuditListPage {

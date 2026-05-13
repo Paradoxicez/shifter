@@ -1,19 +1,19 @@
 /**
  * Plan 06-07 — AuditTable
  *
- * Virtualized audit log table using TanStack Table + @tanstack/react-virtual.
- * Columns per UI-SPEC §Surface 6. Row expand toggle renders AuditRowExpand.
+ * TanStack Table audit log with expand-row diff. Virtualization was removed
+ * because variable expand height made transform offsets misalign with the
+ * next row's start position; re-add only if profiler shows render-time
+ * pressure at realistic operator-install audit volumes.
  */
 
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
   flexRender,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { useRef } from 'react'
 import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -31,7 +31,6 @@ interface AuditTableProps {
 
 export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: AuditTableProps) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const tableContainerRef = useRef<HTMLDivElement>(null)
 
   function toggleExpand(id: string) {
     setExpandedRows((prev) => {
@@ -116,21 +115,26 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
       id: 'expand',
       header: '',
       size: 32,
-      cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={() => toggleExpand(row.original.id)}
-          aria-label={expandedRows.has(row.original.id) ? 'Collapse row' : 'Expand row'}
-        >
-          {expandedRows.has(row.original.id) ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-        </Button>
-      ),
+      cell: ({ row }) => {
+        // Hide chevron when there is nothing to diff (auth events, etc.).
+        const hasDiff = row.original.before !== null || row.original.after !== null
+        if (!hasDiff) return null
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={() => toggleExpand(row.original.id)}
+            aria-label={expandedRows.has(row.original.id) ? 'Collapse row' : 'Expand row'}
+          >
+            {expandedRows.has(row.original.id) ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </Button>
+        )
+      },
     },
   ]
 
@@ -141,16 +145,6 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
   })
 
   const { rows: tableRows } = table.getRowModel()
-
-  const rowVirtualizer = useVirtualizer({
-    count: tableRows.length,
-    getScrollElement: () => tableContainerRef.current,
-    estimateSize: () => 40,
-    overscan: 10,
-  })
-
-  const virtualItems = rowVirtualizer.getVirtualItems()
-  const totalSize = rowVirtualizer.getTotalSize()
 
   if (rows.length === 0) {
     return (
@@ -165,9 +159,8 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
     <TooltipProvider>
     <div className="flex flex-col gap-2">
       <div
-        ref={tableContainerRef}
         className="overflow-auto border rounded-lg"
-        style={{ height: '600px' }}
+        style={{ maxHeight: '600px' }}
       >
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-background z-10 border-b">
@@ -185,21 +178,12 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
               </tr>
             ))}
           </thead>
-          <tbody style={{ height: totalSize }}>
-            {virtualItems.map((vi) => {
-              const row = tableRows[vi.index]
+          <tbody>
+            {tableRows.map((row) => {
               const isExpanded = expandedRows.has(row.original.id)
               return (
-                <>
-                  <tr
-                    key={row.id}
-                    style={{
-                      transform: `translateY(${vi.start}px)`,
-                      position: 'absolute',
-                      width: '100%',
-                    }}
-                    className="border-b hover:bg-muted/30 transition-colors"
-                  >
+                <Fragment key={row.id}>
+                  <tr className="border-b hover:bg-muted/30 transition-colors">
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
@@ -211,23 +195,16 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
                     ))}
                   </tr>
                   {isExpanded && (
-                    <tr
-                      key={`${row.id}-expand`}
-                      style={{
-                        transform: `translateY(${vi.start + vi.size}px)`,
-                        position: 'absolute',
-                        width: '100%',
-                      }}
-                    >
+                    <tr>
                       <td colSpan={columns.length} className="px-3 py-2">
                         <AuditRowExpand
-                          before={row.original.before_json}
-                          after={row.original.after_json}
+                          before={row.original.before}
+                          after={row.original.after}
                         />
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>
