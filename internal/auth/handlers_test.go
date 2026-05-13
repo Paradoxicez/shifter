@@ -152,6 +152,24 @@ func TestLogin_RateLimit_429(t *testing.T) {
 	require.NotEmpty(t, res.Header.Get("Retry-After"))
 }
 
+// TestLogin_RateLimit_UnknownEmail — each unknown-email attempt must consume
+// exactly one token (not two). With loginBurst=5, exactly 5 unknown-email
+// attempts must return 401, and the 6th must return 429. AUTH-04 contract.
+func TestLogin_RateLimit_UnknownEmail(t *testing.T) {
+	f := setupLogin(t)
+	const unknownEmail = "nobody@unknown.example"
+	for i := 0; i < loginBurst; i++ {
+		res := loginPost(t, f, unknownEmail, "irrelevant")
+		res.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, res.StatusCode,
+			"attempt %d of %d must be 401 (token still available)", i+1, loginBurst)
+	}
+	res := loginPost(t, f, unknownEmail, "irrelevant")
+	defer res.Body.Close()
+	require.Equal(t, http.StatusTooManyRequests, res.StatusCode,
+		"AUTH-04: attempt %d (burst+1) with unknown email must be 429", loginBurst+1)
+}
+
 // TestLogout_Idempotent — POST /logout returns 204; subsequent /me is 401.
 func TestLogout_Idempotent(t *testing.T) {
 	f := setupLogin(t)

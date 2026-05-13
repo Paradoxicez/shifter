@@ -152,7 +152,6 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 				RequestID:  reqID,
 			})
 			_ = tx.Commit(ctx) // commit audit row even if WriteEntry errored
-			deps.LoginLimiter.Allow(ip, email) // consume a token (already done above, this is a no-op counter bump path)
 			writeJSON(w, http.StatusUnauthorized, errorResp{Error: "bad_credentials"})
 			return
 		}
