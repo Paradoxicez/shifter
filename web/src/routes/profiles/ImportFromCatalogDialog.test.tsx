@@ -5,7 +5,7 @@
  *  1. step 1 → step 2: selecting "Import from catalog" + Continue reveals the picker with vendor search
  *  2. step 2 selection populates Review form with vendor name + version + capabilities
  *  3. step 3 successful import shows "Profile added" toast and closes
- *  4. step 3 duplicate slug shows inline error "A profile with this name already exists."
+ *  4. step 3 duplicate slug shows inline error "This catalog entry is already installed. Renaming does not bypass the duplicate check — remove the existing profile first."
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -223,7 +223,7 @@ describe('ImportFromCatalogDialog (Surface 2, V2-VEND-01)', () => {
     })
   })
 
-  it('step 3 duplicate slug shows inline error "A profile with this name already exists."', async () => {
+  it('step 3 duplicate slug shows inline error "This catalog entry is already installed. Renaming does not bypass the duplicate check — remove the existing profile first."', async () => {
     mockFetchCatalog.mockResolvedValue({ entries: [axiomaEntry], profiles: [] })
     mockFetchCatalogEntry.mockResolvedValue(axiomaEntry)
     mockImportFromCatalog.mockRejectedValue(new Error('already imported'))
@@ -249,9 +249,9 @@ describe('ImportFromCatalogDialog (Surface 2, V2-VEND-01)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add Profile/i }))
 
     await waitFor(() => {
-      expect(
-        screen.getByText('A profile with this name already exists.')
-      ).toBeInTheDocument()
+      expect(mockToast.error).toHaveBeenCalledWith(
+        'This catalog entry is already installed. Renaming does not bypass the duplicate check — remove the existing profile first.'
+      )
     })
   })
 })

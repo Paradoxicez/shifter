@@ -108,7 +108,7 @@ export function ImportFromCatalogDialog({
     },
     onError: (err: Error) => {
       if (err.message === 'already imported') {
-        form.setError('name', { message: 'A profile with this name already exists.' })
+        toast.error('This catalog entry is already installed. Renaming does not bypass the duplicate check — remove the existing profile first.')
       } else {
         toast.error('Failed to add profile. Try again.')
       }
