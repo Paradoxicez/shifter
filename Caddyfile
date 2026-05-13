@@ -24,7 +24,7 @@
 # Caddy redirects :80 → :443 by default when TLS is configured.
 
 {
-	email {$SHIFTER_TLS_EMAIL}
+	email {$SHIFTER_TLS_EMAIL:admin@localhost}
 	{$CADDY_GLOBAL_TLS_BLOCK}
 }
 
