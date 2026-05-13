@@ -426,6 +426,7 @@ Plan: Not started
 | 260513-bjc | wire entity options into CompareView | 2026-05-13 | 85d7c38 | [260513-bjc-wire-entity-options-into-compareview](./quick/260513-bjc-wire-entity-options-into-compareview/) |
 | 260513-n7m | fix 3 P1 UAT blockers: dashboard auth bypass, swap dialog mount, login rate-limit | 2026-05-13 | c7c6f97 | [260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp](./quick/260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp/) |
 | 260513-nqo | fix 4 Major UAT issues: /metering-points list, /account route, settings chirpstack 500, mobile overflow | 2026-05-13 | 05de8eb | [260513-nqo-fix-4-major-uat-issues-metering-points-l](./quick/260513-nqo-fix-4-major-uat-issues-metering-points-l/) |
+| 260513-p71 | fix 3 High UAT issues: BackupDeps wiring, gateway_offline enum, floor plan sidebar URL | 2026-05-13 | 5e12710 | [260513-p71-fix-3-high-uat-issues-backupdeps-wiring-](./quick/260513-p71-fix-3-high-uat-issues-backupdeps-wiring-/) |
 
 ## Session Continuity
 
