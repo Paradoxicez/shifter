@@ -15,6 +15,7 @@ export type CatalogEntry = {
   capabilities: string[]
   version: string
   codec_js_path: string
+  codec_js: string // inline source added by GetCatalogEntryHandler (plan 07-06)
   counter_modulus: number
   mac_version: string
   region: string | null

@@ -179,8 +179,16 @@ func ListCatalogHandler(deps CatalogDeps) http.HandlerFunc {
 	}
 }
 
+// catalogEntryWithCodec wraps codec.CatalogEntry with the embedded JS source
+// so the Import Review step can pre-populate the codec textarea without a
+// separate /api/catalog/{slug}/codec round-trip.
+type catalogEntryWithCodec struct {
+	codec.CatalogEntry
+	CodecJS string `json:"codec_js"`
+}
+
 // GetCatalogEntryHandler handles GET /api/catalog/{slug}.
-// Returns the embedded CatalogEntry JSON or 404.
+// Returns the embedded CatalogEntry JSON (plus codec_js inline) or 404.
 func GetCatalogEntryHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slug := chi.URLParam(r, "slug")
@@ -193,8 +201,12 @@ func GetCatalogEntryHandler() http.HandlerFunc {
 			http.Error(w, "catalog error", http.StatusInternalServerError)
 			return
 		}
+		resp := catalogEntryWithCodec{
+			CatalogEntry: entry,
+			CodecJS:      codecs.CodecBySlug(slug),
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(entry)
+		_ = json.NewEncoder(w).Encode(resp)
 	}
 }
 

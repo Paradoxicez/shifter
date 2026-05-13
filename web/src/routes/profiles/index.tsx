@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   flexRender,
@@ -5,11 +6,12 @@ import {
   useReactTable,
   type ColumnDef,
 } from '@tanstack/react-table'
-import { Archive, MoreHorizontal, Pencil, Plus } from 'lucide-react'
+import { Archive, Download, MoreHorizontal, Pencil, Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ImportFromCatalogDialog } from './ImportFromCatalogDialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +40,7 @@ import { archiveProfile, listProfiles, type Profile } from '@/lib/profiles'
  */
 export default function ProfilesPage() {
   const qc = useQueryClient()
+  const [importOpen, setImportOpen] = useState(false)
 
   const profilesQuery = useQuery({
     queryKey: ['device-profiles'],
@@ -173,13 +176,27 @@ export default function ProfilesPage() {
     <div className="flex flex-col gap-6 p-6">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold leading-8">Device profiles</h1>
-        <Button asChild>
-          <Link to="/profiles/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Create profile
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Download className="mr-2 h-4 w-4" />
+            Import from catalog
+          </Button>
+          <Button asChild>
+            <Link to="/profiles/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Create profile
+            </Link>
+          </Button>
+        </div>
       </header>
+
+      <ImportFromCatalogDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => {
+          qc.invalidateQueries({ queryKey: ['device-profiles'] })
+        }}
+      />
 
       {isEmpty ? (
         <div className="flex flex-col items-center gap-4 rounded-md border p-12 text-center">
