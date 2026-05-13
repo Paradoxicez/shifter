@@ -5,9 +5,10 @@
 
 -- name: CompareSiteDaily :many
 -- Returns daily consumption totals for a given site (summing all metering points).
+-- value cast to bigint (rounded m³) so sqlc maps it to int64 cleanly.
 SELECT
   md.bucket::date          AS bucket,
-  sum(md.cumulative_delta) AS value
+  round(coalesce(sum(md.cumulative_delta), 0))::bigint AS value
 FROM measurement_daily md
 JOIN metering_point mp ON mp.id = md.metering_point_id
 WHERE mp.site_id = $1
@@ -19,8 +20,8 @@ ORDER BY md.bucket::date;
 -- name: CompareMeteringPointDaily :many
 -- Returns daily consumption totals for a single metering point.
 SELECT
-  bucket::date             AS bucket,
-  cumulative_delta         AS value
+  bucket::date                                   AS bucket,
+  round(coalesce(cumulative_delta, 0))::bigint   AS value
 FROM measurement_daily
 WHERE metering_point_id = $1
   AND bucket >= $2

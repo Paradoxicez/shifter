@@ -13,8 +13,8 @@ import (
 
 const compareMeteringPointDaily = `-- name: CompareMeteringPointDaily :many
 SELECT
-  bucket::date             AS bucket,
-  cumulative_delta         AS value
+  bucket::date                                   AS bucket,
+  round(coalesce(cumulative_delta, 0))::bigint   AS value
 FROM measurement_daily
 WHERE metering_point_id = $1
   AND bucket >= $2
@@ -58,7 +58,7 @@ const compareSiteDaily = `-- name: CompareSiteDaily :many
 
 SELECT
   md.bucket::date          AS bucket,
-  sum(md.cumulative_delta) AS value
+  round(coalesce(sum(md.cumulative_delta), 0))::bigint AS value
 FROM measurement_daily md
 JOIN metering_point mp ON mp.id = md.metering_point_id
 WHERE mp.site_id = $1
@@ -84,6 +84,7 @@ type CompareSiteDailyRow struct {
 // Both queries hit measurement_daily CAGG for day-level bucketing.
 // Range param semantics: from inclusive, to exclusive (half-open interval).
 // Returns daily consumption totals for a given site (summing all metering points).
+// value cast to bigint (rounded m³) so sqlc maps it to int64 cleanly.
 func (q *Queries) CompareSiteDaily(ctx context.Context, arg CompareSiteDailyParams) ([]CompareSiteDailyRow, error) {
 	rows, err := q.db.Query(ctx, compareSiteDaily, arg.SiteID, arg.Bucket, arg.Bucket_2)
 	if err != nil {

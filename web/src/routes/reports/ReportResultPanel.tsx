@@ -45,10 +45,11 @@ export function ReportResultPanel({ result, cfg, onClear }: ReportResultPanelPro
   // Poll pdf_status — fires Sonner toast internally when ready/failed
   const pdfStatus = useReportPDFStatus(result.report_id, result.pdf_status)
 
-  // Derive utility classes present in meter_rows for capability-gated chart
-  const utilityClasses = [
-    ...new Set(result.report.meter_rows.map((r) => r.utility_class)),
-  ]
+  // Derive utility classes present in meter_rows for capability-gated chart.
+  // Backend returns null instead of [] when scope=meter (single MP, no rollup) —
+  // tolerate either shape so this panel works for both fleet and per-meter reports.
+  const meterRows = result.report.meter_rows ?? []
+  const utilityClasses = [...new Set(meterRows.map((r) => r.utility_class))]
 
   return (
     <div className="space-y-6">
@@ -115,9 +116,7 @@ export function ReportResultPanel({ result, cfg, onClear }: ReportResultPanelPro
       <ReportPeriodTable rows={result.report.period_rows} />
 
       {/* Meter table — only for all-meters or single-site scope */}
-      {cfg.scope !== 'meter' && (
-        <ReportMeterTable rows={result.report.meter_rows} />
-      )}
+      {cfg.scope !== 'meter' && <ReportMeterTable rows={meterRows} />}
     </div>
   )
 }
