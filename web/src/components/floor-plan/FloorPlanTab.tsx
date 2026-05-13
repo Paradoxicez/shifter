@@ -107,7 +107,7 @@ export function FloorPlanTab({ siteID }: { siteID: string }) {
   // Fetch devices on this site (for the sidebar unplaced list)
   const { data: siteDevices = [] } = useQuery<SiteDevice[]>({
     queryKey: ['site-devices', siteID],
-    queryFn: () => apiFetch<SiteDevice[]>(`/api/sites/${siteID}/devices`),
+    queryFn: () => apiFetch<SiteDevice[]>(`/api/devices/by-site/${siteID}`),
   })
 
   // Compute live health states via SSE
