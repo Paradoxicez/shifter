@@ -192,7 +192,7 @@ services:
   # (e.g. "0 2 * * *" for 02:00 UTC). Ofelia tolerates a missing container
   # gracefully — if shifter is not running it logs the error and moves on.
   backup-cron:
-    image: mcuadros/ofelia:v0.3.22
+    image: mcuadros/ofelia:0.3.18
     restart: unless-stopped
     depends_on: [shifter]
     command: daemon --docker
