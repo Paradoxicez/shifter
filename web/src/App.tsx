@@ -3,6 +3,7 @@ import { lazy, Suspense } from 'react'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
+import { Skeleton } from '@/components/ui/skeleton'
 import { queryClient } from '@/lib/query-client'
 // Leaflet CSS shim — MUST be imported before any component that uses Leaflet.
 // Three CSS imports loaded as a side effect so tiles + popups + cluster icons render.
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <RootLayout />,
     loader: rootLoader,
+    HydrateFallback: () => <Skeleton className="h-screen w-full" />,
     children: [
       {
         index: true,
