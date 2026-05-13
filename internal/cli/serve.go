@@ -40,6 +40,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"github.com/shifter-io/shifter/internal/alert"
+	apipkg "github.com/shifter-io/shifter/internal/api"
 	"github.com/shifter-io/shifter/internal/audit"
 	"github.com/shifter-io/shifter/internal/auth"
 	"github.com/shifter-io/shifter/internal/backup"
@@ -652,6 +653,32 @@ var serveCmd = &cobra.Command{
 					)
 					return err
 				},
+			},
+			CatalogDeps: &apipkg.CatalogDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+			},
+			CodecTestDeps: &apipkg.CodecTestDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log.With("component", "codec_test"),
+			},
+			BacktestDeps: &apipkg.BacktestDeps{
+				Pool: pool,
+			},
+			ReportTemplateDeps: &apipkg.ReportTemplateDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+			},
+			CompareDeps: &apipkg.CompareDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+			},
+			GatewayImportDeps: &apipkg.GatewayImportDeps{
+				Pool:       pool,
+				SessionMgr: sm,
+				Log:        log.With("component", "gateway_import"),
+				ImportSvc:  gateway.NewImportService(pool),
 			},
 			SPA: httpapi.SPAHandler(),
 		})
