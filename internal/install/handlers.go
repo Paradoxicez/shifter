@@ -246,6 +246,20 @@ func Step2Handler(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_csrf_header"})
 			return
 		}
+		// Sequential enforcement: step 2 requires step 1 to have completed.
+		st, err := deps.Store.GetOrCreate(r.Context())
+		if err != nil {
+			deps.Log.Error("install step2 load state", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+			return
+		}
+		if st.CurrentStep != 2 {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":  "step_out_of_order",
+				"detail": fmt.Sprintf("expected step 2, wizard is at step %d", st.CurrentStep),
+			})
+			return
+		}
 		var req step2Req
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
@@ -346,6 +360,20 @@ func Step3Handler(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_csrf_header"})
 			return
 		}
+		// Sequential enforcement: step 3 requires step 2 to have completed.
+		st, err := deps.Store.GetOrCreate(r.Context())
+		if err != nil {
+			deps.Log.Error("install step3 load state", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+			return
+		}
+		if st.CurrentStep != 3 {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":  "step_out_of_order",
+				"detail": fmt.Sprintf("expected step 3, wizard is at step %d", st.CurrentStep),
+			})
+			return
+		}
 		var req step3Req
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
@@ -386,6 +414,20 @@ func Step4Handler(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !ensureCSRF(r) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_csrf_header"})
+			return
+		}
+		// Sequential enforcement: step 4 requires step 3 to have completed.
+		st, err := deps.Store.GetOrCreate(r.Context())
+		if err != nil {
+			deps.Log.Error("install step4 load state", "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
+			return
+		}
+		if st.CurrentStep != 4 {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"error":  "step_out_of_order",
+				"detail": fmt.Sprintf("expected step 4, wizard is at step %d", st.CurrentStep),
+			})
 			return
 		}
 		var req step4Req

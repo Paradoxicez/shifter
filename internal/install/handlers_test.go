@@ -149,6 +149,14 @@ func TestStep2_RejectsV3(t *testing.T) {
 
 func TestStep3_PersistsRegionHandler(t *testing.T) {
 	srv, store, _, _ := setupHandlers(t, "v4")
+	// Step 1 and 2 must complete before step 3 is accepted.
+	_ = post(t, srv, "/api/install/step/1", map[string]string{
+		"email": "a@x", "name": "A", "password": "Strong-Pass-1!",
+	})
+	_ = post(t, srv, "/api/install/step/2", map[string]string{
+		"mode": "bundled", "grpc_url": "test:8080", "api_token": "t",
+		"mqtt_url": "tcp://test:1883",
+	})
 	res := post(t, srv, "/api/install/step/3", map[string]string{"name": "as923_2"})
 	defer res.Body.Close()
 	require.Equal(t, 200, res.StatusCode)
@@ -158,6 +166,14 @@ func TestStep3_PersistsRegionHandler(t *testing.T) {
 
 func TestStep3_UnknownRegion(t *testing.T) {
 	srv, _, _, _ := setupHandlers(t, "v4")
+	// Step 1 and 2 must complete before step 3 is accepted.
+	_ = post(t, srv, "/api/install/step/1", map[string]string{
+		"email": "a@x", "name": "A", "password": "Strong-Pass-1!",
+	})
+	_ = post(t, srv, "/api/install/step/2", map[string]string{
+		"mode": "bundled", "grpc_url": "test:8080", "api_token": "t",
+		"mqtt_url": "tcp://test:1883",
+	})
 	res := post(t, srv, "/api/install/step/3", map[string]string{"name": "atlantis"})
 	defer res.Body.Close()
 	require.Equal(t, 422, res.StatusCode)
@@ -165,6 +181,15 @@ func TestStep3_UnknownRegion(t *testing.T) {
 
 func TestStep4_PersistsIdentityHandler(t *testing.T) {
 	srv, store, _, _ := setupHandlers(t, "v4")
+	// Steps 1-3 must complete before step 4 is accepted.
+	_ = post(t, srv, "/api/install/step/1", map[string]string{
+		"email": "a@x", "name": "A", "password": "Strong-Pass-1!",
+	})
+	_ = post(t, srv, "/api/install/step/2", map[string]string{
+		"mode": "bundled", "grpc_url": "test:8080", "api_token": "t",
+		"mqtt_url": "tcp://test:1883",
+	})
+	_ = post(t, srv, "/api/install/step/3", map[string]string{"name": "as923_2"})
 	res := post(t, srv, "/api/install/step/4", map[string]any{
 		"display_name": "Acme", "timezone": "Asia/Bangkok", "units": "metric",
 	})
@@ -176,6 +201,15 @@ func TestStep4_PersistsIdentityHandler(t *testing.T) {
 
 func TestStep4_InvalidTimezone(t *testing.T) {
 	srv, _, _, _ := setupHandlers(t, "v4")
+	// Steps 1-3 must complete before step 4 is accepted.
+	_ = post(t, srv, "/api/install/step/1", map[string]string{
+		"email": "a@x", "name": "A", "password": "Strong-Pass-1!",
+	})
+	_ = post(t, srv, "/api/install/step/2", map[string]string{
+		"mode": "bundled", "grpc_url": "test:8080", "api_token": "t",
+		"mqtt_url": "tcp://test:1883",
+	})
+	_ = post(t, srv, "/api/install/step/3", map[string]string{"name": "as923_2"})
 	res := post(t, srv, "/api/install/step/4", map[string]any{
 		"display_name": "Acme", "timezone": "Mars/Olympus", "units": "metric",
 	})
@@ -192,6 +226,36 @@ func TestCSRF_Required(t *testing.T) {
 	require.NoError(t, err)
 	defer res.Body.Close()
 	require.Equal(t, 400, res.StatusCode)
+}
+
+func TestStep_OutOfOrder_Returns409(t *testing.T) {
+	srv, store, _, _ := setupHandlers(t, "v4")
+	// State starts at CurrentStep=1 (step 1 not yet done).
+	// Attempting step 3 before step 2 must return 409.
+	_ = post(t, srv, "/api/install/step/1", map[string]string{
+		"email": "op@example.com", "name": "Op", "password": "Strong-Pass-1!",
+	})
+	// After step 1, CurrentStep==2. Attempt step 3 directly.
+	res := post(t, srv, "/api/install/step/3", map[string]string{"name": "as923"})
+	defer res.Body.Close()
+	require.Equal(t, http.StatusConflict, res.StatusCode)
+	var body map[string]string
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "step_out_of_order", body["error"])
+
+	// Also assert step 2 works at the right point (CurrentStep==2).
+	res2 := post(t, srv, "/api/install/step/2", map[string]string{
+		"mode": "bundled", "grpc_url": "test:8080", "api_token": "t",
+		"mqtt_url": "tcp://test:1883",
+	})
+	defer res2.Body.Close()
+	require.Equal(t, http.StatusOK, res2.StatusCode)
+
+	// After step 2, CurrentStep==3. Now step 3 must work.
+	_ = store // store is available if needed for assertions
+	res3 := post(t, srv, "/api/install/step/3", map[string]string{"name": "as923"})
+	defer res3.Body.Close()
+	require.Equal(t, http.StatusOK, res3.StatusCode)
 }
 
 func TestState_ReturnsGoneAfterFinish(t *testing.T) {
