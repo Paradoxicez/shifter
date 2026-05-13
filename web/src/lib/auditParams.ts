@@ -10,7 +10,7 @@
  * D-33: Default cold-arrival view = last 7 days.
  */
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { z } from 'zod'
 
@@ -48,13 +48,23 @@ export type AuditFilters = z.infer<typeof auditParams>
  */
 export function useAuditParams(): [AuditFilters, (next: Partial<AuditFilters>) => void] {
   const [sp, setSp] = useSearchParams()
-  // Convert URLSearchParams to a plain object, handling multi-value keys.
-  const raw: Record<string, string | string[]> = {}
-  for (const key of sp.keys()) {
-    const vals = sp.getAll(key)
-    raw[key] = vals.length === 1 ? vals[0] : vals
-  }
-  const parsed = auditParams.parse(raw)
+  // Memoize the parse result keyed on the URL string. WITHOUT this memo,
+  // `auditParams.parse(raw)` runs on every render and zod's `.catch(() =>
+  // new Date().toISOString())` regenerates fresh `from`/`to` timestamps for
+  // each call — those flow into useAuditList's queryKey, causing React Query
+  // to refetch on every render, which triggers a re-render, which generates
+  // fresh timestamps, which … infinite request loop. Memoizing on sp keeps
+  // the defaults stable across renders until the URL actually changes.
+  const spKey = sp.toString()
+  const parsed = useMemo(() => {
+    const raw: Record<string, string | string[]> = {}
+    for (const key of sp.keys()) {
+      const vals = sp.getAll(key)
+      raw[key] = vals.length === 1 ? vals[0] : vals
+    }
+    return auditParams.parse(raw)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spKey])
 
   const set = useCallback(
     (next: Partial<AuditFilters>) => {

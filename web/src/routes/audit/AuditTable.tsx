@@ -16,7 +16,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useRef } from 'react'
 import { ChevronDown, ChevronRight, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { formatDistanceToNow } from 'date-fns'
 import type { AuditRow } from '@/hooks/useAudit'
@@ -162,6 +162,7 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col gap-2">
       <div
         ref={tableContainerRef}
@@ -246,5 +247,6 @@ export function AuditTable({ rows, hasNextPage, onLoadMore, isLoadingMore }: Aud
         </div>
       )}
     </div>
+    </TooltipProvider>
   )
 }
