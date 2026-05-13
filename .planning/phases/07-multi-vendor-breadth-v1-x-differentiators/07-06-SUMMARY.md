@@ -43,7 +43,7 @@ requirements-completed: [V2-VEND-01]
 metrics:
   duration_minutes: 25
   completed_date: "2026-05-13"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
   files_changed: 7
 ---
@@ -59,7 +59,7 @@ metrics:
 | 1 | Add API client mutations for import + update | 86ef372 | catalog.ts |
 | 2 | Implement ImportFromCatalogDialog (Surface 2 — 3 steps) | d3b4785 | ImportFromCatalogDialog.tsx, .test.tsx, index.tsx, catalog_handler.go, catalog.ts |
 | 3 | Implement CatalogUpdateModal (Surface 3 — diff + per-field toggles) | 47c1274 | CatalogUpdateModal.tsx, CatalogUpdateModal.test.tsx |
-| 4 | Operator verification of Import + Update flows | — | checkpoint:human-verify pending |
+| 4 | Operator verification of Import + Update flows | — | APPROVED by operator 2026-05-13 |
 
 ## What Was Built
 
@@ -162,7 +162,7 @@ None — both dialogs call live backend endpoints. CatalogUpdateModal diff compu
 |------|------|-------------|
 | threat_flag: data-exposure | internal/api/catalog_handler.go | GET /api/catalog/{slug} now returns full codec_js source inline. Auth-gated (ActionCatalogRead, viewer+admin) — same as before, but response body is larger. T-07-06-02 still applies (admin-only dialog trigger). |
 
-## Self-Check: PARTIAL (Task 4 checkpoint pending operator verification)
+## Self-Check: PASSED (Task 4 approved by operator 2026-05-13)
 
 Files verified on disk:
 - web/src/routes/profiles/ImportFromCatalogDialog.tsx: FOUND
