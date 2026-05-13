@@ -78,6 +78,38 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// stateWireResponse is the JSON shape returned by GET /api/install/state.
+// It is identical to State except Step1Admin is sanitized to omit
+// password_hash before it reaches the client (T-15-04).
+type stateWireResponse struct {
+	StartedAt       time.Time       `json:"started_at"`
+	CompletedAt     *time.Time      `json:"completed_at"`
+	CurrentStep     int             `json:"current_step"`
+	Step1Admin      json.RawMessage `json:"step1_admin"`
+	Step2ChirpStack json.RawMessage `json:"step2_chirpstack"`
+	Step3Region     json.RawMessage `json:"step3_region"`
+	Step4Identity   json.RawMessage `json:"step4_identity"`
+}
+
+// redactStep1Admin strips password_hash from the step1_admin JSONB blob
+// before it is sent to the browser. The DB retains the hash for FinishSetup.
+// Returns nil if the input is nil or unparseable (graceful degradation).
+func redactStep1Admin(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return raw // unparseable blob — pass through untouched
+	}
+	delete(m, "password_hash")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
 // ensureCSRF returns true when the request carries the canonical CSRF guard
 // header. Plan 06's apiFetch sends `X-Requested-With: shifter` on every state-
 // changing request; combined with SameSite=Lax cookies (Plan 08), this defeats
@@ -106,7 +138,16 @@ func StateHandler(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal"})
 			return
 		}
-		writeJSON(w, http.StatusOK, st)
+		resp := stateWireResponse{
+			StartedAt:       st.StartedAt,
+			CompletedAt:     st.CompletedAt,
+			CurrentStep:     st.CurrentStep,
+			Step1Admin:      redactStep1Admin(st.Step1Admin),
+			Step2ChirpStack: st.Step2ChirpStack,
+			Step3Region:     st.Step3Region,
+			Step4Identity:   st.Step4Identity,
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"testing"
@@ -191,4 +192,18 @@ func TestFinishSetup_RollsBackOnFailure(t *testing.T) {
 	var n int
 	require.NoError(t, deps.Pool.QueryRow(context.Background(), `SELECT count(*) FROM "user"`).Scan(&n))
 	require.Equal(t, 0, n, "Serializable rollback must drop the partial admin insert")
+}
+
+// TestRedactStep1Admin — password_hash must not appear in the sanitized blob.
+func TestRedactStep1Admin(t *testing.T) {
+	raw := json.RawMessage(`{"email":"alice@example.com","name":"Alice","password_hash":"$argon2id$..."}`)
+	out := redactStep1Admin(raw)
+	require.NotContains(t, string(out), "password_hash", "password_hash must be stripped from wire response")
+	require.Contains(t, string(out), "alice@example.com", "email must survive redaction")
+	require.Contains(t, string(out), "Alice", "name must survive redaction")
+}
+
+// TestRedactStep1Admin_Nil — nil input must return nil (pre-step-1 state).
+func TestRedactStep1Admin_Nil(t *testing.T) {
+	require.Nil(t, redactStep1Admin(nil))
 }
