@@ -52,6 +52,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U shifter -d shifter"]
       interval: 10s
@@ -91,10 +92,18 @@ services:
       redis:
         condition: service_started
     secrets: [postgres_password]
-    environment:
-      POSTGRESQL__DSN_FILE: /run/secrets/postgres_password
+    entrypoint:
+      - "sh"
+      - "-c"
+      - |
+        PW=$(cat /run/secrets/postgres_password)
+        mkdir -p /tmp/chirpstack
+        for f in /etc/chirpstack/*.toml; do
+          sed "s/POSTGRES_PASSWORD_PLACEHOLDER/$${PW}/g" "$$f" > "/tmp/chirpstack/$$(basename $$f)"
+        done
+        exec chirpstack -c /tmp/chirpstack
     volumes:
-      - chirpstack_config:/etc/chirpstack
+      - ./chirpstack:/etc/chirpstack:ro
     logging: *json-logging
     networks: [shifter]
 
@@ -209,7 +218,6 @@ volumes:
   postgres_data:
   mosquitto_data:
   redis_data:
-  chirpstack_config:
   shifter_logos:
   floor_plans:
   reports_cache:

@@ -1,0 +1,46 @@
+# Shifter bundled flavor — ChirpStack v4 main config.
+# The DSN placeholder POSTGRES_PASSWORD_PLACEHOLDER is sed-replaced at container
+# startup by the sh entrypoint in bundled.yml (reads /run/secrets/postgres_password).
+# ChirpStack v4 does not support ${VAR} substitution in TOML files.
+
+[logging]
+  level="info"
+
+[postgresql]
+  dsn="postgres://shifter:POSTGRES_PASSWORD_PLACEHOLDER@postgres:5432/chirpstack?sslmode=disable"
+  max_open_connections=10
+  min_idle_connections=0
+
+[redis]
+  servers=[
+    "redis://redis:6379/",
+  ]
+  tls_enabled=false
+  cluster=false
+
+[network]
+  net_id="000000"
+  enabled_regions=[
+    "as923",
+    "as923_2",
+    "as923_3",
+    "as923_4",
+    "au915_0",
+    "eu868",
+    "in865",
+    "us915_0",
+  ]
+
+[api]
+  bind="0.0.0.0:8080"
+  # Replace with `openssl rand -base64 32` output on first install.
+  # ChirpStack will refuse to start with this placeholder in production;
+  # for bundled smoke tests the placeholder is acceptable.
+  secret="shifter-bundled-replace-me-openssl-rand-base64-32"
+
+[integration]
+  enabled=["mqtt"]
+
+  [integration.mqtt]
+    server="tcp://mosquitto:1883/"
+    json=true
