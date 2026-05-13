@@ -604,7 +604,7 @@ export function MappingEditor({ profileId, mode }: MappingEditorProps) {
               value={codecJS}
               onChange={(e) => setCodecJS(e.target.value)}
               rows={8}
-              className="font-mono text-sm leading-6"
+              className="font-mono text-sm leading-6 max-h-96 overflow-y-auto [field-sizing:fixed]"
               placeholder="function decodeUplink(input) { return { data: {} }; }"
             />
             <p className="text-xs text-muted-foreground">

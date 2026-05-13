@@ -291,7 +291,7 @@ export function ImportFromCatalogDialog({
                     id="import-codec"
                     {...form.register('codec_js')}
                     rows={8}
-                    className="font-mono text-xs"
+                    className="font-mono text-xs max-h-64 overflow-y-auto [field-sizing:fixed]"
                   />
                   {form.formState.errors.codec_js && (
                     <span className="text-sm text-destructive">
