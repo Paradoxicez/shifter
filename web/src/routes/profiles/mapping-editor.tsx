@@ -27,6 +27,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import { flattenJSON, tryParseJSON } from '@/lib/json-flatten'
+import { CodecTestRunner } from '@/components/codec-test-runner/CodecTestRunner'
 import {
   createProfile,
   getProfileWithMappings,
@@ -610,6 +611,9 @@ export function MappingEditor({ profileId, mode }: MappingEditorProps) {
               Sync to ChirpStack on save.
             </p>
           </div>
+
+          {/* Codec test-runner — only shown for saved profiles (edit mode with known id) */}
+          {profileId && <CodecTestRunner profileId={profileId} />}
         </div>
       </section>
 
