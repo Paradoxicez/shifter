@@ -80,6 +80,14 @@ The operator runs their entire LoRaWAN water/electricity monitoring operation �
 - [x] Restore CLI + CI round-trip — `shifter restore` with advisory lock + sha256 + TimescaleDB pre/post hooks; GitHub Actions workflow seeds, backs up, drops, restores, smoke-tests (OPS-04)
 - [x] Ops hardening — compose conventions lint test, `shifter doctor` support-diagnostic CLI with redaction, alerts retention prune worker, `/health/detailed` with alert_worker + last_backup rows, 3 operator-runbook sections (OPS-05, OPS-06, OPS-07, OPS-08)
 
+**Multi-vendor breadth & v1.x differentiators (Phase 7, 2026-05-13 — runtime UAT pending in 07-HUMAN-UAT.md)**
+- [x] Pre-seeded device profile catalog — 4 entries (Axioma Qalcosonic W1, Acrel ADL200, Acrel ADW300, Itron+KINMY) embedded in `internal/codec/catalog/*.json`; LoadAll/Get + boot-time drift detection (placeholder vs customer-edited); GET /api/catalog + POST /api/catalog/import + POST /api/catalog/{id}/update with semver-downgrade rejection; Settings → Vendor Catalog tab (Surface 1) + Import from Catalog dialog (Surface 2) + Update Diff Modal with per-field toggles (Surface 3) (V2-VEND-01)
+- [x] Codec test-runner — goja-sandboxed runtime (100ms timeout, 256-byte payload cap, no host bindings); POST /api/device-profiles/{id}/test-codec (admin-only, 30/min rate limit); CodecTestRunner panel (Surface 4) embedded in profile editor with dual-tab Decoded JSON + Canonical Mapping + error panel with line/col + stack trace (V2-VEND-02)
+- [x] Anomaly backtest + UX-POWER — POST /api/alerts/backtest (read-only two-pass CAGG queries); "Test against last 30 days" button + sparkline + profile-aware rule-kind filtering in AddRuleDialog (V2-VEND-03); saved report templates (Templates dropdown + Save dialog + viewer RBAC) + Compare View backend + bulk gateway import (3-step dialog, idempotent on EUI) (UX-POWER)
+- [x] Profile-aware alert workers — offline_threshold_multiplier (Itron+KINMY daily-uplink no longer false-fires at 3h), cold-start gating on anomaly_compatibility (full=21d, limited=60d, unsupported=blocked), ReverseFlowIncreaseWorker + migration 0052 (ALERT-04 tuning + battery curve registry with Li-SOCl2 3.6V plateau-then-cliff for Itron+KINMY)
+- [x] Install validation hardening — ProbeChirpStack / ProbeTimescale / ProbeRegion in `internal/doctor/probes.go` with API-key redaction; `shifter doctor probe-{chirpstack,timescale,region}` Cobra subcommands; /health/detailed probe_results block (INST-HARDEN; SC#5 scoped to manual invocation per D-12/D-13)
+- [x] Vendor-onboarding model — adding a new vendor is now a PR workflow (codec.js + catalog.json + fixtures), not a backend deploy per D-20
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
@@ -157,4 +165,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 — Phase 6 (alerts, users, audit & operational hardening) complete. 12/12 plans shipped including gap-closure plan 06-12 (install identity GET/PATCH + mount); re-verification 25/25 must-haves passed. 24 requirements validated (ALERT-01..06, USER-01..04, AUDIT-02..03, SETT-01/02/03/05, OPS-02..08); AUDIT-01 deferred from Phase 2 also closed.*
+*Last updated: 2026-05-13 — Phase 7 (multi-vendor breadth & v1.x differentiators) complete. 16/16 plans shipped across 13 waves; verifier returned human_needed with 4/5 SC truths verified (SC#5 partial only due to intentional D-12/D-13 scope reduction). 6 requirements validated (V2-VEND-01/02/03, ALERT-04 tuning, UX-POWER, INST-HARDEN). One documented stub: Compare View EntityDropdown options list (`CompareView.tsx:234`) — backend functional, frontend dropdown unwired, scheduled as follow-up. Carried-over Phase 6 tech debt: `internal/alert/alerts_prune_worker_test.go` references non-existent `threshold_value` column from commit 71f4fa1.*
