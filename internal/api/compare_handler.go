@@ -154,8 +154,8 @@ func handleEntitiesMode(ctx context.Context, q *sqlc.Queries, req compareRequest
 	}
 
 	// Determine entity label using the entity type.
-	aLabel := labelForEntity(req.EntityType, aID)
-	bLabel := labelForEntity(req.EntityType, bID)
+	aLabel := labelForEntity(ctx, q, req.EntityType, aID)
+	bLabel := labelForEntity(ctx, q, req.EntityType, bID)
 
 	// Run queries.
 	aRows, err := runCompareQuery(ctx, q, req.EntityType, aID, from, to)
@@ -196,7 +196,7 @@ func handleTimeRangesMode(ctx context.Context, q *sqlc.Queries, req compareReque
 		return compareResponse{}, errCode, errMsg
 	}
 
-	label := labelForEntity(req.EntityType, entityID)
+	label := labelForEntity(ctx, q, req.EntityType, entityID)
 
 	aRows, err := runCompareQuery(ctx, q, req.EntityType, entityID, fromA, toA)
 	if err != nil {
@@ -238,10 +238,22 @@ func parseAndValidateRange(fromStr, toStr string) (time.Time, time.Time, int, st
 	return from, to, 0, ""
 }
 
-// labelForEntity returns a human-readable label for the entity.
-// For the compare view it's just the UUID string; a future plan can
-// resolve the actual name via GetSite / GetMeteringPointLabel.
-func labelForEntity(entityType string, id uuid.UUID) string {
+// labelForEntity resolves a human-readable name for the entity by querying
+// the DB. Falls back to "entityType:uuid" if the entity is not found or the
+// DB call fails.
+func labelForEntity(ctx context.Context, q *sqlc.Queries, entityType string, id uuid.UUID) string {
+	pgID := pgtype.UUID{Bytes: id, Valid: true}
+	switch entityType {
+	case "site":
+		if site, err := q.GetSite(ctx, pgID); err == nil {
+			return site.Name
+		}
+	default: // "metering_point"
+		if mp, err := q.GetMP(ctx, pgID); err == nil {
+			return mp.Name
+		}
+	}
+	// Fallback: UUID string (entity not found or DB error)
 	return entityType + ":" + id.String()
 }
 
