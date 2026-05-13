@@ -254,7 +254,7 @@ Plans:
 - [x] 07-03-catalog-loader-and-drift-detection-PLAN.md — LoadAll/Get + TestCatalogValid (D-22) + RunCatalogDriftCheck boot wiring (D-31, D-36)
 - [x] 07-04-catalog-http-api-PLAN.md — 4 endpoints + audit vocab + RBAC (D-03, D-04, D-23, D-24, D-34, D-36)
 - [x] 07-05-vendor-catalog-tab-ui-PLAN.md — Settings → Vendor Catalog DataTable + tab badge (Surface 1, D-02, D-23..D-25, D-40)
-- [ ] 07-06-import-and-update-dialogs-PLAN.md — Import + Update Diff modals (Surfaces 2-3, D-03, D-04, D-24, D-34)
+- [x] 07-06-import-and-update-dialogs-PLAN.md — Import + Update Diff modals (Surfaces 2-3, D-03, D-04, D-24, D-34)
 - [x] 07-07-goja-codec-runner-PLAN.md — sandboxed goja runtime + POST /api/profiles/{id}/test-codec (D-26..D-28; security-critical)
 - [x] 07-08-codec-test-runner-ui-PLAN.md — Test Codec panel in profile editor (Surface 4, D-05..D-08)
 - [ ] 07-09-profile-aware-alerts-battery-curve-reverse-flow-PLAN.md — ALERT-03/04 profile-aware refactor + battery curve registry + reverse_flow_increase rule (D-09, D-41..D-46)
