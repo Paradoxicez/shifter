@@ -79,4 +79,7 @@ until curl -fsk https://localhost/health > /dev/null 2>&1; do
   sleep 2
 done
 
+# Bootstrap ChirpStack API token so wizard step 2 can authenticate (bug #4).
+./install/bundled/bootstrap-chirpstack-token.sh || true
+
 echo "==> Shifter is up. Visit https://${DOMAIN}/install to begin setup."
