@@ -29,7 +29,17 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
 
   const res = await fetch(path, { ...init, headers, credentials: 'same-origin' })
   const text = await res.text()
-  const body = text ? JSON.parse(text) : null
+  // Go's http.Error() writes text/plain bodies on error paths. JSON.parse
+  // would throw and lose the status code, so parse defensively and fall
+  // back to the raw text when the body is not JSON.
+  let body: unknown = null
+  if (text) {
+    try {
+      body = JSON.parse(text)
+    } catch {
+      body = text
+    }
+  }
 
   if (!res.ok) {
     if (res.status === 401) {
@@ -39,6 +49,8 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     const message =
       (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
         ? body.error
+        : typeof body === 'string' && body.trim().length > 0
+        ? body.trim()
         : null) ?? `${res.status} ${res.statusText}`
     throw new ApiError(res.status, message, body)
   }
