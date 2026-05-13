@@ -196,7 +196,7 @@ func GenerateHandler(deps Deps) http.HandlerFunc {
 		// Build report synchronously from CAGGs — this is CPU + DB only, no I/O.
 		rpt, err := BuildReport(ctx, deps.Queries, *cfg)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "build_failed"})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "build_failed", "detail": err.Error()})
 			return
 		}
 

@@ -205,7 +205,7 @@ const reportDailyByCategory = `-- name: ReportDailyByCategory :many
 SELECT
   time_bucket('1 day', mh.bucket) AS period,
   mp.utility_class,
-  sum(mh.cumulative_delta)        AS consumption
+  round(coalesce(sum(mh.cumulative_delta), 0))::bigint        AS consumption
 FROM measurement_hourly mh
 JOIN metering_point mp ON mp.id = mh.metering_point_id
 WHERE mh.bucket >= $1 AND mh.bucket < $2
@@ -250,7 +250,7 @@ const reportDailyByMP = `-- name: ReportDailyByMP :many
 SELECT
   time_bucket('1 day', bucket) AS period,
   metering_point_id,
-  sum(cumulative_delta)        AS consumption,
+  round(coalesce(sum(cumulative_delta), 0))::bigint        AS consumption,
   sum(uplink_count)            AS uplinks,
   sum(flagged_count)           AS flagged
 FROM measurement_hourly
@@ -308,7 +308,7 @@ SELECT
   time_bucket('1 day', mh.bucket) AS period,
   mp.site_id,
   s.name                          AS site_name,
-  sum(mh.cumulative_delta)        AS consumption
+  round(coalesce(sum(mh.cumulative_delta), 0))::bigint        AS consumption
 FROM measurement_hourly mh
 JOIN metering_point mp ON mp.id = mh.metering_point_id
 JOIN site s ON s.id = mp.site_id
@@ -360,7 +360,7 @@ const reportMonthlyByCategory = `-- name: ReportMonthlyByCategory :many
 SELECT
   time_bucket('1 month', md.bucket) AS period,
   mp.utility_class,
-  sum(md.cumulative_delta) AS consumption
+  round(coalesce(sum(md.cumulative_delta), 0))::bigint AS consumption
 FROM measurement_daily md
 JOIN metering_point mp ON mp.id = md.metering_point_id
 WHERE md.bucket >= $1 AND md.bucket < $2
@@ -403,7 +403,7 @@ const reportMonthlyByMP = `-- name: ReportMonthlyByMP :many
 SELECT
   time_bucket('1 month', bucket) AS period,
   metering_point_id,
-  sum(cumulative_delta) AS consumption,
+  round(coalesce(sum(cumulative_delta), 0))::bigint AS consumption,
   sum(uplink_count) AS uplinks,
   sum(flagged_count) AS flagged
 FROM measurement_daily
@@ -458,7 +458,7 @@ SELECT
   time_bucket('1 month', md.bucket) AS period,
   mp.site_id,
   s.name             AS site_name,
-  sum(md.cumulative_delta) AS consumption
+  round(coalesce(sum(md.cumulative_delta), 0))::bigint AS consumption
 FROM measurement_daily md
 JOIN metering_point mp ON mp.id = md.metering_point_id
 JOIN site s ON s.id = mp.site_id
@@ -510,7 +510,7 @@ const reportYearlyByCategory = `-- name: ReportYearlyByCategory :many
 SELECT
   time_bucket('1 year', my.bucket) AS period,
   mp.utility_class,
-  sum(my.cumulative_delta) AS consumption
+  round(coalesce(sum(my.cumulative_delta), 0))::bigint AS consumption
 FROM measurement_monthly my
 JOIN metering_point mp ON mp.id = my.metering_point_id
 WHERE my.bucket >= $1 AND my.bucket < $2
@@ -553,7 +553,7 @@ const reportYearlyByMP = `-- name: ReportYearlyByMP :many
 SELECT
   time_bucket('1 year', bucket) AS period,
   metering_point_id,
-  sum(cumulative_delta) AS consumption
+  round(coalesce(sum(cumulative_delta), 0))::bigint AS consumption
 FROM measurement_monthly
 WHERE metering_point_id = $1
   AND bucket >= $2 AND bucket < $3
@@ -598,7 +598,7 @@ SELECT
   time_bucket('1 year', my.bucket) AS period,
   mp.site_id,
   s.name             AS site_name,
-  sum(my.cumulative_delta) AS consumption
+  round(coalesce(sum(my.cumulative_delta), 0))::bigint AS consumption
 FROM measurement_monthly my
 JOIN metering_point mp ON mp.id = my.metering_point_id
 JOIN site s ON s.id = mp.site_id
