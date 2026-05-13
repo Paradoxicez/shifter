@@ -16,6 +16,7 @@ import (
 
 	apipkg "github.com/shifter-io/shifter/internal/api"
 	"github.com/shifter-io/shifter/internal/auth"
+	"github.com/shifter-io/shifter/internal/dashboard"
 	"github.com/shifter-io/shifter/internal/db"
 	sqlc "github.com/shifter-io/shifter/internal/db/sqlc"
 	"github.com/shifter-io/shifter/internal/floorplan"
@@ -432,4 +433,46 @@ func TestRouter_FloorPlanRouteMounted(t *testing.T) {
 	res2.Body.Close()
 	require.Equal(t, http.StatusNotFound, res2.StatusCode,
 		"nil FloorPlanDeps must NOT mount floor-plan routes — 404 expected")
+}
+
+// TestRouter_DashboardRequiresAuth — T-04-04-05: all three dashboard endpoints
+// must return 401 for unauthenticated requests. The DashboardDeps block in
+// router.go must be wrapped in a RequireAction group, not mounted on the root
+// router directly. Mirrors the ProfileDeps / MapDeps nil-guard pattern.
+func TestRouter_DashboardRequiresAuth(t *testing.T) {
+	pool := testsupport.StartPostgres(t)
+	require.NoError(t, db.RunMigrations(context.Background(), pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+	seedAdminForRouterTest(t, pool, "dashboard-auth")
+	sm := auth.NewSessionManager(pool, true, time.Hour, 24*time.Hour)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	// DashboardDeps non-nil — unauthenticated requests must get 401, not 200.
+	depsWithDashboard := Deps{
+		Pool:       pool,
+		SessionMgr: sm,
+		Log:        logger,
+		DashboardDeps: &dashboard.Deps{
+			Pool:   pool,
+			Logger: logger,
+		},
+	}
+	router := NewRouter(depsWithDashboard)
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	// Anonymous client — no cookie jar, no session cookie.
+	anonClient := &http.Client{}
+
+	endpoints := []string{
+		"/api/dashboard/scope",
+		"/api/dashboard/snapshot",
+		"/api/dashboard/timeseries",
+	}
+	for _, ep := range endpoints {
+		res, err := anonClient.Get(srv.URL + ep)
+		require.NoError(t, err)
+		res.Body.Close()
+		require.Equal(t, http.StatusUnauthorized, res.StatusCode,
+			"unauthenticated GET %s must return 401 (T-04-04-05)", ep)
+	}
 }

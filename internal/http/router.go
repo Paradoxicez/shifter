@@ -402,10 +402,16 @@ func NewRouter(deps Deps) http.Handler {
 		events.RegisterRoutes(r, *deps.EventsDeps)
 	}
 	if deps.DashboardDeps != nil {
-		// DashboardDeps mounts the three Plan 04-04 dashboard endpoints.
-		// Both admin and viewer roles have full read access (D-23).
-		// Mounted before the SPA fallback (PITFALL #4 preserved).
-		dashboard.RegisterRoutes(r, *deps.DashboardDeps)
+		// DashboardDeps mounts the three Plan 04-04 dashboard endpoints inside
+		// a RequireAction group so unauthenticated requests receive 401 before
+		// reaching any handler (T-04-04-05 / D-23). Both admin and viewer hold
+		// ActionSiteRead (see authz.go RoleAdmin + RoleViewer bundles), which
+		// satisfies the "any authenticated user" contract without a weaker no-op
+		// check. Mounted before the SPA fallback (PITFALL #4 preserved).
+		r.Group(func(rt chi.Router) {
+			rt.Use(auth.RequireAction(deps.SessionMgr, auth.ActionSiteRead))
+			dashboard.RegisterRoutes(rt, *deps.DashboardDeps)
+		})
 	}
 	if deps.ReportDeps != nil {
 		// ReportDeps mounts Plan 05-06's three report endpoints.
