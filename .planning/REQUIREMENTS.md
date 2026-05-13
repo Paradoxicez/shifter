@@ -186,9 +186,9 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ### Vendor Catalog
 
-- **V2-VEND-01**: Pre-seeded vendor profile catalog (Kamstrup MULTICAL, Diehl, Itron, Axioma, Sagemcom, Acrel, Schneider IEM3xxx, etc.)
-- **V2-VEND-02**: Codec test-runner UI inside profile editor (paste hex → see decoded JSON → see canonical mapping)
-- **V2-VEND-03**: Saved report templates and side-by-side meter/site comparison view
+- [x] **V2-VEND-01**: Pre-seeded vendor profile catalog (Kamstrup MULTICAL, Diehl, Itron, Axioma, Sagemcom, Acrel, Schneider IEM3xxx, etc.) — **Complete (Phase 7)**
+- [x] **V2-VEND-02**: Codec test-runner UI inside profile editor (paste hex → see decoded JSON → see canonical mapping) — **Complete (Phase 7)**
+- [x] **V2-VEND-03**: Saved report templates and side-by-side meter/site comparison view — **Complete (Phase 7)**
 
 ### Backup & Operations
 
@@ -324,11 +324,18 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 | UX-01 | Phase 1 | Complete |
 | UX-02 | Phase 1 | Complete |
 | UX-03 | Phase 3 | Complete |
+| V2-VEND-01 | Phase 7 | Complete |
+| V2-VEND-02 | Phase 7 | Complete |
+| V2-VEND-03 | Phase 7 | Complete |
+| ALERT-04 (profile-aware tuning) | Phase 7 | Complete |
+| INST-HARDEN | Phase 7 | Complete (per D-12/D-13 — manual doctor invocation) |
+| UX-POWER (bulk gateway import, backtest) | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 99 total
 - Mapped to phases: 99 (100%)
 - Unmapped: 0
+- v1.x / Phase 7 requirements: V2-VEND-01, V2-VEND-02, V2-VEND-03, ALERT-04 tuning, INST-HARDEN, UX-POWER — all Complete
 
 **Per-phase counts:**
 - Phase 1 (Foundation): 18 — AUTH-01..06, INST-01..06, CHIRP-01..03, OPS-01, UX-01, UX-02
@@ -337,9 +344,17 @@ Which phases cover which requirements. Updated 2026-04-27 at roadmap creation.
 - Phase 4 (Realtime & Dashboard): 9 — DASH-01..06, DETL-01..03
 - Phase 5 (Aggregates, Reports, Map & Floor Plans): 19 — SITE-02..06, MAP-01..04, REPT-01..07, DATA-11..13
 - Phase 6 (Alerts, Users, Audit & Ops Hardening): 24 — ALERT-01..06, USER-01..04, AUDIT-02, AUDIT-03, SETT-01..05, OPS-02..08
-- Phase 7 (Multi-Vendor Breadth & v1.x Differentiators): 0 v1 REQs (carries v1.x differentiators tracked under V2-VEND-01..03 and ALERT-04 anomaly tuning maturing on real-customer signal)
+- Phase 7 (Multi-Vendor Breadth & v1.x Differentiators): V2-VEND-01, V2-VEND-02, V2-VEND-03 (vendor catalog, codec test runner, templates + compare view); ALERT-04 profile-aware anomaly tuning; INST-HARDEN (doctor probes); UX-POWER (bulk gateway import, anomaly backtest)
 
 ---
+*Phase 7 closure (2026-05-13) — Plans 07-01..07-14. Phase 7 v1.x differentiators and vendor catalog shipped. Evidence trail per Phase 7 requirement:*
+*- V2-VEND-01 → `internal/codec/catalog/*.json` (embedded vendor catalog via embed.FS — Itron KINMY, Axioma W1, Kamstrup MULTICAL 21, Acrel ADL100-E, Sagemcom T210-D, Diehl IZAR, Schneider IEM3xxx) + `internal/catalog/loader.go` (loader + drift detection) + `internal/catalog/drift_test.go` (TestDriftDetect_NewVendorVersion + TestDriftDetect_Stale) + `internal/api/catalog_handler_test.go` (TestCatalogList_VendorFilter + TestCatalogImport_Prefill) + `web/src/routes/settings/VendorCatalogCard.tsx` + `web/playwright/specs/phase-07-vendor-catalog.spec.ts` (import from catalog flow)*
+*- V2-VEND-02 → `internal/codec/runner.go` (goja sandbox runner, 50ms timeout) + `internal/codec/runner_test.go` (TestCodecRunner_Decode_AxiomaW1 + TestCodecRunner_Timeout_50ms + TestCodecRunner_IsolatePerRun) + `web/src/routes/profiles/CodecTestRunner.tsx` (hex input + Decoded JSON tab + Canonical Mapping tab) + `web/src/routes/profiles/CodecTestRunner.test.tsx` + `web/playwright/specs/phase-07-vendor-catalog.spec.ts` (run codec test flow)*
+*- V2-VEND-03 → `internal/report/template.go` + `internal/report/template_handler_test.go` (TestSaveTemplate_CRUD + TestApplyTemplate) + `internal/compare/compare_handler_test.go` (TestCompareView_TwoMeters + TestCompareView_TwoSites) + `web/src/routes/reports/CompareView.tsx` + `web/src/routes/reports/CompareView.test.tsx` + `web/playwright/specs/phase-07-vendor-catalog.spec.ts` (apply catalog update flow)*
+*- ALERT-04 (profile-aware tuning) → `internal/alert/worker/anomaly_worker.go` (battery curve normalization + profile-aware thresholds) + `internal/alert/worker/anomaly_worker_test.go` (TestAnomalyWorker_ProfileAware_BatteryNormalization) + `internal/alert/backtest/backtest.go` + `internal/alert/backtest/backtest_test.go` (TestBacktest_AnomalyRules_HistoricalWindow)*
+*- INST-HARDEN → `internal/doctor/probes.go` (ProbeChirpStack, ProbeTimescale, ProbeRegion — never leaks API key per T-07-14-03) + `internal/doctor/probes_test.go` (TestProbeChirpStack_OK_V410 + TestProbeChirpStack_Warn_V48 + TestProbeChirpStack_Error_V3 + TestProbeTimescale_OK + TestProbeRegion_Mismatch) + `internal/install/probe/chirpstack_test.go` (TestProbeChirpStack_NoAPIKeyInErrorMessage — sentinel SENTINEL_API_KEY_8f2c93 confirms zero leak under error path) + `internal/cli/doctor.go` (probe-chirpstack + probe-timescale + probe-region Cobra subcommands) + `internal/http/health.go` (probe_results block in /health/detailed — D-40)*
+*- UX-POWER → `internal/gateway/bulk_import.go` + `internal/gateway/bulk_import_test.go` (TestBulkGatewayImport_CSV + TestBulkGatewayImport_Idempotent) + `web/src/routes/gateways/BulkGatewayImportDialog.tsx` + `internal/alert/backtest/` (anomaly backtest UI — BacktestCard.tsx)*
+
 *Requirements defined: 2026-04-27*
 *Last updated: 2026-05-11 — Phase 4 closure (Plan 04-10). All 9 Phase 4 requirements (DASH-01..06, DETL-01..03) verified Complete with shipping evidence after Plan 04-10 landed. Evidence trail per Phase 4 requirement:*
 *- DASH-01 → `internal/db/migrations/0022_install_capabilities.up.sql` (capabilities CHECK) + `internal/dashboard/snapshot_handler_test.go::TestSnapshotHandler_WaterOnly + _ElectricityOnly` + `internal/dashboard/install_scope_handler_test.go` + `web/src/routes/dashboard.test.tsx::"capability=water hides electricity"` + `web/playwright/specs/dashboard-capability-filter.spec.ts`*
