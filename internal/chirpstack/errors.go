@@ -8,6 +8,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ErrInvalidAPIToken is returned by ProbeVersion when TenantService.List
+// rejects the API token with Unauthenticated or PermissionDenied.
+// Callers must refuse to persist the connection (INST-05 extension).
+var ErrInvalidAPIToken = errors.New("chirpstack: API token is invalid or lacks global permissions")
+
 // ErrChirpStackV3OrUnknown is returned by ProbeVersion when the server doesn't
 // implement InternalService.GetVersion — the canonical signal for "not v4".
 //

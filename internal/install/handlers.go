@@ -278,6 +278,12 @@ func Step2Handler(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "v3_detected"})
 			return
 		}
+		if errors.Is(err, chirpstack.ErrInvalidAPIToken) {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"error": "grpc_unreachable", "detail": "invalid_api_token",
+			})
+			return
+		}
 		if err != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 				"error": "grpc_unreachable", "detail": err.Error(),

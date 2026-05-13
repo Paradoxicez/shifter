@@ -12,24 +12,21 @@ import (
 	api "github.com/chirpstack/chirpstack/api/go/v4/api"
 )
 
-// ProbeVersion calls InternalService.GetVersion(Empty) and returns the version
-// string the server reports. This is the ONLY reliable v3-vs-v4 distinguisher
-// (per RESEARCH §Pattern 4 / PITFALLS §7) because v3 and v4 share gRPC ports
-// and superficial proto names — the gRPC dial succeeds against either, so we
-// must call an RPC that exists only on v4.
+// ProbeVersion calls InternalService.GetVersion to detect v3-vs-v4, then
+// validates the API token via TenantService.List (an auth-required RPC).
 //
-// Errors:
-//   - codes.Unimplemented or codes.NotFound from the server → ErrChirpStackV3OrUnknown
-//     (the server is either v3, or a non-ChirpStack gRPC endpoint that happens to
-//     respond on the same port). Callers (Plan 14 wizard, Plan 18 serve startup)
-//     MUST refuse to proceed on this sentinel — INST-05.
-//   - any other RPC error → wrapped %w of the underlying status error.
-//   - empty version string from a successful response → ErrChirpStackV3OrUnknown
-//     (a defensive belt: a misimplemented mock or a malformed v4 response should
-//     not silently look like a healthy v4 server).
+// Two-step design:
+//  1. GetVersion — unauthenticated; returns ErrChirpStackV3OrUnknown on
+//     Unimplemented/NotFound (INST-05).
+//  2. TenantService.List with limit=1 — validates the API token.
+//     Unauthenticated or PermissionDenied → ErrInvalidAPIToken.
+//
+// This separates version detection from token validation, both of which the
+// wizard step 2 needs to confirm before persisting the connection.
 func ProbeVersion(ctx context.Context, conn *grpc.ClientConn) (string, error) {
-	client := api.NewInternalServiceClient(conn)
-	resp, err := client.GetVersion(ctx, &emptypb.Empty{})
+	// Step 1: version detection (unauthenticated).
+	internalClient := api.NewInternalServiceClient(conn)
+	resp, err := internalClient.GetVersion(ctx, &emptypb.Empty{})
 	if err != nil {
 		st, ok := status.FromError(err)
 		if ok && (st.Code() == codes.Unimplemented || st.Code() == codes.NotFound) {
@@ -40,5 +37,20 @@ func ProbeVersion(ctx context.Context, conn *grpc.ClientConn) (string, error) {
 	if resp.GetVersion() == "" {
 		return "", ErrChirpStackV3OrUnknown
 	}
-	return resp.GetVersion(), nil
+	version := resp.GetVersion()
+
+	// Step 2: token validation via an auth-required RPC.
+	tenantClient := api.NewTenantServiceClient(conn)
+	_, err = tenantClient.List(ctx, &api.ListTenantsRequest{Limit: 1})
+	if err != nil {
+		st, ok := status.FromError(err)
+		if ok && (st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied) {
+			return "", ErrInvalidAPIToken
+		}
+		// Any other error (Unavailable, DeadlineExceeded, etc.) — treat as
+		// unreachable so caller maps it to grpc_unreachable.
+		return "", fmt.Errorf("chirpstack token validation: %w", err)
+	}
+
+	return version, nil
 }

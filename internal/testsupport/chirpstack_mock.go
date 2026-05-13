@@ -471,6 +471,7 @@ func NewChirpStackMockBuf(t *testing.T, mode string) (func(context.Context, stri
 	case "v4":
 		api.RegisterInternalServiceServer(srv, &fakeInternalV4{version: "v4.17.0"})
 		api.RegisterDeviceServiceServer(srv, &fakeDevice{})
+		api.RegisterTenantServiceServer(srv, newFakeTenant())
 	case "v3":
 		api.RegisterInternalServiceServer(srv, &fakeInternalV3{})
 	case "down":
