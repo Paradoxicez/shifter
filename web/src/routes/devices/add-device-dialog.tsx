@@ -43,6 +43,7 @@ import {
   type PreflightResult,
 } from '@/lib/devices'
 import { listMPs, type MeteringPoint } from '@/lib/metering-points'
+import { CreateMeteringPointDialog } from '@/routes/metering-points/create-mp-dialog'
 import { listProfiles, type Profile } from '@/lib/profiles'
 import { DevEUIParser } from './deveui-parser'
 
@@ -113,6 +114,7 @@ export function AddDeviceDialog({
   // Step 2 — Bind.
   const [mpId, setMpId] = useState(initialMPId ?? '')
   const [initialReading, setInitialReading] = useState('0')
+  const [createMPOpen, setCreateMPOpen] = useState(false)
 
   // Step 3 — Activation.
   const [activationMode, setActivationMode] = useState<ActivationMode>('OTAA')
@@ -418,21 +420,45 @@ export function AddDeviceDialog({
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="mp-select">Metering point</Label>
-              <Select value={mpId} onValueChange={setMpId}>
-                <SelectTrigger id="mp-select" className="w-full" aria-label="Metering point">
-                  <SelectValue placeholder="Select a metering point" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mps
-                    .filter((m) => !m.archived_at)
-                    .map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={mpId} onValueChange={setMpId}>
+                  <SelectTrigger id="mp-select" className="flex-1" aria-label="Metering point">
+                    <SelectValue placeholder="Select a metering point" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mps
+                      .filter((m) => !m.archived_at)
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCreateMPOpen(true)}
+                >
+                  + New
+                </Button>
+              </div>
+              {mps.filter((m) => !m.archived_at).length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No metering points yet — click <span className="font-medium">+ New</span> to
+                  create one (a site is required first; create one at /sites if needed).
+                </p>
+              ) : null}
             </div>
+            <CreateMeteringPointDialog
+              open={createMPOpen}
+              onOpenChange={setCreateMPOpen}
+              onCreated={(mp) => {
+                qc.invalidateQueries({ queryKey: ['mps'] })
+                setMpId(mp.id)
+                setCreateMPOpen(false)
+              }}
+            />
 
             {mpId ? (
               <div className="flex flex-col gap-2">
