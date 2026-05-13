@@ -262,7 +262,7 @@ Plans:
 - [ ] 07-11-saved-report-templates-PLAN.md — report_template schema + CRUD + Templates dropdown + Save dialog (Surface 6, D-14, D-15, D-39)
 - [x] 07-12-compare-view-PLAN.md — Side-by-side comparison view (Surface 5, D-16, D-37, D-38)
 - [x] 07-13-bulk-gateway-import-PLAN.md — CSV bulk gateway import reusing Phase 3 pattern (Surface 7, D-17)
-- [ ] 07-14-doctor-probes-and-phase-closure-PLAN.md — probe-chirpstack/probe-timescale/probe-region + /health/detailed + Playwright + REQUIREMENTS/VALIDATION/RETROSPECTIVE reconciliation (D-12, D-13, D-40)
+- [x] 07-14-doctor-probes-and-phase-closure-PLAN.md — probe-chirpstack/probe-timescale/probe-region + /health/detailed + Playwright + REQUIREMENTS/VALIDATION/RETROSPECTIVE reconciliation (D-12, D-13, D-40)
 
 **UI hint**: yes
 
