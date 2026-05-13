@@ -96,12 +96,12 @@ function Sparkline({
   )
 }
 
-function StatusDot({ state }: { state: Gateway['state'] }) {
+function StatusDot({ state }: { state: Gateway['state'] | null | undefined }) {
   const token =
     state === 'ONLINE' ? 'success' : state === 'OFFLINE' ? 'destructive' : 'muted-foreground'
   return (
     <span
-      aria-label={state}
+      aria-label={state ?? 'unknown'}
       className="inline-block h-2.5 w-2.5 rounded-full"
       style={{ backgroundColor: `var(--${token})` }}
     />
@@ -259,7 +259,7 @@ export default function GatewaysPage() {
         <div className="flex items-center gap-2">
           <StatusDot state={row.original.state} />
           <span className="text-sm">
-            {row.original.archived_at ? 'Archived' : row.original.state.toLowerCase()}
+            {row.original.archived_at ? 'Archived' : (row.original.state ?? 'unknown').toLowerCase()}
           </span>
         </div>
       ),

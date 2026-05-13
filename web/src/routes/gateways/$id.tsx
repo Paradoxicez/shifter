@@ -54,12 +54,12 @@ function Sparkline({
   )
 }
 
-function StatusDot({ state }: { state: Gateway['state'] }) {
+function StatusDot({ state }: { state: Gateway['state'] | null | undefined }) {
   const token =
     state === 'ONLINE' ? 'success' : state === 'OFFLINE' ? 'destructive' : 'muted-foreground'
   return (
     <span
-      aria-label={state}
+      aria-label={state ?? 'unknown'}
       className="inline-block h-2.5 w-2.5 rounded-full"
       style={{ backgroundColor: `var(--${token})` }}
     />

@@ -46,7 +46,7 @@ export interface Gateway {
   stats_sparkline: GatewaySparkline | null
   // Live (from CS list response merged):
   last_seen_at: string | null
-  state: 'NEVER_SEEN' | 'ONLINE' | 'OFFLINE'
+  state: 'NEVER_SEEN' | 'ONLINE' | 'OFFLINE' | null
 }
 
 export interface ListGatewaysResponse {
