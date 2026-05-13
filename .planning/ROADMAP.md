@@ -256,7 +256,7 @@ Plans:
 - [x] 07-05-vendor-catalog-tab-ui-PLAN.md — Settings → Vendor Catalog DataTable + tab badge (Surface 1, D-02, D-23..D-25, D-40)
 - [ ] 07-06-import-and-update-dialogs-PLAN.md — Import + Update Diff modals (Surfaces 2-3, D-03, D-04, D-24, D-34)
 - [x] 07-07-goja-codec-runner-PLAN.md — sandboxed goja runtime + POST /api/profiles/{id}/test-codec (D-26..D-28; security-critical)
-- [ ] 07-08-codec-test-runner-ui-PLAN.md — Test Codec panel in profile editor (Surface 4, D-05..D-08)
+- [x] 07-08-codec-test-runner-ui-PLAN.md — Test Codec panel in profile editor (Surface 4, D-05..D-08)
 - [ ] 07-09-profile-aware-alerts-battery-curve-reverse-flow-PLAN.md — ALERT-03/04 profile-aware refactor + battery curve registry + reverse_flow_increase rule (D-09, D-41..D-46)
 - [x] 07-10-anomaly-backtest-PLAN.md — Test against last 30 days + count + sparkline + profile-aware rule kind filter (D-10, D-35, D-42)
 - [ ] 07-11-saved-report-templates-PLAN.md — report_template schema + CRUD + Templates dropdown + Save dialog (Surface 6, D-14, D-15, D-39)
@@ -302,7 +302,7 @@ Strictly linear dependency chain. The research is unambiguous: Foundation and Do
 | 4. Realtime & Dashboard | 9/10 | In Progress|  |
 | 5. Aggregates, Reports, Map & Floor Plans | 12/13 | Gap closure  | 2026-05-12 (initial); 05-13 pending |
 | 6. Alerts, Users, Audit & Operational Hardening | 11/12 | Gap closure |  |
-| 7. Multi-Vendor Breadth & v1.x Differentiators | 13/16 | In Progress|  |
+| 7. Multi-Vendor Breadth & v1.x Differentiators | 14/16 | In Progress|  |
 
 ## Coverage Summary
 
