@@ -62,6 +62,15 @@ export function ConsumptionChart({ data, liveMode, bucketSec }: ConsumptionChart
 
   const lastPoint = data.length > 0 ? data[data.length - 1] : null
 
+  // Empty state: no data for this range — render placeholder instead of blank chart.
+  if (data.length === 0) {
+    return (
+      <div className="h-48 sm:h-56 md:h-64 lg:h-72 flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">No data for this range</p>
+      </div>
+    )
+  }
+
   return (
     <div className="relative">
       <ChartContainer config={chartConfig} className="h-48 sm:h-56 md:h-64 lg:h-72 w-full">
