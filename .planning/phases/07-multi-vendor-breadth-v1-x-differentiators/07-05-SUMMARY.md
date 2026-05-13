@@ -32,7 +32,7 @@ decisions:
 metrics:
   duration_minutes: 9
   completed_date: "2026-05-13"
-  tasks_completed: 3
+  tasks_completed: 4
   tasks_total: 4
   files_changed: 6
 ---
@@ -48,7 +48,7 @@ metrics:
 | 1 | Add shadcn DataTable + catalog API client | d341af1 | data-table.tsx, catalog.ts |
 | 2 | Build VendorCatalogCard with DataTable, chip filter, badge counts | d635a7b | VendorCatalogCard.tsx, VendorCatalogCard.test.tsx, CatalogUpdateModal.tsx |
 | 3 | Mount the section in Settings page with (N) badge logic | a02292b | settings.tsx |
-| 4 | Visual verification checkpoint | — | awaiting human |
+| 4 | Visual verification checkpoint | approved | operator verified 2026-05-13 |
 
 ## What Was Built
 
