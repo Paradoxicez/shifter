@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useRevalidator } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ResponsiveShell } from '@/components/shell/responsive-shell'
 import { fetchSessionUser, logout, type SessionUser } from '@/lib/auth'
-import { fetchInstallState } from '@/lib/install'
+import { fetchInstallState, INSTALL_DONE_KEY } from '@/lib/install'
 import { ChangePasswordDialog } from './change-password-dialog'
 
 /**
@@ -53,6 +53,7 @@ export default function RootLayout() {
     try {
       await logout()
     } finally {
+      sessionStorage.removeItem(INSTALL_DONE_KEY)
       window.location.assign('/login')
     }
   }

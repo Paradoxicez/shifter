@@ -17,12 +17,22 @@ export interface InstallState {
   Step4Identity: unknown
 }
 
+export const INSTALL_DONE_KEY = 'shifter_install_completed'
+
 /** Returns null when install is already completed (backend responds 410 Gone). */
 export async function fetchInstallState(): Promise<InstallState | null> {
+  // Short-circuit: install was already confirmed complete this session.
+  if (sessionStorage.getItem(INSTALL_DONE_KEY) === 'true') {
+    return null
+  }
   try {
     return await apiFetch<InstallState>('/api/install/state')
   } catch (err) {
-    if (err instanceof ApiError && err.status === 410) return null
+    if (err instanceof ApiError && err.status === 410) {
+      // Cache the "install complete" signal so future navigations skip the network call.
+      sessionStorage.setItem(INSTALL_DONE_KEY, 'true')
+      return null
+    }
     throw err
   }
 }
