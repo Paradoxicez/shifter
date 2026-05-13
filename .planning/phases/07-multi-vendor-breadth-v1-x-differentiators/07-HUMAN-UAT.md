@@ -65,7 +65,10 @@ blocked: 5
 ## Gaps
 
 - truth: "All 6 Phase 7 HTTP endpoint families respond from the production binary"
-  status: failed
+  status: verified
+  verified: "2026-05-13"
+  fix_commit: "320122a"
+  fix_plan: "07-15-wire-phase-7-deps"
   reason: "User reported: Vendor Catalog card shows 'No vendor profiles' empty state instead of 4 catalog rows. GET /api/catalog returns HTML+200 (SPA fallback) instead of JSON."
   severity: blocker
   test: 1
@@ -75,12 +78,14 @@ blocked: 5
       issue: "httpapi.Deps{} literal at line 578-657 missing CatalogDeps, CodecTestDeps, BacktestDeps, ReportTemplateDeps, CompareDeps, GatewayImportDeps"
     - path: "internal/http/router.go"
       issue: "Deps struct lines 197-236 — fields exist but their constructors are not called from serve.go"
-  missing:
-    - "Wire CatalogDeps: NewCatalogDeps(pool, q, embed.FS) — needs access to internal/codec.LoadAll() output (catalog entries) plus pool for catalog metadata queries"
-    - "Wire CodecTestDeps: needs pool + sessionMgr + getProfileForCodecTest query + rate limiter (30/min per-user, see 07-07-SUMMARY)"
-    - "Wire BacktestDeps: needs pool + sessionMgr + alert.Rules + measurement_hourly CAGG access"
-    - "Wire ReportTemplateDeps: needs report.TemplateStore + sessionMgr + auditStore (audit-in-tx semantics)"
-    - "Wire CompareDeps: needs pool + sessionMgr (CompareSiteDaily / CompareMeteringPointDaily already in queries.sql.go)"
-    - "Wire GatewayImportDeps: needs gateway.NewImportService + sessionMgr + auditStore + chirpstack gateway client (will be nil/disabled when chirpstack is down, but the import service must accept that gracefully)"
-    - "After wiring, rebuild docker image (just _compose-build-image) and restart shifter container — confirm all 6 endpoints return non-200 (401 for unauthed, 405 for wrong method) instead of 200+HTML"
+  resolution:
+    - "Added apipkg alias import for internal/api in serve.go"
+    - "Wired CatalogDeps{Pool, SessionMgr}"
+    - "Wired CodecTestDeps{Pool, SessionMgr, Log}"
+    - "Wired BacktestDeps{Pool}"
+    - "Wired ReportTemplateDeps{Pool, SessionMgr}"
+    - "Wired CompareDeps{Pool, SessionMgr}"
+    - "Wired GatewayImportDeps{Pool, SessionMgr, Log, ImportSvc: gateway.NewImportService(pool)}"
+    - "Rebuilt docker image (just _compose-build-image) with commit 320122a baked in"
+    - "Restarted shifter container — all 6 endpoints now return 401 application/json"
   debug_session: ""
