@@ -4,7 +4,7 @@
  * Surface 5: Compare View (D-16, D-37, D-38)
  */
 
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
@@ -38,9 +38,24 @@ vi.mock('@/lib/use-current-user', () => ({
   useCurrentUser: () => ({ role: 'admin', email: 'admin@test.com' }),
 }))
 
-// Mock ListSitesAndMPs used by entity dropdown to avoid real API calls.
+// Mock apiFetch with path-aware responses so useQuery(listMPs) and useQuery(listSites)
+// return realistic data without a real server.
 vi.mock('@/lib/api', () => ({
-  apiFetch: vi.fn().mockResolvedValue([]),
+  apiFetch: vi.fn().mockImplementation((path: string) => {
+    if (path === '/api/metering-points') {
+      return Promise.resolve([
+        { id: 'mp-1', site_id: 'site-1', name: 'MP One', utility_class: 'water' },
+        { id: 'mp-2', site_id: 'site-2', name: 'MP Two', utility_class: 'electricity' },
+      ])
+    }
+    if (path === '/api/sites') {
+      return Promise.resolve([
+        { id: 'site-1', name: 'Building A', timezone: 'UTC' },
+        { id: 'site-2', name: 'Building B', timezone: 'UTC' },
+      ])
+    }
+    return Promise.resolve([])
+  }),
 }))
 
 import { CompareView } from './CompareView'
@@ -96,5 +111,17 @@ describe('CompareView (Surface 5, D-16, D-37, D-38)', () => {
     // The chart div is rendered conditionally; since we start with no entities selected, the
     // chart is NOT rendered yet. Verify the "Select two entities to compare." placeholder.
     expect(screen.getByText('Select two entities to compare.')).toBeInTheDocument()
+  })
+
+  it('populates entity dropdowns with metering-point options once data loads', async () => {
+    renderCompareView()
+    // Wait for queries to resolve: the button transitions from disabled (Loading…) to enabled.
+    const [comboA] = await screen.findAllByRole('combobox')
+    await waitFor(() => expect(comboA).not.toBeDisabled())
+    // Now open Entity A dropdown.
+    fireEvent.click(comboA)
+    // Options should appear — use findByText because React may still batch the render.
+    expect(await screen.findByText('MP One — Building A')).toBeInTheDocument()
+    expect(await screen.findByText('MP Two — Building B')).toBeInTheDocument()
   })
 })

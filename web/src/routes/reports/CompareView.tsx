@@ -20,8 +20,8 @@
  *   Mode RadioGroup aria:  "Comparison mode"
  */
 
-import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ArrowLeftRight, CalendarIcon, ChevronsUpDown, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import type { DateRange } from 'react-day-picker'
@@ -49,6 +49,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { cn } from '@/lib/utils'
 import { compareReports } from '@/lib/compare'
 import type { CompareRequest, CompareResponse, SeriesResult } from '@/lib/compare'
+import { listMPs } from '@/lib/metering-points'
+import { listSites } from '@/lib/sites'
 
 // ---- types ------------------------------------------------------------------
 
@@ -67,9 +69,10 @@ interface EntityDropdownProps {
   onChange: (id: string | null) => void
   placeholder: string
   options: EntityOption[]
+  isLoading?: boolean
 }
 
-function EntityDropdown({ value, onChange, placeholder, options }: EntityDropdownProps) {
+function EntityDropdown({ value, onChange, placeholder, options, isLoading }: EntityDropdownProps) {
   const [open, setOpen] = useState(false)
   const selected = options.find((o) => o.id === value)
 
@@ -81,8 +84,9 @@ function EntityDropdown({ value, onChange, placeholder, options }: EntityDropdow
           role="combobox"
           aria-expanded={open}
           className="w-full justify-between font-normal"
+          disabled={isLoading}
         >
-          {selected ? selected.label : placeholder}
+          {isLoading ? 'Loading…' : selected ? selected.label : placeholder}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -230,8 +234,23 @@ export function CompareView() {
     }
   }
 
-  // Empty entity options — will be populated by a useQuery in a future iteration.
-  const entityOptions: EntityOption[] = []
+  const mpsQuery = useQuery({ queryKey: ['metering-points'], queryFn: () => listMPs() })
+  const sitesQuery = useQuery({ queryKey: ['sites'], queryFn: () => listSites() })
+
+  const isLoadingOptions = mpsQuery.isPending || sitesQuery.isPending
+
+  const entityOptions: EntityOption[] = useMemo(() => {
+    const sites = sitesQuery.data ?? []
+    const mps = mpsQuery.data ?? []
+    const siteNameById = new Map(sites.map((s) => [s.id, s.name]))
+    return mps.map((mp) => {
+      const siteName = siteNameById.get(mp.site_id)
+      return {
+        id: mp.id,
+        label: siteName ? `${mp.name} — ${siteName}` : mp.name,
+      }
+    })
+  }, [mpsQuery.data, sitesQuery.data])
 
   // Determine if the "run" action is ready.
   const canCompare =
@@ -292,6 +311,7 @@ export function CompareView() {
               onChange={setEntityA}
               placeholder="Select entity A"
               options={entityOptions}
+              isLoading={isLoadingOptions}
             />
           </div>
           <Button
@@ -312,6 +332,7 @@ export function CompareView() {
               onChange={setEntityB}
               placeholder="Select entity B"
               options={entityOptions}
+              isLoading={isLoadingOptions}
             />
           </div>
           <DateRangePicker value={range} onChange={setRange} label="Pick a date range" />
@@ -324,6 +345,7 @@ export function CompareView() {
               onChange={setSingleEntity}
               placeholder="Select entity A"
               options={entityOptions}
+              isLoading={isLoadingOptions}
             />
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
