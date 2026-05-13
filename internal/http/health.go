@@ -25,6 +25,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/shifter-io/shifter/internal/doctor"
 	"github.com/shifter-io/shifter/internal/version"
 )
 
@@ -87,6 +88,13 @@ func Health() http.HandlerFunc {
 //     no backup has run. Age check against backup_crit_threshold_hours (from
 //     retention_config) drives the degraded status.
 //
+// Plan 07-14 addition:
+//   - probe_results: map[string]doctor.ProbeResult — last-run-only probe
+//     results for chirpstack, timescale, and region (D-40). Each probe has a
+//     5s timeout; total worst-case 15s (T-07-14-02 accepted: admin-only, low
+//     traffic). The ChirpStack API key is never included in probe messages
+//     (T-07-14-03).
+//
 // Status semantics:
 //   - "ok"        — every check passed.
 //   - "degraded"  — at least one check failed; the binary is still serving
@@ -96,19 +104,26 @@ func Health() http.HandlerFunc {
 // auth.RequireAction(sm, ActionHealthDetailed); the handler itself does NOT
 // re-check authorization (the middleware already did).
 func HealthDetailed(pool *pgxpool.Pool) http.HandlerFunc {
+	return HealthDetailedWithCS(pool, "", "")
+}
+
+// HealthDetailedWithCS is the full constructor that accepts ChirpStack
+// connection details for the probe_results block. When grpcURL is empty the
+// chirpstack probe is skipped (returns an "unconfigured" result).
+func HealthDetailedWithCS(pool *pgxpool.Pool, grpcURL, apiKey string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		dbOK := pool.Ping(ctx) == nil
-		status := "ok"
+		overallStatus := "ok"
 		if !dbOK {
-			status = "degraded"
+			overallStatus = "degraded"
 		}
 
 		// --- Alert worker states (D-21) ---
 		alertWorkers := loadAlertWorkers(ctx, pool)
 		for _, aw := range alertWorkers {
 			if aw.Degraded {
-				status = "degraded"
+				overallStatus = "degraded"
 			}
 		}
 
@@ -117,19 +132,59 @@ func HealthDetailed(pool *pgxpool.Pool) http.HandlerFunc {
 		if lastBackup != nil && critThreshHours > 0 {
 			critThreshSecs := int64(critThreshHours) * 3600
 			if lastBackup.AgeSeconds > critThreshSecs {
-				status = "degraded"
+				overallStatus = "degraded"
 			}
 		}
 
+		// --- Install validation probes (Plan 07-14 / D-40) ---
+		// Each probe runs with a 5s timeout; last-run-only (no history).
+		probeResults := runProbes(ctx, pool, grpcURL, apiKey)
+
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":         status,
+			"status":         overallStatus,
 			"checks":         map[string]any{"db": dbOK},
 			"version":        version.Info(),
 			"uptime_seconds": int(time.Since(startedAt).Seconds()),
 			"alert_workers":  alertWorkers,
 			"last_backup":    lastBackup,
+			"probe_results":  probeResults,
 		})
 	}
+}
+
+// runProbes executes the three install probes sequentially with 5s timeouts
+// each and returns the results keyed by probe name.
+func runProbes(ctx context.Context, pool *pgxpool.Pool, grpcURL, apiKey string) map[string]doctor.ProbeResult {
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	results := make(map[string]doctor.ProbeResult, 3)
+
+	// chirpstack probe.
+	if grpcURL != "" {
+		csCtx, csCancel := context.WithTimeout(probeCtx, 5*time.Second)
+		r := doctor.ProbeChirpStack(csCtx, grpcURL, apiKey)
+		csCancel()
+		results["chirpstack"] = r
+	} else {
+		results["chirpstack"] = doctor.ProbeResult{
+			Name:    "chirpstack",
+			Status:  "warn",
+			Message: "ChirpStack gRPC URL not configured",
+		}
+	}
+
+	// timescale probe.
+	tsCtx, tsCancel := context.WithTimeout(probeCtx, 5*time.Second)
+	results["timescale"] = doctor.ProbeTimescale(tsCtx, pool)
+	tsCancel()
+
+	// region probe.
+	rgCtx, rgCancel := context.WithTimeout(probeCtx, 5*time.Second)
+	results["region"] = doctor.ProbeRegion(rgCtx, pool)
+	rgCancel()
+
+	return results
 }
 
 // loadAlertWorkers queries all alert_worker_state rows ordered by worker_kind

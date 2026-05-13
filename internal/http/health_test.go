@@ -190,6 +190,64 @@ func TestHealthDetailed_Status_DegradedIfWorkerDegraded(t *testing.T) {
 		"overall status must be degraded when any alert_worker_state.degraded=true")
 }
 
+// TestHealthDetailed_ProbeResultsBlock — GET /health/detailed includes a
+// probe_results block with chirpstack, timescale, and region keys (Plan 07-14 D-40).
+func TestHealthDetailed_ProbeResultsBlock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping: -short")
+	}
+	pool := testsupport.StartPostgres(t)
+	ctx := context.Background()
+	require.NoError(t, db.RunMigrations(ctx, pool, slog.New(slog.NewTextHandler(os.Stderr, nil))))
+
+	sm := auth.NewSessionManager(pool, true, time.Hour, 24*time.Hour)
+	// Use HealthDetailed (no CS config) — chirpstack probe returns "unconfigured".
+	protected := auth.RequireAction(sm, auth.ActionHealthDetailed)(HealthDetailed(pool))
+
+	mux := http.NewServeMux()
+	mux.Handle("POST /seed", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := auth.PutUser(r.Context(), sm, auth.User{ID: "u-pr", Role: "admin"}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.Handle("GET /health/detailed", protected)
+	srv := httptest.NewServer(sm.LoadAndSave(mux))
+	t.Cleanup(srv.Close)
+
+	j, _ := cookiejar.New(nil)
+	cli := &http.Client{Jar: j}
+	seed, err := cli.Post(srv.URL+"/seed", "", nil)
+	require.NoError(t, err)
+	seed.Body.Close()
+
+	res, err := cli.Get(srv.URL + "/health/detailed")
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+
+	probeRaw, ok := body["probe_results"]
+	require.True(t, ok, "probe_results key must be present in /health/detailed (Plan 07-14)")
+	probeMap, ok := probeRaw.(map[string]any)
+	require.True(t, ok, "probe_results must be a JSON object")
+
+	// All three probe keys must be present.
+	for _, key := range []string{"chirpstack", "timescale", "region"} {
+		_, has := probeMap[key]
+		require.True(t, has, "probe_results must include %q key", key)
+		entry, ok := probeMap[key].(map[string]any)
+		require.True(t, ok, "probe_results.%s must be an object", key)
+		_, hasStatus := entry["status"]
+		require.True(t, hasStatus, "probe_results.%s must have 'status' field", key)
+		_, hasMessage := entry["message"]
+		require.True(t, hasMessage, "probe_results.%s must have 'message' field", key)
+	}
+}
+
 // TestHealthDetailed_RequiresAdmin — GET /health/detailed requires an
 // admin session; it returns DB ping result.
 // Anonymous returns 401, viewer returns 403, admin returns 200 with
