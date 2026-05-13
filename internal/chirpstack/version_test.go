@@ -26,9 +26,11 @@ func dialMockConn(t *testing.T, mode string) *grpc.ClientConn {
 	return conn
 }
 
-// TestProbeVersion_v4 — Against a v4 mock that returns a successful
-// GetVersion response, ProbeVersion returns the version string and nil error.
-// Implementation: Plan 12 (chirpstack-grpc).
+// TestProbeVersion_v4 — Against a v4 mock that responds to TenantService.List
+// (the canonical v4 reachability probe), ProbeVersion returns the literal
+// "v4" and nil error. We no longer return a precise version string because
+// InternalService.GetVersion requires a user-session JWT in v4.10+; the
+// global API key the operator provides is rejected by that RPC.
 func TestProbeVersion_v4(t *testing.T) {
 	conn := dialMockConn(t, "v4")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -36,7 +38,7 @@ func TestProbeVersion_v4(t *testing.T) {
 
 	v, err := ProbeVersion(ctx, conn)
 	require.NoError(t, err)
-	require.Equal(t, "v4.17.0", v)
+	require.Equal(t, "v4", v)
 }
 
 // TestProbeVersion_v3 — Against a v3 mock that returns codes.Unimplemented

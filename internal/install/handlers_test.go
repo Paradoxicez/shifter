@@ -87,7 +87,7 @@ func TestState_ReturnsSingleton(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	var body map[string]any
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
-	require.Equal(t, float64(1), body["CurrentStep"])
+	require.Equal(t, float64(1), body["current_step"])
 }
 
 func TestStep1_Hashes_Persists(t *testing.T) {
@@ -125,7 +125,7 @@ func TestStep2_CapturesCS_v4(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 	var body map[string]any
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
-	require.Equal(t, "v4.17.0", body["chirpstack_version"])
+	require.Equal(t, "v4", body["chirpstack_version"])
 
 	_, err := os.Stat(filepath.Join(secretsDir, "chirpstack_api_token"))
 	require.NoError(t, err, "step 2 must write api_token to secrets dir")

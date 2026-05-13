@@ -7,50 +7,42 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	api "github.com/chirpstack/chirpstack/api/go/v4/api"
 )
 
-// ProbeVersion calls InternalService.GetVersion to detect v3-vs-v4, then
-// validates the API token via TenantService.List (an auth-required RPC).
+// ProbeVersion validates ChirpStack reachability + token authority using
+// TenantService.List(limit=1) — the only RPC that both (a) accepts a global
+// API key (unlike InternalService.GetVersion which requires a user-session
+// JWT in v4.10+) AND (b) returns Unimplemented on v3 servers.
 //
-// Two-step design:
-//  1. GetVersion — unauthenticated; returns ErrChirpStackV3OrUnknown on
-//     Unimplemented/NotFound (INST-05).
-//  2. TenantService.List with limit=1 — validates the API token.
-//     Unauthenticated or PermissionDenied → ErrInvalidAPIToken.
+// Returns:
+//   - ("v4", nil) on success (v4 server + valid global API key)
+//   - ErrChirpStackV3OrUnknown if the server is v3 or a non-ChirpStack endpoint
+//     (Unimplemented / NotFound)
+//   - ErrInvalidAPIToken if the token is rejected (Unauthenticated /
+//     PermissionDenied)
+//   - wrapped error otherwise (network unreachable / deadline / etc.)
 //
-// This separates version detection from token validation, both of which the
-// wizard step 2 needs to confirm before persisting the connection.
+// Why no version string: InternalService.GetVersion requires a user JWT, not
+// an API key, in v4.10+. We don't have a user session at install time; the
+// global API key is what the operator provides. We return the static literal
+// "v4" because passing the v3-detection check is itself the v4 confirmation
+// (v3 doesn't expose TenantService).
 func ProbeVersion(ctx context.Context, conn *grpc.ClientConn) (string, error) {
-	// Step 1: version detection (unauthenticated).
-	internalClient := api.NewInternalServiceClient(conn)
-	resp, err := internalClient.GetVersion(ctx, &emptypb.Empty{})
-	if err != nil {
-		st, ok := status.FromError(err)
-		if ok && (st.Code() == codes.Unimplemented || st.Code() == codes.NotFound) {
-			return "", ErrChirpStackV3OrUnknown
-		}
-		return "", fmt.Errorf("chirpstack version probe: %w", err)
-	}
-	if resp.GetVersion() == "" {
-		return "", ErrChirpStackV3OrUnknown
-	}
-	version := resp.GetVersion()
-
-	// Step 2: token validation via an auth-required RPC.
 	tenantClient := api.NewTenantServiceClient(conn)
-	_, err = tenantClient.List(ctx, &api.ListTenantsRequest{Limit: 1})
+	_, err := tenantClient.List(ctx, &api.ListTenantsRequest{Limit: 1})
 	if err != nil {
 		st, ok := status.FromError(err)
-		if ok && (st.Code() == codes.Unauthenticated || st.Code() == codes.PermissionDenied) {
-			return "", ErrInvalidAPIToken
+		if ok {
+			switch st.Code() {
+			case codes.Unimplemented, codes.NotFound:
+				return "", ErrChirpStackV3OrUnknown
+			case codes.Unauthenticated, codes.PermissionDenied:
+				return "", ErrInvalidAPIToken
+			}
 		}
-		// Any other error (Unavailable, DeadlineExceeded, etc.) — treat as
-		// unreachable so caller maps it to grpc_unreachable.
-		return "", fmt.Errorf("chirpstack token validation: %w", err)
+		return "", fmt.Errorf("chirpstack reachability probe: %w", err)
 	}
-
-	return version, nil
+	return "v4", nil
 }
