@@ -35,10 +35,6 @@ mkdir -p secrets
 [ -s secrets/mqtt_password.txt ]        || echo ""                  > secrets/mqtt_password.txt
 chmod 0600 secrets/*.txt
 
-echo "==> Preparing backup directory"
-mkdir -p /var/lib/shifter/backups
-chown 65532:65532 /var/lib/shifter/backups || true   # 65532 = distroless nonroot uid
-
 echo "==> Building shifter:0.1.0 image"
 docker build \
   -t shifter:0.1.0 \
