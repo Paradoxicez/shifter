@@ -249,8 +249,12 @@ func ImportFromCatalogHandler(deps CatalogDeps) http.HandlerFunc {
 
 		q := sqlc.New(deps.Pool)
 
-		// 409 if slug already imported.
-		if _, err := q.GetDeviceProfileBySlug(r.Context(), entry.Slug); err == nil {
+		// Detect existing profile with this slug. Three cases:
+		//  - Active (archived_at IS NULL)  → 409 Conflict
+		//  - Archived (archived_at IS NOT NULL) → restore-on-import (unarchive + refresh from catalog)
+		//  - Not found → fresh insert path below
+		existing, slugErr := q.GetDeviceProfileBySlug(r.Context(), entry.Slug)
+		if slugErr == nil && !existing.ArchivedAt.Valid {
 			http.Error(w, "slug already imported", http.StatusConflict)
 			return
 		}
@@ -258,7 +262,7 @@ func ImportFromCatalogHandler(deps CatalogDeps) http.HandlerFunc {
 		// Resolve actor for audit.
 		actor, _ := auth.GetUser(r.Context(), deps.SessionMgr)
 
-		// Atomic tx: INSERT device_profile + audit row.
+		// Atomic tx: INSERT or restore device_profile + audit row.
 		tx, err := deps.Pool.Begin(r.Context())
 		if err != nil {
 			http.Error(w, "tx begin failed", http.StatusInternalServerError)
@@ -271,34 +275,63 @@ func ImportFromCatalogHandler(deps CatalogDeps) http.HandlerFunc {
 		if req.Name != "" {
 			name = req.Name
 		}
-		newProfile, err := qtx.CreateDeviceProfileFromCatalog(r.Context(), sqlc.CreateDeviceProfileFromCatalogParams{
-			Name:                          name,
-			CodecJs:                       codecs.CodecBySlug(entry.Slug),
-			Capabilities:                  entry.Capabilities,
-			CatalogSource:                 strPtr(entry.Slug),
-			CatalogSourceVersion:          strPtr(entry.Version),
-			BatteryCurve:                  entry.BatteryCurve,
-			ExpectedUplinkIntervalSeconds: int32(entry.ExpectedUplinkIntervalSeconds),
-			OfflineThresholdMultiplier:    entry.OfflineThresholdMultiplier,
-			AnomalyCompatibility:          entry.AnomalyCompatibility,
-			Slug:                          entry.Slug,
-			Vendor:                        entry.Vendor,
-			Family:                        nullableStrPtr(entry.Family),
-			CounterModulus:                entry.CounterModulus,
-			MacVersion:                    entry.MACVersion,
-			Region:                        entry.Region,
-		})
-		if err != nil {
-			http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
-			return
+
+		var profileID uuid.UUID
+		auditAction := audit.AuditActionCatalogProfileImported
+		if slugErr == nil && existing.ArchivedAt.Valid {
+			// Restore-on-import: same slug, previously archived.
+			restored, err := qtx.RestoreArchivedDeviceProfileFromCatalog(r.Context(), sqlc.RestoreArchivedDeviceProfileFromCatalogParams{
+				ID:                            existing.ID,
+				Name:                          name,
+				CodecJs:                       codecs.CodecBySlug(entry.Slug),
+				Capabilities:                  entry.Capabilities,
+				CatalogSource:                 strPtr(entry.Slug),
+				CatalogSourceVersion:          strPtr(entry.Version),
+				BatteryCurve:                  entry.BatteryCurve,
+				ExpectedUplinkIntervalSeconds: int32(entry.ExpectedUplinkIntervalSeconds),
+				OfflineThresholdMultiplier:    entry.OfflineThresholdMultiplier,
+				AnomalyCompatibility:          entry.AnomalyCompatibility,
+				CounterModulus:                entry.CounterModulus,
+				MacVersion:                    entry.MACVersion,
+				Region:                        entry.Region,
+			})
+			if err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			profileID = uuid.UUID(restored.ID.Bytes)
+		} else {
+			// Fresh insert.
+			newProfile, err := qtx.CreateDeviceProfileFromCatalog(r.Context(), sqlc.CreateDeviceProfileFromCatalogParams{
+				Name:                          name,
+				CodecJs:                       codecs.CodecBySlug(entry.Slug),
+				Capabilities:                  entry.Capabilities,
+				CatalogSource:                 strPtr(entry.Slug),
+				CatalogSourceVersion:          strPtr(entry.Version),
+				BatteryCurve:                  entry.BatteryCurve,
+				ExpectedUplinkIntervalSeconds: int32(entry.ExpectedUplinkIntervalSeconds),
+				OfflineThresholdMultiplier:    entry.OfflineThresholdMultiplier,
+				AnomalyCompatibility:          entry.AnomalyCompatibility,
+				Slug:                          entry.Slug,
+				Vendor:                        entry.Vendor,
+				Family:                        nullableStrPtr(entry.Family),
+				CounterModulus:                entry.CounterModulus,
+				MacVersion:                    entry.MACVersion,
+				Region:                        entry.Region,
+			})
+			if err != nil {
+				http.Error(w, "db error: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			profileID = uuid.UUID(newProfile.ID.Bytes)
 		}
 
 		actorUUID, _ := uuid.Parse(actor.ID)
 		if err := audit.WriteEntry(r.Context(), tx, audit.Entry{
 			UserID:     actorUUID,
-			Action:     audit.AuditActionCatalogProfileImported,
+			Action:     auditAction,
 			EntityType: audit.EntityTypeDeviceProfile,
-			EntityID:   uuid.UUID(newProfile.ID.Bytes),
+			EntityID:   profileID,
 			After: map[string]any{
 				"slug":    entry.Slug,
 				"version": entry.Version,
@@ -314,7 +347,7 @@ func ImportFromCatalogHandler(deps CatalogDeps) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(importResponse{ProfileID: uuid.UUID(newProfile.ID.Bytes)})
+		_ = json.NewEncoder(w).Encode(importResponse{ProfileID: profileID})
 	}
 }
 

@@ -693,6 +693,94 @@ func (q *Queries) OverwriteProfileCodec(ctx context.Context, arg OverwriteProfil
 	return err
 }
 
+const restoreArchivedDeviceProfileFromCatalog = `-- name: RestoreArchivedDeviceProfileFromCatalog :one
+UPDATE device_profile
+SET archived_at                      = NULL,
+    name                             = $2,
+    codec_js                         = $3,
+    capabilities                     = $4,
+    catalog_source                   = $5,
+    catalog_source_version           = $6,
+    battery_curve                    = $7,
+    expected_uplink_interval_seconds = $8,
+    offline_threshold_multiplier     = $9,
+    anomaly_compatibility            = $10,
+    counter_modulus                  = $11,
+    mac_version                      = $12,
+    region                           = $13,
+    customer_edited                  = FALSE,
+    codec_js_synced_at               = NULL,
+    updated_at                       = now()
+WHERE id = $1 AND archived_at IS NOT NULL
+RETURNING id, slug, name, vendor, family, capabilities, counter_modulus, codec_js, cs_profile_id, codec_js_synced_at, region, mac_version, archived_at, created_at, updated_at, expected_interval_s, catalog_source, catalog_source_version, customer_edited, battery_curve, expected_uplink_interval_seconds, offline_threshold_multiplier, anomaly_compatibility
+`
+
+type RestoreArchivedDeviceProfileFromCatalogParams struct {
+	ID                            pgtype.UUID
+	Name                          string
+	CodecJs                       string
+	Capabilities                  []string
+	CatalogSource                 *string
+	CatalogSourceVersion          *string
+	BatteryCurve                  string
+	ExpectedUplinkIntervalSeconds int32
+	OfflineThresholdMultiplier    float64
+	AnomalyCompatibility          string
+	CounterModulus                int64
+	MacVersion                    string
+	Region                        *string
+}
+
+// Plan 07-04 catalog Import: when the slug already exists but the profile
+// is archived, restore it with fresh catalog fields instead of rejecting
+// the import with 409. Operator expectation: "delete then re-import works".
+// Resets customer_edited because the catalog version is canonical again,
+// and clears codec_js_synced_at so the boot seed routine re-pushes to CS.
+func (q *Queries) RestoreArchivedDeviceProfileFromCatalog(ctx context.Context, arg RestoreArchivedDeviceProfileFromCatalogParams) (DeviceProfile, error) {
+	row := q.db.QueryRow(ctx, restoreArchivedDeviceProfileFromCatalog,
+		arg.ID,
+		arg.Name,
+		arg.CodecJs,
+		arg.Capabilities,
+		arg.CatalogSource,
+		arg.CatalogSourceVersion,
+		arg.BatteryCurve,
+		arg.ExpectedUplinkIntervalSeconds,
+		arg.OfflineThresholdMultiplier,
+		arg.AnomalyCompatibility,
+		arg.CounterModulus,
+		arg.MacVersion,
+		arg.Region,
+	)
+	var i DeviceProfile
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Vendor,
+		&i.Family,
+		&i.Capabilities,
+		&i.CounterModulus,
+		&i.CodecJs,
+		&i.CsProfileID,
+		&i.CodecJsSyncedAt,
+		&i.Region,
+		&i.MacVersion,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ExpectedIntervalS,
+		&i.CatalogSource,
+		&i.CatalogSourceVersion,
+		&i.CustomerEdited,
+		&i.BatteryCurve,
+		&i.ExpectedUplinkIntervalSeconds,
+		&i.OfflineThresholdMultiplier,
+		&i.AnomalyCompatibility,
+	)
+	return i, err
+}
+
 const setProfileCatalogSource = `-- name: SetProfileCatalogSource :exec
 UPDATE device_profile
 SET catalog_source         = $2,

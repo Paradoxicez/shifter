@@ -52,6 +52,32 @@ UPDATE device_profile SET archived_at = now()
 WHERE id = $1 AND archived_at IS NULL
 RETURNING *;
 
+-- name: RestoreArchivedDeviceProfileFromCatalog :one
+-- Plan 07-04 catalog Import: when the slug already exists but the profile
+-- is archived, restore it with fresh catalog fields instead of rejecting
+-- the import with 409. Operator expectation: "delete then re-import works".
+-- Resets customer_edited because the catalog version is canonical again,
+-- and clears codec_js_synced_at so the boot seed routine re-pushes to CS.
+UPDATE device_profile
+SET archived_at                      = NULL,
+    name                             = $2,
+    codec_js                         = $3,
+    capabilities                     = $4,
+    catalog_source                   = $5,
+    catalog_source_version           = $6,
+    battery_curve                    = $7,
+    expected_uplink_interval_seconds = $8,
+    offline_threshold_multiplier     = $9,
+    anomaly_compatibility            = $10,
+    counter_modulus                  = $11,
+    mac_version                      = $12,
+    region                           = $13,
+    customer_edited                  = FALSE,
+    codec_js_synced_at               = NULL,
+    updated_at                       = now()
+WHERE id = $1 AND archived_at IS NOT NULL
+RETURNING *;
+
 -- name: MarkProfileSyncedToChirpStack :exec
 -- Plan 02-08 seed routine — called after a successful CS DeviceProfileService
 -- Create/Update gRPC call. Records the CS-side UUID + sync timestamp so the
