@@ -162,24 +162,35 @@ function OutputTabs({ result }: { result: CodecTestResponse }) {
 
       <TabsContent value="canonical">
         <div className="relative rounded-md border p-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="absolute right-2 top-2"
-            aria-label="Copy canonical mapping to clipboard"
-            title="Copy as JSON"
-            onClick={() =>
-              navigator.clipboard.writeText(
-                JSON.stringify(result.canonical_mapping, null, 2),
-              )
-            }
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
-          <div className="pr-10">
-            <JsonTree value={result.canonical_mapping} defaultOpen />
-          </div>
+          {result.canonical_mapping == null ? (
+            <p className="text-sm text-muted-foreground">
+              No canonical mapping available — this profile has no mappings
+              configured, or the decoded fields didn&apos;t match any mapping
+              target. Configure mappings in the right pane to see canonical
+              output here.
+            </p>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-2 top-2"
+                aria-label="Copy canonical mapping to clipboard"
+                title="Copy as JSON"
+                onClick={() =>
+                  navigator.clipboard.writeText(
+                    JSON.stringify(result.canonical_mapping, null, 2),
+                  )
+                }
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <div className="pr-10">
+                <JsonTree value={result.canonical_mapping} defaultOpen />
+              </div>
+            </>
+          )}
         </div>
       </TabsContent>
     </Tabs>

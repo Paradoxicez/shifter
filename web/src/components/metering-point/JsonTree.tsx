@@ -50,14 +50,14 @@ export function JsonTree({ value, name, depth = 0, defaultOpen = false, highligh
   }
 
   // Primitive renders
-  if (value === null) {
+  if (value === null || value === undefined) {
     return (
       <div
         className={`text-sm font-mono flex items-center gap-1${isHighlighted ? ' bg-warning/20 rounded px-1' : ''}`}
         data-highlight={isHighlighted ? 'true' : undefined}
       >
         {name !== undefined && <><JsonKey>{name}</JsonKey><span className="text-muted-foreground">:</span></>}
-        <span className="text-muted-foreground italic font-mono text-sm">null</span>
+        <span className="text-muted-foreground italic font-mono text-sm">{value === null ? 'null' : 'undefined'}</span>
       </div>
     )
   }
