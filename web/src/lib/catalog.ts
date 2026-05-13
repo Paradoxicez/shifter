@@ -47,3 +47,47 @@ export async function fetchCatalog(): Promise<CatalogResponse> {
 export async function fetchCatalogEntry(slug: string): Promise<CatalogEntry> {
   return apiFetch<CatalogEntry>(`/api/catalog/${encodeURIComponent(slug)}`)
 }
+
+// ---------------------------------------------------------------------------
+// Plan 07-06 mutations — import + update
+// ---------------------------------------------------------------------------
+
+export type ImportFromCatalogResponse = { profile_id: string }
+
+export async function importFromCatalog(
+  slug: string,
+  name?: string,
+): Promise<ImportFromCatalogResponse> {
+  try {
+    return await apiFetch<ImportFromCatalogResponse>('/api/catalog/import', {
+      method: 'POST',
+      body: JSON.stringify({ slug, name }),
+    })
+  } catch (err: unknown) {
+    // apiFetch throws ApiError for non-ok responses; surface 409 as a
+    // recognisable sentinel so ImportFromCatalogDialog can show inline error.
+    if (err instanceof Error && 'status' in err && (err as { status: number }).status === 409) {
+      throw new Error('already imported')
+    }
+    throw err
+  }
+}
+
+export type ApplyUpdateBody = {
+  accepted_fields: string[] // e.g. ['codec_js', 'battery_curve']
+  target_version: string // e.g. '1.1.0'
+}
+export type ApplyUpdateResponse = { updated_at: string; new_version: string }
+
+export async function applyCatalogUpdate(
+  profileId: string,
+  body: ApplyUpdateBody,
+): Promise<ApplyUpdateResponse> {
+  return apiFetch<ApplyUpdateResponse>(
+    `/api/catalog/${encodeURIComponent(profileId)}/update`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+  )
+}
