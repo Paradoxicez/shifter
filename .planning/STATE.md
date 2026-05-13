@@ -430,6 +430,7 @@ Plan: Not started
 | 260513-pkp | fix 5 medium/low UAT issues: install-state console noise, HydrateFallback, devices JOIN profile, chart No-data state, compare labels | 2026-05-13 | 865db07 | [260513-pkp-fix-5-medium-low-uat-issues-install-stat](./quick/260513-pkp-fix-5-medium-low-uat-issues-install-stat/) |
 | 260513-qcf | fix 3 install rehearsal bugs: install.sh /var/lib dead step, ChirpStack config bootstrap, password_hash leak | 2026-05-13 | f9c5dbe | [260513-qcf-fix-3-install-rehearsal-bugs-install-sh-](./quick/260513-qcf-fix-3-install-rehearsal-bugs-install-sh-/) |
 | 260513-qvq | fix 3 install gaps: chirpstack token bootstrap, wizard step 2 grpc auth (TenantService.List probe), wizard sequential step enforcement (+ qvq-04 ProbeVersion correctness) | 2026-05-13 | a3e1209 | [260513-qvq-fix-3-install-gaps-chirpstack-token-boot](./quick/260513-qvq-fix-3-install-gaps-chirpstack-token-boot/) |
+| 260513-s5h | fix bug #7 secret_write: writeSecret skip-if-matches strategy for RO docker secret mounts — bundled flavor installable end-to-end | 2026-05-13 | e07f4ae | [260513-s5h-fix-bug-7-secret-write-writesecret-ro-do](./quick/260513-s5h-fix-bug-7-secret-write-writesecret-ro-do/) |
 
 ## Session Continuity
 
