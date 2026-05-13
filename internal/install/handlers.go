@@ -498,11 +498,37 @@ func FinishHandler(deps Deps) http.HandlerFunc {
 // path. Phase 1 keeps writes local; production install kit pre-populates
 // /run/secrets/ via Compose secrets and the wizard simply reuses the SAME path
 // idiom for operator-provided values (T-15-02 / D-04).
+//
+// Idempotency rule: if the file already exists and its trimmed content matches
+// the trimmed value, the write is skipped and the path is returned unchanged.
+// This is the bundled-compose case: docker secrets mount the host file at
+// /run/secrets/<name> as READ-ONLY. The bootstrap script populated the host
+// file; the wizard receives the same value from the operator's paste and just
+// confirms it — no write needed, no permission denied.
+//
+// If the file exists but content differs, an error is returned describing the
+// conflict (operator must update the host secret file and retry).
 func writeSecret(dir, name, value string) (string, error) {
+	path := filepath.Join(dir, name)
+
+	// Trim whitespace from operator-provided value (paste artifacts).
+	value = strings.TrimSpace(value)
+
+	// If a secret file already exists at this path, check content before writing.
+	if existing, err := os.ReadFile(path); err == nil {
+		if strings.TrimSpace(string(existing)) == value {
+			// Matches — skip write (RO docker mount case or already set).
+			return path, nil
+		}
+		return "", fmt.Errorf("secret %s already exists with different content (RO docker mount?); update the host secret file and retry", name)
+	}
+
+	// File does not exist — write it. Works for dev (./secrets writable) and
+	// for non-bundled deployments where the operator populates secrets via
+	// the wizard rather than a pre-install bootstrap.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("mkdir secrets: %w", err)
 	}
-	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", name, err)
 	}
