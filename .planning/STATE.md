@@ -418,6 +418,12 @@ Plan: Not started
 - **Research flags for downstream planning:** Phases 2, 3, 5, 6, 7 should run `/gsd-research-phase` before planning (see ROADMAP.md "Research Flags"). Phases 1 and 4 use standard patterns.
 - **AS923 sub-plan default:** Region picker in Phase 1 install wizard pre-selects the Thailand-correct sub-plan. This is a Phase 1 acceptance check.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260513-bjc | wire entity options into CompareView | 2026-05-13 | 85d7c38 | [260513-bjc-wire-entity-options-into-compareview](./quick/260513-bjc-wire-entity-options-into-compareview/) |
+
 ## Session Continuity
 
 **If resuming after interruption:**
