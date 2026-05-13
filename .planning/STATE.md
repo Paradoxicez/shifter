@@ -424,6 +424,7 @@ Plan: Not started
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260513-bjc | wire entity options into CompareView | 2026-05-13 | 85d7c38 | [260513-bjc-wire-entity-options-into-compareview](./quick/260513-bjc-wire-entity-options-into-compareview/) |
+| 260513-n7m | fix 3 P1 UAT blockers: dashboard auth bypass, swap dialog mount, login rate-limit | 2026-05-13 | c7c6f97 | [260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp](./quick/260513-n7m-fix-3-p1-uat-blockers-dashboard-auth-byp/) |
 
 ## Session Continuity
 
